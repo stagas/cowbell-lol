@@ -5,6 +5,7 @@ import { web, view, Dep } from 'minimal-view'
 export const Editor = web('editor', view(
   class props {
     value!: Dep<string>
+    rows?: number = 10
   }, class local {
 }, ({ $, fx }) => {
   $.css = /*css*/`
@@ -12,18 +13,18 @@ export const Editor = web('editor', view(
       display: block;
       box-sizing: border-box;
       background: #000;
-      color: #eee;
+      color: #fff;
       border: none;
       width: 100%;
-      height: 88px;
       resize: vertical;
     }
   `
 
-  fx(({ value }) => {
+  fx(({ value, rows }) => {
     $.view = <textarea key="text"
       spellcheck="false"
       autocorrect="off"
+      rows={rows}
       oninput={
         function (this: HTMLTextAreaElement) {
           value.value = this.value

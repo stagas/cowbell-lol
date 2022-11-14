@@ -1,3 +1,3 @@
 /* ambient types like: */
 
-// declare module 'scoped-registries'
+// declare module 'glicol'

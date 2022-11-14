@@ -1,8 +1,9 @@
 /** @jsxImportSource minimal-view */
 
-import { render, enableDebug } from 'minimal-view'
+import { render, enableDebug, effect } from 'minimal-view'
 
 if (false) enableDebug(5000)
+// effect.maxUpdates = 100000
 
 import { App } from '../src'
 
@@ -12,7 +13,7 @@ html, body {
   padding: 0;
   width: 100%;
   height: 100%;
-  overflow: hidden;
+  overflow-y: scroll;
 }`
 
 render(<>

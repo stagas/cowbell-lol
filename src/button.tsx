@@ -8,17 +8,21 @@ export const Button = web('btn', view(
     children?: JSX.Element
   }, class local {
 }, ({ $, fx }) => {
-  // $.css = /*css*/`
-  // &([state=active]) {
-  //   button {
-  //     background: teal;
-  //   }
-  // }
-  // &([state=inactive]) {
-  //   button {
-  //     background: grey;
-  //   }
-  // }`
+  $.css = /*css*/`
+  button {
+    font-family: monospace;
+    font-weight: bold;
+  }
+  &([state=active]) {
+    button {
+      background: teal;
+    }
+  }
+  &([state=inactive]) {
+    button {
+      background: grey;
+    }
+  }`
 
   fx(({ onClick, children }) => {
     $.view = <>

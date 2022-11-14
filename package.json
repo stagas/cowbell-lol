@@ -76,6 +76,8 @@
   },
   "dependencies": {
     "minimal-view": "file:../minimal-view",
-    "mono-worklet": "file:../mono-worklet"
+    "mono-worklet": "file:../mono-worklet",
+    "sandbox-worklet": "file:../sandbox-worklet",
+    "scheduler-node": "file:../scheduler-node"
   }
 }

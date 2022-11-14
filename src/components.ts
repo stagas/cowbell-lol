@@ -1,5 +1,6 @@
 export * from './wave'
 export * from './waveform'
 export * from './mono'
+export * from './scheduler'
 export * from './button'
 export * from './editor'

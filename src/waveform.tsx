@@ -7,6 +7,8 @@ import { animSchedule, animRemoveSchedule } from './anim'
 export const Waveform = web('waveform', view(
   class props {
 
+    running = false
+
     width = 200
     height = 100
 
@@ -14,7 +16,7 @@ export const Waveform = web('waveform', view(
 
   }, class local {
 
-  running = true
+  running?: boolean
 
   bytes?: Uint8Array
   analyser?: AnalyserNode
@@ -43,8 +45,8 @@ export const Waveform = web('waveform', view(
     stop = () => animRemoveSchedule(waveTick)
     let py = 0.5 * height
 
-    c.fillStyle = '#333'
-    c.strokeStyle = '#aaa'
+    c.fillStyle = '#000'
+    c.strokeStyle = '#66f'
     c.imageSmoothingEnabled = false
     function waveTick() {
       analyser.getByteTimeDomainData(bytes)
@@ -58,7 +60,7 @@ export const Waveform = web('waveform', view(
       const y = (height - pr) * h
       c.beginPath()
       c.lineWidth = pr
-      c.moveTo(width, py)
+      c.moveTo(width - 1, py)
       c.lineTo(width, y)
       c.closePath()
       c.stroke()
@@ -72,12 +74,15 @@ export const Waveform = web('waveform', view(
   })
 
   fx(({ c: ctx, width, height }) => {
-    ctx.fillStyle = '#333'
     ctx.fillRect(0, 0, width, height)
   })
 
-  fx(function waveStart({ bytes: _, c: __ }) {
-    draw()
+  fx(function waveStartStop({ running, bytes: _, c: __ }) {
+    if (running) {
+      draw()
+    } else {
+      stop()
+    }
   })
 
   fx(({ analyser }) => {
@@ -87,13 +92,7 @@ export const Waveform = web('waveform', view(
   fx(({ width, height }) => {
     $.view = <canvas ref={refs.canvas} width={width} height={height}
       onclick={() => {
-        if ($.running) {
-          stop()
-          $.running = false
-        } else {
-          draw()
-          $.running = true
-        }
+        $.running = !$.running
       }}
     />
   })
