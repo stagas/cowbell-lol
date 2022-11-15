@@ -1,5 +1,6 @@
 /** @jsxImportSource minimal-view */
 
+import { IconSvg } from 'icon-svg'
 import { web, view } from 'minimal-view'
 
 export const Button = web('btn', view(
@@ -12,6 +13,11 @@ export const Button = web('btn', view(
   button {
     font-family: monospace;
     font-weight: bold;
+    all: unset;
+    opacity: 0.8;
+    &:hover {
+      opacity: 1;
+    }
   }
   &([state=active]) {
     button {
@@ -22,7 +28,13 @@ export const Button = web('btn', view(
     button {
       background: grey;
     }
-  }`
+  }
+
+  ${IconSvg}::part(svg) {
+    height: 28px;
+    stroke-width: 1.35px;
+  }
+  `
 
   fx(({ onClick, children }) => {
     $.view = <>

@@ -1,9 +1,12 @@
 /** @jsxImportSource minimal-view */
 
-import { web, view } from 'minimal-view'
+import { web, view, element } from 'minimal-view'
+
+import { EditorScene } from 'canvy'
 import { createSandbox, Sandbox } from 'sandbox-worklet'
-import { SchedulerEventGroupNode, SchedulerNode } from 'scheduler-node'
-import { Editor } from './editor'
+import { SchedulerEventGroupNode, SchedulerNode, SchedulerTargetNode } from 'scheduler-node'
+
+import { Code, Spacer } from './components'
 
 let sandbox: Sandbox | null = null
 let sandboxPromise: Promise<Sandbox>
@@ -17,50 +20,80 @@ let sandboxTimeout: any
     }
   })()
 
-export const Scheduler = web('btn', view(
+interface SchedulerDetail {
+  editorValue: string
+  numberOfBars: number
+}
+
+const schedulerDefaultEditorValue = `\
+seed=42
+on(1/4, x => [x, 20+rnd(20), rnd(127), 0.1])
+on(1/4, x => [x+1/8, 20+rnd(20), rnd(17), 0.1])
+`
+
+export const Scheduler = web('scheduler', view(
   class props {
-    targetNode!: AudioNode
     schedulerNode!: SchedulerNode
-    numberOfBars?= 2
-    editorValue!: string
+    editorScene!: EditorScene
+
+    detail!: SchedulerDetail
+    outputs!: SchedulerTargetNode[]
   }, class local {
-  groupNode?: SchedulerEventGroupNode
+  host = element
   sandbox?: Sandbox
+
+  groupNode?: SchedulerEventGroupNode
+
+  schedulerCode!: string
+
+  numberOfBars?: number
+
   midiEvents: WebMidi.MIDIMessageEvent[] = []
-  editorValue!: string
-}, ({ $, fx, deps }) => {
+}, ({ $, fx, deps, refs }) => {
   $.css = /*css*/`
-  button {
-    font-family: monospace;
-    font-weight: bold;
+  & {
+    display: flex;
+    flex-flow: row wrap;
+    max-height: 100%;
   }
-  &([state=active]) {
-    button {
-      background: teal;
-    }
-  }
-  &([state=inactive]) {
-    button {
-      background: grey;
-    }
-  }`
+  `
+  // $.css = /*css*/`
+  // & {
+  //   display: flex;
+  //   /* > * {
+  //     flex: 1;
+  //   } */
+  // }
+
+  // ${Code} {
+  //   flex: 1;
+  // }
+  // `
+
+  fx(({ detail }) => {
+    $.schedulerCode ??= detail.editorValue ?? schedulerDefaultEditorValue
+    $.numberOfBars ??= detail.numberOfBars ?? 2
+  })
 
   fx(({ schedulerNode }) => {
     const groupNode = $.groupNode = new SchedulerEventGroupNode(schedulerNode)
-    console.log(groupNode)
     return () => {
       groupNode.destroy()
     }
   })
 
-  fx(({ schedulerNode, groupNode, targetNode }) => {
-    schedulerNode.connect(targetNode as any)
-    groupNode.connect(targetNode as any)
-    console.log('connected?')
+  fx(({ schedulerNode, groupNode, outputs }) => {
+    outputs.forEach((output) => {
+      schedulerNode.connect(output)
+      groupNode.connect(output)
+      console.log('connect', output)
+    })
     return () => {
-      console.log('disconnected?')
-      schedulerNode.disconnect(targetNode as any)
-      groupNode.disconnect(targetNode as any)
+      outputs.forEach((output) => {
+        console.log('disconnect', output)
+        schedulerNode.disconnect(output)
+        groupNode.disconnect(output)
+      })
     }
   })
 
@@ -78,10 +111,9 @@ export const Scheduler = web('btn', view(
   fx(({ groupNode, numberOfBars }) => {
     groupNode.eventGroup.loopEnd = numberOfBars
     groupNode.eventGroup.loop = true
-    console.log('yea?')
   })
 
-  fx(async ({ groupNode, sandbox, editorValue, numberOfBars }) => {
+  fx(async ({ groupNode, sandbox, schedulerCode, numberOfBars }) => {
     try {
       const setup = `
         let seed = 42;
@@ -106,21 +138,21 @@ export const Scheduler = web('btn', view(
 
       const notes = await Promise.race([
         sandbox.eval(`
-        let start = 0;
-        let end = ${numberOfBars};
-        const on = ${On(0, numberOfBars)};
-        const has = () => true;
-        const get = (target, key, receiver) => {
-          if (key === Symbol.unscopables) return undefined;
-          return Reflect.get(target, key, receiver);
-        }
-        const sandbox = new Proxy({ Math, on }, { has, get });
-        let events = [];
-        with (sandbox) {
-          ${setup};
-          ${editorValue};
-        }
-        return events;
+          let start = 0;
+          let end = ${numberOfBars};
+          const on = ${On(0, numberOfBars)};
+          const has = () => true;
+          const get = (target, key, receiver) => {
+            if (key === Symbol.unscopables) return undefined;
+            return Reflect.get(target, key, receiver);
+          }
+          const sandbox = new Proxy({ Math, on }, { has, get });
+          let events = [];
+          with (sandbox) {
+            ${setup};
+            ${schedulerCode};
+          }
+          return events;
       `) as unknown as Promise<[number, number, number, number][]>,
         new Promise<void>((_, reject) => setTimeout(reject, 10000, 'timeout')),
       ]) || []
@@ -130,15 +162,15 @@ export const Scheduler = web('btn', view(
       console.warn(error)
       if (error === 'timeout') {
         sandbox.destroy()
-        $.editorValue = ''
+        // $.schedulerCode = ''
       }
     }
-
   })
 
-  fx(() => {
-    $.view = <>
-      <Editor value={deps.editorValue} />
-    </>
+  fx(({ host, editorScene }) => {
+    $.view =
+      <Spacer layout={host} initial={[0]}>
+        <Code editorScene={editorScene} value={deps.schedulerCode} />
+      </Spacer>
   })
 }))

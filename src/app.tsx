@@ -1,68 +1,53 @@
 /** @jsxImportSource minimal-view */
 
-import { web, view, element, enableDebug } from 'minimal-view'
-import { MonoNode } from 'mono-worklet'
+import { web, view, element, enableDebug, on } from 'minimal-view'
+import { Matrix, Point, Rect } from 'geometrik'
+
+import { EditorScene } from 'canvy'
 import { SchedulerNode } from 'scheduler-node'
-import { Mono, Scheduler } from './components'
+
+import { Vertical, Machine, Mono, Scheduler } from './components'
+import { MonoNode } from 'mono-worklet'
 
 if (false) enableDebug()
-
-const schedulerDefaultEditorValue = `\
-on(1/4, x => [x, 20+rnd(20), rnd(127), 0.1])
-on(1/4, x => [x+1/8, 20+rnd(20), rnd(17), 0.1])
-`
-
-const monoDefaultEditorValue = `
-
-
-#:6,3;
-write_note(x,y)=(
-  #=(t,note_to_hz(x),y/127);
-  0
-);
-midi_in(op=0,x=0,y=0)=(
-  op==144 && write_note(x,y);drop;
-  0
-);
-play(nt,x,y)=(
-  saw(x/4)*env(nt, 10, 30)*y
-);
-f()=#::play:sum
-
-
-`
 
 export const App = web('app', view(
   class props {
     numberOfItems = 1
   }, class local {
   host = element
+  rect = new Rect()
 
   audioContext = new AudioContext({ sampleRate: 44100, latencyHint: 0.04 })
+  schedulerNode?: SchedulerNode
+  startTime?: number
+
+  audioNodes?: AudioNode[]
 
   items: any[] = []
   itemsView: JSX.Element = false
 
-  startTime?: number
-  // glicol?: Glicol
-
-  monoNode?: MonoNode
-  monoEditorValue = monoDefaultEditorValue
-
-  schedulerNode?: SchedulerNode
-  schedulerEditorValue = schedulerDefaultEditorValue
+  editorScene = new EditorScene({
+    layout: {
+      viewMatrix: new Matrix,
+      state: {
+        isIdle: true
+      },
+      viewFrameNormalRect: new Rect(0, 0, 10000, 10000),
+      pos: new Point(0, 0)
+    }
+  })
 }, ({ $, fx, deps }) => {
   $.css = /*css*/`
   & {
     display: flex;
     flex-flow: column wrap;
-    background: #222;
-    padding: 10px;
-    gap: 10px;
-    transition: transform 100ms ease-out;
+    background: #000;
+    padding: 0px;
+    /* overflow: hidden; */
 
     > * {
-      flex: 1;
+      /* flex: 1; */
     }
   }
   `
@@ -76,30 +61,61 @@ export const App = web('app', view(
   //   })
   // )
 
+
+  fx(() => {
+    const resize = () => {
+      const rect = $.rect.clone()
+      rect.width = window.innerWidth
+      rect.height = window.innerHeight
+      $.rect = rect
+    }
+    resize()
+    return on(window, 'resize')(resize)
+  })
+
+  fx(({ host, rect }) => {
+    host.style.width = rect.width + 'px'
+  })
+
+  fx(async ({ audioContext }) => {
+
+  })
+
   fx(async ({ audioContext }) => {
     $.schedulerNode = await SchedulerNode.create(audioContext)
 
-    $.monoNode = await MonoNode.create(audioContext, {
+    $.startTime = await $.schedulerNode.start()
+
+    const monoNode = await MonoNode.create(audioContext, {
       numberOfInputs: 0,
       numberOfOutputs: 1,
       processorOptions: {
         metrics: 0,
       },
     })
+    monoNode?.worklet.setTimeToSuspend(Infinity)
 
-    $.startTime = await $.schedulerNode.start()
+    $.audioNodes = [monoNode]
   })
 
-  fx(({ audioContext, numberOfItems, monoNode, monoEditorValue, schedulerNode, schedulerEditorValue }) => {
-    $.itemsView = Array.from({ length: numberOfItems }, (_, i) =>
-      <>
-        <Mono monoNode={monoNode} audioContext={audioContext} editorValue={monoEditorValue} />
-        <Scheduler
-          editorValue={schedulerEditorValue}
-          schedulerNode={schedulerNode}
-          targetNode={monoNode}
-        />
+  fx(({ audioContext, audioNodes, schedulerNode, editorScene, numberOfItems }) => {
+    $.itemsView = Array.from({ length: numberOfItems }, (_, i) => {
+      const Kind = i % 2 === 0 ? Mono : Scheduler
+      const audioNode = i % 2 === 0 ? audioNodes[0] : false
+      const outputs = i % 2 === 0 ? [] : audioNodes
+      // console.log(audioNode, outputs)
+      return <><Machine
+        Kind={Kind}
+        audioContext={audioContext}
+        editorScene={editorScene}
+
+        schedulerNode={schedulerNode}
+        audioNode={audioNode}
+        outputs={outputs}
+      />
+        <Vertical height={HEIGHTS.get(Kind)!} />
       </>
+    }
     )
   })
 
@@ -107,3 +123,8 @@ export const App = web('app', view(
     $.view = itemsView
   })
 }))
+
+const HEIGHTS = new Map<(props: any) => any, number>([
+  [Mono, 190],
+  [Scheduler, 90],
+])

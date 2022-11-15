@@ -1,0 +1,137 @@
+/** @jsxImportSource minimal-view */
+
+import { Point, Rect, Scalar } from 'geometrik'
+import { web, view, element, on } from 'minimal-view'
+
+import { Layout } from './components'
+import { observe } from './util/observe'
+
+const { clamp } = Scalar
+
+export const Spacer = web('spacer', view(class props {
+  layout!: HTMLElement
+  initial!: number[]
+  children?: JSX.Element[]
+}, class local {
+  host = element
+  rect?: Rect
+  cells!: number[]
+  intents!: number[]
+  handles?: JSX.Element[]
+}, ({ $, fx, fn }) => {
+  $.css = /*css*/`
+  & {
+    display: flex;
+    /* overflow: hidden; */
+  }
+
+  > * {
+    width: 100%;
+    height: 100%;
+  }
+
+  [part=handle] {
+    position: absolute;
+    width: 10px;
+    margin-left: -5px;
+    height: 100%;
+    cursor: ew-resize;
+    &.dragging,
+    &:hover {
+      background: #f94a;
+    }
+    transition:
+      left 3.5ms linear
+      ;
+  }
+  `
+
+  const off = fx(({ initial }) => {
+    off()
+    $.cells = $.intents = [...initial]
+  })
+
+  fx(({ host, layout }) =>
+    observe.resize.initial(layout, () => {
+      $.rect = new Rect(layout.getBoundingClientRect()).round()
+      Object.assign(host.style, $.rect.toStyle())
+    })
+  )
+
+  const handleDown = fn(({ host, rect, cells, intents }) => function spacerHandleDown(el: HTMLDivElement, e: PointerEvent, index: number) {
+    el.classList.add('dragging')
+
+    const off = on(window, 'pointermove')(function spacerPointerMove(e) {
+      const pos = new Point(e.pageX, e.pageY)
+      let posN = pos.x / rect.width
+      posN = clamp(0, 1, posN)
+
+      const newCells = [...cells]
+      const oldN = cells[index]
+      newCells[index] = posN
+
+      const diffN = posN - oldN
+
+      for (const [i, intentN] of intents.entries()) {
+        if (i < index) {
+          if (e.shiftKey) {
+            if (intentN > 0) {
+              const co = (intentN / oldN)
+              newCells[i] = clamp(0, 1, intentN + diffN * (isNaN(co) ? 1 : co))
+            }
+          } else {
+            newCells[i] = intentN
+
+            if (newCells[i] > posN) {
+              newCells[i] = posN
+            }
+          }
+        } else if (i > index) {
+          if (e.shiftKey) {
+            if (intentN < 1) {
+              const co = (1 - intentN) / (1 - oldN)
+              newCells[i] = clamp(0, 1, intentN + diffN * (isNaN(co) ? 1 : co))
+            }
+          } else {
+            newCells[i] = intentN
+
+            if (newCells[i] < posN) {
+              newCells[i] = posN
+            }
+          }
+        }
+      }
+
+      $.cells = newCells
+    })
+    on(window, 'pointerup').once(() => {
+      $.intents = [...$.cells]
+      el.classList.remove('dragging')
+      off()
+    })
+  })
+
+  fx(({ cells }) => {
+    $.handles = cells.slice(1).map((left, i) =>
+      <div
+        part="handle"
+        style={{ left: left * 100 + '%' }}
+        onpointerdown={function (this: HTMLDivElement, e) {
+          e.preventDefault()
+          handleDown(this, e, i + 1)
+        }}
+      ></div>
+    )
+  })
+
+  fx(({ layout, handles, children, cells }) => {
+    $.view = [
+      (Array.isArray(children) ? children : [children]).map((child, i) => {
+        const after = (i < children.length - 1 ? cells[i + 1] : 1)
+        const width = after - cells[i]
+        return <Layout layout={layout} width={width}>{child}</Layout>
+      }),
+      handles
+    ]
+  })
+}))

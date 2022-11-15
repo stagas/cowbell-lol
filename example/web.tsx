@@ -2,8 +2,14 @@
 
 import { render, enableDebug, effect } from 'minimal-view'
 
-if (false) enableDebug(5000)
-// effect.maxUpdates = 100000
+// import { DOMRecorder } from 'dom-recorder'
+// declare const window: any
+// window.recorder = new DOMRecorder()
+// document.body.appendChild(window.recorder.el)
+
+if (false)
+  enableDebug(5000)
+effect.maxUpdates = 100000
 
 import { App } from '../src'
 
@@ -18,5 +24,5 @@ html, body {
 
 render(<>
   <style>{css}</style>
-  <App numberOfItems={1} />
+  <App numberOfItems={2} />
 </>, document.body)
