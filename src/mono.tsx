@@ -17,9 +17,16 @@ midi_in(op=0,x=0,y=0)=(
   op==144 && write_note(x,y)
 );
 play(nt,x,y)=(
-  saw(x/4)*env(nt, 10, 30)*y
+  saw(x/4)*env(nt, 100, 30)*y
 );
-f()=#::play:sum
+f()=(
+  x=tanh(
+   lpf(#::play:sum*5,
+   400+300*sine(.125)),
+   0.95);
+  x=x+daverb(x)*0.4;
+  x
+)
 `
 
 interface MonoDetail {
@@ -80,7 +87,7 @@ export const Mono = web('mono', view(
   })
 
   fx(({ detail }) => {
-    $.monoCode ??= detail.editorValue ?? monoDefaultEditorValue
+    $.monoCode ??= detail.editorValue ?? (localStorage.monoCode || monoDefaultEditorValue)
   })
 
   fx(({ audioContext, fftSize }) => {
@@ -108,8 +115,9 @@ export const Mono = web('mono', view(
       $.state = 'compiling'
 
       await monoNode.setCode(code)
-      if (prev !== 'running') $.state = 'suspended'
-      else $.state = 'running'
+      if (prev !== 'running' && prev !== 'compiling' && prev !== 'error') $.state = 'suspended'
+      localStorage.monoCode = code
+      $.state = 'running'
       // start()
     } catch (error) {
       console.log(error)

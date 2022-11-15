@@ -125,6 +125,6 @@ export const App = web('app', view(
 }))
 
 const HEIGHTS = new Map<(props: any) => any, number>([
-  [Mono, 190],
-  [Scheduler, 90],
+  [Mono, 240],
+  [Scheduler, 140],
 ])

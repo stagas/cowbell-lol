@@ -51,7 +51,10 @@ export const Waveform = web('waveform', view(
     function waveTick() {
       analyser.getByteTimeDomainData(bytes)
 
-      const h = bytes[0] / 256
+      let h = bytes[0] / 256
+      const normal = 1 - h * 2
+      const sign = Math.sign(normal)
+      h = ((Math.abs(normal) ** 0.38) * sign * 0.5 + 0.5)
       animSchedule(waveTick)
 
       c.drawImage(canvas, -1, 0, width, height)

@@ -88,6 +88,8 @@
     "sandbox-worklet": "file:../sandbox-worklet",
     "scheduler-node": "file:../scheduler-node",
     "to-fluent": "file:../to-fluent",
-    "x-spacer": "file:../x-spacer"
+    "webaudio-tools": "file:../webaudio-tools",
+    "x-spacer": "file:../x-spacer",
+    "xorshift": "*"
   }
 }
