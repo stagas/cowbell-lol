@@ -38,15 +38,6 @@ export const Midi = web('midi', view(
   }
   `
 
-  fx(({ audioContext, numberOfBars }) => {
-    const iv = setInterval(() => {
-      $.currentTime = (audioContext.currentTime % numberOfBars) * 1000
-    }, 10)
-    return () => {
-      clearInterval(iv)
-    }
-  })
-
   fx(({ midiEvents, numberOfBars }) => {
     const events: WebMidi.MIDIMessageEvent[] = midiEvents.filter(x => MidiOps.has(x.data[0]))
     const minNote = Math.min(...midiEvents.map(x => x.data[1]))
@@ -79,6 +70,15 @@ export const Midi = web('midi', view(
   })
 
   const notesMap = new Map<SVGRectElement, readonly [Rect, [WebMidi.MIDIMessageEvent, WebMidi.MIDIMessageEvent]]>()
+
+  fx(({ audioContext, numberOfBars }) => {
+    const iv = setInterval(() => {
+      $.currentTime = (audioContext.currentTime % numberOfBars) * 1000
+    }, 10)
+    return () => {
+      clearInterval(iv)
+    }
+  })
 
   fx.raf(({ currentTime }) => {
     for (const [

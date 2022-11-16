@@ -22,14 +22,13 @@ export const Code = web('code', view(
   }
   `
 
-  const off = fx(({ value }) =>
+  fx(({ value }) =>
     effect({ value }, ({ value }) =>
       fx(({ editor }) =>
         editor.$.effect(({ files, ready }) => {
           if (ready) {
             $.code = files[0].value = value
             files[0].setData(files[0])
-            off()
           }
         })
       )

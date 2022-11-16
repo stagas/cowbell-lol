@@ -24,5 +24,5 @@ html, body {
 
 render(<>
   <style>{css}</style>
-  <App numberOfItems={2} />
+  <App />
 </>, document.body)

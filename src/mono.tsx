@@ -1,11 +1,14 @@
 /** @jsxImportSource minimal-view */
 
+import { web, view, element, abort } from 'minimal-view'
+
 import { EditorScene } from 'canvy'
-import { web, view, element } from 'minimal-view'
 import { MonoNode } from 'mono-worklet'
 import { IconSvg } from 'icon-svg'
 
-import { Button, Code, Waveform, Spacer } from './components'
+import { Button, Code, Waveform, Spacer, Presets } from './components'
+import { MachineData } from './machine-data'
+import type { App } from './app'
 
 const monoDefaultEditorValue = `\\\\\\ a track \\\\\\
 #:6,3;
@@ -21,26 +24,29 @@ play(nt,x,y)=(
 );
 f()=(
   x=tanh(
-   lpf(#::play:sum*5,
-   400+300*sine(.125)),
-   0.95);
+    lpf(
+      #::play:sum*5,
+      400+300*sine(.125),
+      0.95
+    )*3
+  );
   x=x+daverb(x)*0.4;
   x
 )
 `
 
-interface MonoDetail {
+export interface MonoDetail {
   editorValue: string
 }
 
 export const Mono = web('mono', view(
-  class props {
+  class props extends MachineData<MonoDetail> {
+    app!: App
+
     audioContext!: AudioContext
     editorScene!: EditorScene
 
     audioNode!: AudioNode
-    outputs!: AudioNode[]
-    detail!: MonoDetail
   }, class local {
   host = element
 
@@ -57,6 +63,7 @@ export const Mono = web('mono', view(
     display: flex;
     flex-flow: row wrap;
     max-height: 100%;
+    max-width: 100%;
   }
 
   [part=controls] {
@@ -70,16 +77,6 @@ export const Mono = web('mono', view(
     top: 0;
     left: 0;
   }
-
-  /* [part=spacer] {
-    height: 180px;
-  } */
-  [part=indicator] {
-    width: 9px;
-    height: 9px;
-    margin: 6.2px;
-    border-radius: 100%;
-  }
   `
 
   fx(({ audioNode }) => {
@@ -87,7 +84,11 @@ export const Mono = web('mono', view(
   })
 
   fx(({ detail }) => {
-    $.monoCode ??= detail.editorValue ?? (localStorage.monoCode || monoDefaultEditorValue)
+    $.monoCode = (detail && detail.editorValue) || (localStorage.monoCode || monoDefaultEditorValue)
+  })
+
+  fx(({ app, id, monoCode }) => {
+    app.onDetailChange(id, { editorValue: monoCode })
   })
 
   fx(({ audioContext, fftSize }) => {
@@ -98,47 +99,52 @@ export const Mono = web('mono', view(
     })
   })
 
-  // fx(async ({ audioContext }) => {
-  //   $.monoNode = await MonoNode.create(audioContext, {
-  //     numberOfInputs: 0,
-  //     numberOfOutputs: 1,
-  //     processorOptions: {
-  //       metrics: 0,
-  //     },
-  //   })
-  //   $.monoNode?.worklet.setTimeToSuspend(Infinity)
-  // })
-
-  fx.debounce(250)(async ({ monoNode, monoCode: code }) => {
+  let prev: any
+  fx.debounce(250)(abort.latest(signal => async ({ app, id, monoNode, monoCode }) => {
     try {
-      const prev = $.state
+      prev ??= $.state
       $.state = 'compiling'
 
-      await monoNode.setCode(code)
-      if (prev !== 'running' && prev !== 'compiling' && prev !== 'error') $.state = 'suspended'
-      localStorage.monoCode = code
-      $.state = 'running'
-      // start()
+      await monoNode.setCode(monoCode)
+      if (signal.aborted) return
+
+      localStorage.monoCode = monoCode
+
+      if (prev === 'suspended' || prev === 'idle') {
+        $.state = 'suspended'
+      } else {
+        start()
+      }
+
+      prev = null
     } catch (error) {
       console.log(error)
       $.state = 'error'
     }
-  })
+  }))
 
   const start = fn(({ audioContext, analyser, monoNode }) => () => {
     monoNode.connect(audioContext.destination)
     monoNode.connect(analyser)
-    // monoNode.worklet.processMidiEvents()
     $.state = 'running'
   })
 
-  const stop = fn(({ audioContext, monoNode }) => () => {
-    monoNode.disconnect(audioContext.destination)
-    monoNode.worklet.suspend()
+  const stop = fn(({ audioContext, analyser, monoNode }) => () => {
+    if ($.state === 'suspended') return
+    try {
+      monoNode.disconnect(audioContext.destination)
+    } catch (err) { console.warn(err) }
+    try {
+      monoNode.disconnect(analyser)
+    } catch (err) { console.warn(err) }
+    try {
+      monoNode.worklet.suspend()
+    } catch (err) { console.warn(err) }
     $.state = 'suspended'
   })
 
-  fx(({ host, editorScene, state, analyser, monoCode }) => {
+  fx(({ app, id, host, editorScene, state, spacer, analyser, detail, presets, monoCode }) => {
+    // console.log('PRRESETS', presets, detail)
     $.view = <>
       <div part="controls">
         <Button onClick={start} style={{
@@ -165,7 +171,7 @@ export const Mono = web('mono', view(
           <IconSvg set="feather" icon="stop-circle" />
         </Button>
       </div>
-      <Spacer part="spacer" layout={host} initial={[0, .5]}>
+      <Spacer part="spacer" app={app} id={id} layout={host} initial={spacer}>
         <Waveform
           analyser={analyser}
           width={100}
@@ -175,14 +181,13 @@ export const Mono = web('mono', view(
         <Code
           editorScene={editorScene} value={deps.monoCode}
         />
+        <Presets
+          app={app}
+          id={id}
+          detail={detail}
+          presets={presets}
+        />
       </Spacer>
     </>
   })
 }))
-
-// {/* <Scheduler
-// editorScene={editorScene}
-// editorValue={schedulerEditorValue}
-// schedulerNode={schedulerNode}
-// targetNode={monoNode}
-// /> */}

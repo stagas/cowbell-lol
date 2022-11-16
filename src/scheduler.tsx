@@ -1,12 +1,15 @@
 /** @jsxImportSource minimal-view */
 
-import { web, view, element } from 'minimal-view'
+import { web, view, element, chain } from 'minimal-view'
 
 import { EditorScene } from 'canvy'
 import { createSandbox, Sandbox } from 'sandbox-worklet'
-import { SchedulerEventGroupNode, SchedulerNode, SchedulerTargetNode } from 'scheduler-node'
+import { SchedulerEventGroupNode, SchedulerNode } from 'scheduler-node'
 
-import { Code, Spacer, Midi } from './components'
+import type { App } from './app'
+
+import { Code, Spacer, Midi, Presets } from './components'
+import { MachineData } from './machine-data'
 
 let sandbox: Sandbox | null = null
 let sandboxPromise: Promise<Sandbox>
@@ -20,9 +23,8 @@ let sandboxTimeout: any
     }
   })()
 
-interface SchedulerDetail {
+export interface SchedulerDetail {
   editorValue: string
-  numberOfBars: number
 }
 
 const schedulerDefaultEditorValue = `\
@@ -36,13 +38,11 @@ on(1/4,delay(
 `
 
 export const Scheduler = web('scheduler', view(
-  class props {
+  class props extends MachineData<SchedulerDetail> {
+    app!: App
     audioContext!: AudioContext
     schedulerNode!: SchedulerNode
     editorScene!: EditorScene
-
-    detail!: SchedulerDetail
-    outputs!: SchedulerTargetNode[]
   }, class local {
   host = element
   sandbox?: Sandbox
@@ -51,7 +51,7 @@ export const Scheduler = web('scheduler', view(
 
   schedulerCode!: string
 
-  numberOfBars?: number
+  numberOfBars = 1
 
   midiEvents: WebMidi.MIDIMessageEvent[] = []
 }, ({ $, fx, deps, refs }) => {
@@ -60,6 +60,7 @@ export const Scheduler = web('scheduler', view(
     display: flex;
     flex-flow: row wrap;
     max-height: 100%;
+    max-width: 100%;
   }
   `
   // $.css = /*css*/`
@@ -76,31 +77,33 @@ export const Scheduler = web('scheduler', view(
   // `
 
   fx(({ detail }) => {
-    $.schedulerCode ??= detail.editorValue ?? (localStorage.schedulerCode || schedulerDefaultEditorValue)
-    $.numberOfBars ??= detail.numberOfBars ?? 2
+    $.schedulerCode = (detail && detail.editorValue) || (localStorage.schedulerCode || schedulerDefaultEditorValue)
+  })
+
+  fx(({ app, id, schedulerCode }) => {
+    app.onDetailChange(id, {
+      editorValue: schedulerCode
+    })
   })
 
   fx(({ schedulerNode }) => {
-    const groupNode = $.groupNode = new SchedulerEventGroupNode(schedulerNode)
+    const groupNode = $.groupNode =
+      new SchedulerEventGroupNode(schedulerNode)
     return () => {
       groupNode.destroy()
     }
   })
 
-  fx(({ schedulerNode, groupNode, outputs }) => {
-    outputs.forEach((output) => {
-      schedulerNode.connect(output)
-      groupNode.connect(output)
-      console.log('connect', output)
-    })
-    return () => {
-      outputs.forEach((output) => {
-        console.log('disconnect', output)
-        schedulerNode.disconnect(output)
-        groupNode.disconnect(output)
-      })
-    }
-  })
+  fx(({ app, schedulerNode, groupNode, outputs }) =>
+    chain(outputs.map((output) => {
+      app.connectNode(schedulerNode, output)
+      app.connectNode(groupNode, output)
+      return () => {
+        app.disconnectNode(schedulerNode, output)
+        app.disconnectNode(groupNode, output)
+      }
+    }))
+  )
 
   fx(async () => {
     $.sandbox = await sandboxPromise.then(() => ({
@@ -308,11 +311,17 @@ export const Scheduler = web('scheduler', view(
     }
   })
 
-  fx(({ host, audioContext, editorScene, midiEvents, numberOfBars }) => {
+  fx(({ app, id, host, audioContext, editorScene, midiEvents, numberOfBars, presets, detail, spacer }) => {
     $.view =
-      <Spacer layout={host} initial={[0, .5]}>
+      <Spacer id={id} app={app} layout={host} initial={spacer}>
         <Midi audioContext={audioContext} midiEvents={midiEvents} numberOfBars={numberOfBars} />
         <Code editorScene={editorScene} value={deps.schedulerCode} />
+        <Presets
+          app={app}
+          id={id}
+          detail={detail}
+          presets={presets}
+        />
       </Spacer>
   })
 }))

@@ -3,12 +3,15 @@
 import { Point, Rect, Scalar } from 'geometrik'
 import { web, view, element, on } from 'minimal-view'
 
+import { App } from './app'
 import { Layout } from './components'
 import { observe } from './util/observe'
 
 const { clamp } = Scalar
 
 export const Spacer = web('spacer', view(class props {
+  app!: App
+  id!: string
   layout!: HTMLElement
   initial!: number[]
   children?: JSX.Element[]
@@ -32,6 +35,7 @@ export const Spacer = web('spacer', view(class props {
 
   [part=handle] {
     position: absolute;
+    z-index: 10;
     width: 10px;
     margin-left: -5px;
     height: 100%;
@@ -61,8 +65,7 @@ export const Spacer = web('spacer', view(class props {
   const handleDown = fn(({ host, rect, cells, intents }) => function spacerHandleDown(el: HTMLDivElement, e: PointerEvent, index: number) {
     el.classList.add('dragging')
 
-    const off = on(window, 'pointermove')(function spacerPointerMove(e) {
-      const pos = new Point(e.pageX, e.pageY)
+    const moveTo = (pos: Point) => {
       let posN = pos.x / rect.width
       posN = clamp(0, 1, posN)
 
@@ -103,12 +106,36 @@ export const Spacer = web('spacer', view(class props {
       }
 
       $.cells = newCells
+    }
+
+    const getPointerPos = (e: PointerEvent) => {
+      return new Point(e.pageX, e.pageY)
+    }
+
+    let ended = false
+    const off = on(window, 'pointermove')(function spacerPointerMove(e) {
+      if (ended) return
+      moveTo(getPointerPos(e))
     })
-    on(window, 'pointerup').once(() => {
-      $.intents = [...$.cells]
-      el.classList.remove('dragging')
+
+    on(window, 'pointerup').once((e) => {
       off()
+      ended = true
+      requestAnimationFrame(() => {
+        console.log($.cells, index)
+        if (index === $.cells.length - 1 && $.cells.at(-1)! > 0.99) {
+          moveTo(new Point(window.innerWidth, 0))
+        } else {
+          moveTo(getPointerPos(e).gridRound(15).translate(-(15 - (window.innerWidth % 15)), 0))
+        }
+        $.intents = [...$.cells]
+        el.classList.remove('dragging')
+      })
     })
+  })
+
+  fx(({ app, id, intents }) => {
+    app.setSpacer(id, intents)
   })
 
   fx(({ cells }) => {

@@ -81,6 +81,7 @@
     "@vanillawc/wc-codemirror": "*",
     "canvy": "file:../canvy",
     "codemirror": "5",
+    "everyday-utils": "file:../everyday-utils",
     "geometrik": "file:../geometrik",
     "icon-svg": "file:../icon-svg",
     "minimal-view": "file:../minimal-view",

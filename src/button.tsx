@@ -1,7 +1,7 @@
 /** @jsxImportSource minimal-view */
 
 import { IconSvg } from 'icon-svg'
-import { web, view } from 'minimal-view'
+import { web, view, event } from 'minimal-view'
 
 export const Button = web('btn', view(
   class props {
@@ -38,7 +38,7 @@ export const Button = web('btn', view(
 
   fx(({ onClick, children }) => {
     $.view = <>
-      <button onclick={onClick}>
+      <button onclick={event.prevent.stop(onClick)}>
         {children}
       </button>
     </>

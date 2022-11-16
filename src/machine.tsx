@@ -2,18 +2,22 @@
 
 import { web, view, element, on } from 'minimal-view'
 
-import { EditorScene } from 'canvy'
-import { SchedulerNode } from 'scheduler-node'
+import type { EditorScene } from 'canvy'
+import type { SchedulerNode } from 'scheduler-node'
+import type { App } from './app'
+
+import { MachineKind, MachineData } from './machine-data'
 
 export const Machine = web('machine', view(
-  class props {
+  class props extends MachineData {
+    app!: App
+
     audioContext!: AudioContext
     schedulerNode!: SchedulerNode
     editorScene!: EditorScene
 
-    Kind!: (props: any) => JSX.Element
     audioNode!: AudioNode | false
-    outputs!: AudioNode[]
+    Machines!: Record<MachineKind, (props: any) => JSX.Element>
   }, class local {
   host = element
 }, ({ $, fx }) => {
@@ -29,22 +33,31 @@ export const Machine = web('machine', view(
     }
   }
   `
-  fx(({ host }) => {
+
+  fx(({ host }) =>
     on(window, 'resize')(() => {
       host.style.width = window.innerWidth + 'px'
     })
-  })
+  )
 
-  fx(({ audioContext, editorScene, Kind, schedulerNode, audioNode, outputs }) => {
+  fx(({ app, id, Machines, audioContext, editorScene, schedulerNode, kind, audioNode, detail, outputs, presets, spacer }) => {
+    const Kind = Machines[kind]
+
     $.view = <>
       <Kind
+        app={app}
+
+        id={id}
+
         audioContext={audioContext}
         schedulerNode={schedulerNode}
         editorScene={editorScene}
 
         audioNode={audioNode}
+        detail={detail}
         outputs={outputs}
-        detail={{}}
+        presets={presets}
+        spacer={spacer}
       />
     </>
   })
