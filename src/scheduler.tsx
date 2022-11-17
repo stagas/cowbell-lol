@@ -1,6 +1,6 @@
 /** @jsxImportSource minimal-view */
 
-import { web, view, element, chain } from 'minimal-view'
+import { web, view, element, chain, on } from 'minimal-view'
 
 import { EditorScene } from 'canvy'
 import { createSandbox, Sandbox } from 'sandbox-worklet'
@@ -46,6 +46,7 @@ export const Scheduler = web('scheduler', view(
   }, class local {
   host = element
 
+  state: 'idle' | 'running' | 'suspended' = 'suspended'
   sandbox?: Sandbox
   groupNode?: SchedulerEventGroupNode
   schedulerCode!: string
@@ -90,6 +91,12 @@ export const Scheduler = web('scheduler', view(
       groupNode.destroy()
     }
   })
+
+  fx(({ groupNode }) =>
+    on(groupNode, 'connectchange')(() => {
+      $.state = groupNode.eventGroup.targets.size ? 'running' : 'suspended'
+    })
+  )
 
   fx(({ app, schedulerNode, groupNode, outputs }) =>
     chain(outputs.map((output) =>
@@ -306,10 +313,10 @@ export const Scheduler = web('scheduler', view(
     }
   })
 
-  fx(({ app, id, host, audioContext, editorScene, midiEvents, numberOfBars, presets, detail, spacer }) => {
+  fx(({ app, id, host, state, audioContext, editorScene, midiEvents, numberOfBars, presets, detail, spacer }) => {
     $.view =
       <Spacer id={id} app={app} layout={host} initial={spacer}>
-        <Midi audioContext={audioContext} midiEvents={midiEvents} numberOfBars={numberOfBars} />
+        <Midi part="waveform" style="position:absolute; bottom:0" state={state} audioContext={audioContext} midiEvents={midiEvents} numberOfBars={numberOfBars} />
         <Code editorScene={editorScene} value={deps.schedulerCode} />
         <Presets
           app={app}

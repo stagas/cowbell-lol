@@ -1,8 +1,7 @@
+export const unicode = (a: number, b: number) => String.fromCodePoint(Math.round(a + Math.random() * (b - a)))
 
-const unicode = (a: number, b: number) => String.fromCodePoint(Math.round(a + Math.random() * (b - a)))
-
-// tribal / ancient
-const pages = [
+// ancient
+export const ancient = [
   [0x10a9, 0x10c5],
   [0x0250, 0x02af],
   [0x2d32, 0x2d66],
@@ -18,11 +17,11 @@ const pages = [
 ] as readonly [number, number][]
 
 // emoji
-// const pages = [
-//   [0x1f300, 0x1f5ff],
-//   [0x1f600, 0x1f64f],
-//   [0x1f680, 0x1f6c5],
-// ] as readonly [number, number][]
+export const emoji = [
+  [0x1f300, 0x1f5ff],
+  [0x1f600, 0x1f64f],
+  [0x1f680, 0x1f6c5],
+] as readonly [number, number][]
 
-export const randomName = () => unicode(...pages[Math.random() * pages.length | 0])
-
+export const randomName = (pages = ancient) =>
+  unicode(...pages[Math.random() * pages.length | 0])

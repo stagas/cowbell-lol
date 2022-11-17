@@ -1,6 +1,6 @@
 /** @jsxImportSource minimal-view */
 
-import { web, view, element, on } from 'minimal-view'
+import { web, view, element, on, queue } from 'minimal-view'
 import { Matrix, Point, Rect } from 'geometrik'
 
 import { EditorScene } from 'canvy'
@@ -9,8 +9,9 @@ import { SchedulerEventGroupNode, SchedulerNode } from 'scheduler-node'
 
 import { Button, Vertical, Machine, Mono, Scheduler, Presets, Preset } from './components'
 import { cheapRandomId, isEqual } from 'everyday-utils'
-import { randomName } from './util/random-name'
+import { ancient, emoji, randomName } from './util/random-name'
 import { MachineData } from './machine-data'
+import { IconSvg } from 'icon-svg'
 
 export type AppAudioNode = AudioNode | SchedulerNode | SchedulerEventGroupNode
 
@@ -22,10 +23,14 @@ export interface App {
   // audio
   connectNode: (sourceNode: AppAudioNode, targetId: string) => void
   disconnectNode: (sourceNode: AppAudioNode, targetId: string) => void
+
   // machines
   addMachine: (data: MachineData) => void
   getMachine: (id: string) => MachineData
   setMachineDetail: (id: string, newDetail: any, byClick?: boolean) => void,
+  removeMachinesInGroup: (groupId: string) => void
+  getMachinesInGroup: (groupId: string) => MachineData[]
+
   // presets
   getPresetById: (id: string, presetId: string) => Preset | undefined,
   getPresetByDetail: (id: string, detail: any) => Preset | undefined
@@ -34,6 +39,7 @@ export interface App {
   setPresetDetail: (id: string, presetId: string, newDetail: any) => void,
   selectOrCreatePreset: (id: string, newDetail: any, isIntent?: boolean) => void
   selectPreset: (id: string, presetId: string, byClick?: boolean) => void
+  renamePresetRandom: (id: string, presetId: string, useEmoji?: boolean) => void
   savePreset: (id: string, presetId: string) => void
   onDetailChange: (id: string, newDetail: any, isIntent?: boolean) => void,
 
@@ -52,6 +58,7 @@ const HEIGHTS = {
 const defaultMachines: Record<'mono' | 'scheduler', MachineData> = {
   mono: {
     id: 'a',
+    groupId: 'a',
     kind: 'mono',
     spacer: [0, 0.35, (1 - 45 / windowWidth)],
     detail: false,
@@ -61,6 +68,7 @@ const defaultMachines: Record<'mono' | 'scheduler', MachineData> = {
   },
   scheduler: {
     id: 'b',
+    groupId: 'a',
     kind: 'scheduler',
     spacer: [0, 0.35, (1 - 45 / windowWidth)],
     detail: false,
@@ -117,7 +125,43 @@ export const App = web('app', view(
   & {
     display: flex;
     flex-flow: column wrap;
+    align-items: center;
     background: #000;
+    min-height: 100%;
+    padding-bottom: 65vh;
+  }
+
+  [part=header] {
+    position: sticky;
+    top: 0;
+    z-index: 99999;
+    background: #001d;
+    width: 100%;
+  }
+
+  [part=items] {
+    display: flex;
+    flex-flow: column nowrap;
+    align-items: center;
+    max-width: 700px;
+  }
+
+  [part=item] {
+    max-width: 700px;
+  }
+
+  [part=add] {
+    margin: 7px;
+    display: flex;
+    justify-content: center;
+    ${Button} {
+      cursor: pointer;
+      opacity: 0.35;
+      color: #667;
+      &:hover {
+        opacity: 1;
+      }
+    }
   }
   `
 
@@ -134,10 +178,15 @@ export const App = web('app', view(
           console.warn(error)
         }
 
+        // let gid = 0;
+
         (localStorage.machines ?? '').split(',').filter(Boolean).forEach((id: string) => {
           try {
             const m = JSON.parse(localStorage[`machine_${id}`])
             machines.push(m)
+            // machines.push(Object.assign(m, { groupId: gid }))
+            // console.log('yea?', m)
+            // if (m.kind === 'scheduler') gid++
           } catch (error) {
             console.warn('Failed to load machine with id', id)
             console.warn(error)
@@ -197,17 +246,30 @@ export const App = web('app', view(
         }
       }),
 
-      addMachine: fn(() => (machineData) => {
+      addMachine: (machineData) => {
         $.machines = [...$.machines, machineData]
-      }),
+      },
 
-      getMachine: fn(() => (id) => {
+      getMachine: (id) => {
         const machine = id === 'app' ? $ as unknown as MachineData : $.machines.find((machine) => machine.id === id)
         if (!machine) {
           throw new Error('Machine not found with id: ' + id)
         }
         return machine
+      },
+
+      removeMachinesInGroup: fn(({ app }) => (groupId: string) => {
+        const idsToDelete = app.getMachinesInGroup(groupId).map((machine) => machine.id)
+        $.machines = $.machines.filter((machine) =>
+          !idsToDelete.includes(machine.id)
+        )
       }),
+
+      getMachinesInGroup: (groupId: string) =>
+        $.machines.filter((machine) =>
+          machine.groupId === groupId
+        )
+      ,
 
       getPresetByDetail: fn(({ app }) => (id, detail) => {
         const machine = app.getMachine(id)
@@ -223,6 +285,24 @@ export const App = web('app', view(
           .find((preset) =>
             preset.id === presetId)
 
+      }),
+
+      renamePresetRandom: fn(({ app }) => (id, presetId, useEmoji) => {
+        const machine = app.getMachine(id)
+
+        const newPresets = machine.presets.map((preset) => {
+          if (preset.id === presetId) {
+            return {
+              ...preset,
+              hue: (Math.round((Math.random() * 10e4) / 25) * 25) % 360,
+              name: randomName(useEmoji ? emoji : ancient)
+            }
+          }
+
+          return preset
+        })
+
+        app.setPresets(id, newPresets)
       }),
 
       savePreset: fn(({ app }) => (id, presetId) => {
@@ -416,7 +496,7 @@ export const App = web('app', view(
         })
       }),
 
-      setVertical: fn(({ app }) => (id, height) => {
+      setVertical: (id, height) => {
         if (id === 'app') {
           $.height = height
           return
@@ -432,7 +512,7 @@ export const App = web('app', view(
           }
           return machine
         })
-      })
+      }
     }
 
     $.app.load()
@@ -462,12 +542,12 @@ export const App = web('app', view(
   })
 
   fx(() => {
-    const resize = () => {
+    const resize = queue.raf(() => {
       const rect = $.rect.clone()
       rect.width = window.innerWidth
       rect.height = window.innerHeight
       $.rect = rect
-    }
+    })
     resize()
     return on(window, 'resize')(resize)
   })
@@ -503,18 +583,22 @@ export const App = web('app', view(
         }
       }
 
-      itemsView.push(<>
+      itemsView.push(<div part="item">
         <Machine
+          style={machine.kind === 'scheduler' && 'border-bottom: 2px solid #aaf2'}
           app={app}
-          {...machine}
+          machine={machine}
           Machines={Machines}
           audioNode={audioNode || false}
           audioContext={audioContext}
           schedulerNode={schedulerNode}
           editorScene={editorScene}
+          showRemoveButton={app.getMachinesInGroup(machine.groupId).flatMap(
+            (machine) => machine.presets
+          ).length === 0}
         />
         <Vertical app={app} id={machine.id} height={machine.height ?? HEIGHTS[machine.kind]} />
-      </>)
+      </div>)
     }
 
     $.itemsView = itemsView
@@ -523,25 +607,36 @@ export const App = web('app', view(
   fx(({ app, state, itemsView, detail, presets, height }) => {
     if (state === 'init') return
     $.view = <>
-      <Presets app={app} id="app" detail={detail} presets={presets} style="position:sticky;top:0;z-index:2;background:#000a" />
-      <Vertical app={app} id="app" height={height} />
-      {itemsView}
-      <Button onClick={() => {
-        const a = cheapRandomId()
-        const b = cheapRandomId()
+      <div part="header">
+        <Presets app={app} id="app" detail={detail} presets={presets} />
+        <Vertical app={app} id="app" height={height} fixed />
+      </div>
+      <div part="items">
+        {itemsView}
+      </div>
+      <div part="add">
+        <Button onClick={() => {
+          const a = cheapRandomId()
+          const b = cheapRandomId()
+          const groupId = cheapRandomId()
 
-        app.addMachine({
-          ...defaultMachines.mono,
-          id: a
-        })
+          app.addMachine({
+            ...defaultMachines.mono,
+            id: a,
+            groupId
+          })
 
-        app.addMachine({
-          ...defaultMachines.scheduler,
-          id: b,
-          outputs: [a]
-        })
+          app.addMachine({
+            ...defaultMachines.scheduler,
+            id: b,
+            groupId,
+            outputs: [a]
+          })
 
-      }}>Add one</Button>
+        }}>
+          <IconSvg class="small" set="feather" icon="plus-circle" />
+        </Button>
+      </div>
     </>
   })
 }))

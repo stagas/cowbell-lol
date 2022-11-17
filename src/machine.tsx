@@ -1,6 +1,6 @@
 /** @jsxImportSource minimal-view */
 
-import { web, view, element, on } from 'minimal-view'
+import { web, view, element, on, queue } from 'minimal-view'
 
 import type { EditorScene } from 'canvy'
 import type { SchedulerNode } from 'scheduler-node'
@@ -9,20 +9,23 @@ import type { App } from './app'
 import { MachineKind, MachineData } from './machine-data'
 
 export const Machine = web('machine', view(
-  class props extends MachineData {
+  class props {
     app!: App
 
     audioContext!: AudioContext
     schedulerNode!: SchedulerNode
     editorScene!: EditorScene
 
+    machine!: MachineData
     audioNode!: AudioNode | false
     Machines!: Record<MachineKind, (props: any) => JSX.Element>
+    showRemoveButton!: boolean
   }, class local {
   host = element
 }, ({ $, fx }) => {
   $.css = /*css*/`
   & {
+    box-sizing: border-box;
     display: flex;
     flex-flow: column wrap;
     position: relative;
@@ -34,30 +37,29 @@ export const Machine = web('machine', view(
   }
   `
 
-  fx(({ host }) =>
-    on(window, 'resize')(() => {
-      host.style.width = window.innerWidth + 'px'
+  fx(({ host }) => {
+    const resize = queue.raf(() => {
+      host.style.width = Math.min(700, window.innerWidth) + 'px'
     })
-  )
+    resize()
+    return on(window, 'resize')(resize)
+  })
 
-  fx(({ app, id, Machines, audioContext, editorScene, schedulerNode, kind, audioNode, detail, outputs, presets, spacer }) => {
-    const Kind = Machines[kind]
+  fx(({ app, Machines, audioContext, editorScene, schedulerNode, audioNode, machine, showRemoveButton }) => {
+    const Kind = Machines[machine.kind]
 
     $.view = <>
       <Kind
         app={app}
 
-        id={id}
-
         audioContext={audioContext}
         schedulerNode={schedulerNode}
         editorScene={editorScene}
-
         audioNode={audioNode}
-        detail={detail}
-        outputs={outputs}
-        presets={presets}
-        spacer={spacer}
+
+        {...machine}
+
+        showRemoveButton={showRemoveButton}
       />
     </>
   })

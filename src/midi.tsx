@@ -1,6 +1,6 @@
 /** @jsxImportSource minimal-view */
 
-import { web, view } from 'minimal-view'
+import { web, view, element } from 'minimal-view'
 import { Rect } from 'geometrik'
 
 import { MidiOp } from 'webaudio-tools'
@@ -9,34 +9,46 @@ const MidiOps = new Set(Object.values(MidiOp))
 
 export const Midi = web('midi', view(
   class props {
+    state!: 'idle' | 'running' | 'suspended'
     audioContext!: AudioContext
     midiEvents: WebMidi.MIDIMessageEvent[] = []
     numberOfBars: number = 1
   }, class local {
+  host = element
   rects?: (readonly [Rect, [WebMidi.MIDIMessageEvent, WebMidi.MIDIMessageEvent]])[]
   currentTime!: number
 }, ({ $, fx }) => {
   $.css = /*css*/`
   & {
     contain: size layout style paint;
-    --note-color: #666;
+    --note-color: #d64;
     display: inline-flex;
+
+    &(:not([state=running])) {
+      --note-color: #6665;
+    }
   }
+
   [part=svg] {
     z-index: -1;
     width: 100%;
     height: 100%;
     shape-rendering: optimizeSpeed;
   }
+
   [part=note] {
     shape-rendering: optimizeSpeed;
     fill: var(--note-color);
     &.lit {
-      fill: #028;
+      fill: #03f;
       opacity: 1;
     }
   }
   `
+
+  fx.raf(({ host, state }) => {
+    host.setAttribute('state', state)
+  })
 
   fx(({ midiEvents, numberOfBars }) => {
     const events: WebMidi.MIDIMessageEvent[] = midiEvents.filter(x => MidiOps.has(x.data[0]))
@@ -71,12 +83,14 @@ export const Midi = web('midi', view(
 
   const notesMap = new Map<SVGRectElement, readonly [Rect, [WebMidi.MIDIMessageEvent, WebMidi.MIDIMessageEvent]]>()
 
-  fx(({ audioContext, numberOfBars }) => {
-    const iv = setInterval(() => {
-      $.currentTime = (audioContext.currentTime % numberOfBars) * 1000
-    }, 10)
-    return () => {
-      clearInterval(iv)
+  fx(({ state, audioContext, numberOfBars }) => {
+    if (state === 'running') {
+      const iv = setInterval(() => {
+        $.currentTime = (audioContext.currentTime % numberOfBars) * 1000
+      }, 10)
+      return () => {
+        clearInterval(iv)
+      }
     }
   })
 

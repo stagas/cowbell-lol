@@ -62,7 +62,7 @@
     "bunzee": "^1.0.0",
     "chokidar": "3.5.3",
     "devito": "file:../devito",
-    "dokio": "^1.1.0",
+    "dokio": "file:../dokio",
     "dom-recorder": "file:../dom-recorder",
     "eslint": "8.20.0",
     "eslint-config-html-jsx": "^1.0.0",
@@ -90,6 +90,7 @@
     "scheduler-node": "file:../scheduler-node",
     "to-fluent": "file:../to-fluent",
     "webaudio-tools": "file:../webaudio-tools",
+    "x-knob": "file:../x-knob",
     "x-spacer": "file:../x-spacer",
     "xorshift": "*"
   }

@@ -1,6 +1,6 @@
 /** @jsxImportSource minimal-view */
 
-import { web, view } from 'minimal-view'
+import { web, view, element } from 'minimal-view'
 
 import { animSchedule, animRemoveSchedule } from './anim'
 
@@ -16,6 +16,7 @@ export const Waveform = web('waveform', view(
 
   }, class local {
 
+  host = element
   running?: boolean
 
   bytes?: Uint8Array
@@ -36,7 +37,11 @@ export const Waveform = web('waveform', view(
     height: 0;
     min-height: 100%;
     width: 100%;
-  }`
+  }
+  &(:not([running])) {
+    opacity: 0.2;
+  }
+  `
 
   const pr = window.devicePixelRatio
 
@@ -46,7 +51,7 @@ export const Waveform = web('waveform', view(
     let py = 0.5 * height
 
     c.fillStyle = '#000'
-    c.strokeStyle = '#66f'
+    c.strokeStyle = '#16e'
     c.imageSmoothingEnabled = false
     function waveTick() {
       analyser.getByteTimeDomainData(bytes)
@@ -60,7 +65,7 @@ export const Waveform = web('waveform', view(
       c.drawImage(canvas, -1, 0, width, height)
       c.fillRect(canvas.width - 1, 0, 1, height)
 
-      const y = (height - pr) * h
+      const y = (height - pr) * h + pr / 2
       c.beginPath()
       c.lineWidth = pr
       c.moveTo(width - 1, py)
@@ -70,6 +75,10 @@ export const Waveform = web('waveform', view(
       py = y
     }
     return waveTick
+  })
+
+  fx.raf(({ host, running }) => {
+    host.toggleAttribute('running', running)
   })
 
   fx(({ canvas }) => {
@@ -94,9 +103,9 @@ export const Waveform = web('waveform', view(
 
   fx(({ width, height }) => {
     $.view = <canvas ref={refs.canvas} width={width} height={height}
-      onclick={() => {
-        $.running = !$.running
-      }}
+    // onclick={() => {
+    //   $.running = !$.running
+    // }}
     />
   })
 })))

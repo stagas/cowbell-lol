@@ -14,6 +14,7 @@ export const Layout = web('layout', view(class props {
 }, ({ $, fx, fn }) => {
   $.css = /*css*/`
   & {
+    position: relative;
     display: flex;
     transition:
       width 3.5ms linear,
@@ -25,6 +26,10 @@ export const Layout = web('layout', view(class props {
   > * {
     width: 100%;
     height: 100%;
+  }
+
+  [part=waveform] {
+    min-height: 88px; /* 90px-2px border */
   }
   `
 

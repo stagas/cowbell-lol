@@ -46,8 +46,9 @@ export const Mono = web('mono', view(
 
     audioContext!: AudioContext
     editorScene!: EditorScene
-
     audioNode!: AudioNode
+
+    showRemoveButton = false
   }, class local {
   host = element
 
@@ -69,7 +70,7 @@ export const Mono = web('mono', view(
   }
 
   [part=controls] {
-    z-index: 2;
+    z-index: 999999;
     font-family: system-ui;
     display: flex;
     flex-flow: row wrap;
@@ -78,8 +79,30 @@ export const Mono = web('mono', view(
     margin: 7px;
     top: 0;
     left: 0;
+
+    ${Button} {
+      cursor: pointer;
+      opacity: 0.35;
+      &[part=remove] {
+        opacity: 0.7;
+      }
+      &:hover {
+        opacity: 1;
+      }
+    }
+  }
+
+  &([state=running]) [part=controls] ${Button} {
+    opacity: 1;
+    &:hover {
+      color: #fff !important;
+    }
   }
   `
+
+  fx.raf(({ host, state }) => {
+    host.setAttribute('state', state)
+  })
 
   fx(({ audioNode }) => {
     $.monoNode = audioNode as any
@@ -127,10 +150,15 @@ export const Mono = web('mono', view(
 
       localStorage.monoCode = monoCode
 
-      if (prev === 'suspended' || prev === 'idle') {
-        $.state = 'suspended'
-      } else {
-        start()
+      // @ts-ignore $.state might have changed during our await above but TS
+      // has narrowed it down to 'compiling' and warns this path will always be true.
+      if ($.state !== 'running') {
+        if (prev === 'suspended' || prev === 'idle') {
+          $.state = 'suspended'
+          monoNode.suspend()
+        } else {
+          start()
+        }
       }
 
       prev = null
@@ -163,45 +191,45 @@ export const Mono = web('mono', view(
     $.state = 'suspended'
   })
 
-  fx(({ app, id, host, editorScene, state, spacer, analyser, detail, presets, monoCode }) => {
+  fx(({ app, id, groupId, host, editorScene, state, spacer, analyser, detail, presets, showRemoveButton }) => {
     // console.log('PRRESETS', presets, detail)
     $.view = <>
       <div part="controls">
-        <Button onClick={start} style={{
+        <Button shadow={3} onClick={state === 'running' ? stop : start} style={{
           color: {
-            ['running']: 'green',
+            ['running']: '#1f3',
             ['compiling']: 'cyan',
             ['error']: 'red',
-            ['idle']: '#333',
-            ['suspended']: '#666',
+            ['idle']: '#334',
+            ['suspended']: '#667',
           }[state]
         }}>
-          <IconSvg set="feather" icon="play-circle" />
+          <IconSvg set="feather" icon={state === 'running' ? "stop-circle" : "play-circle"} />
         </Button>
-
-        <Button onClick={stop} style={{
-          color: {
-            ['running']: '#fff',
-            ['compiling']: '#444',
-            ['error']: '#444',
-            ['idle']: '#444',
-            ['suspended']: '#444',
-          }[state]
-        }}>
-          <IconSvg set="feather" icon="stop-circle" />
-        </Button>
+        {
+          showRemoveButton && state === 'suspended' &&
+          <Button part="remove" shadow={3} onClick={() =>
+            app.removeMachinesInGroup(groupId)} style={{
+              color: '#f30'
+            }}>
+            <IconSvg set="feather" icon="x-circle" />
+          </Button>
+        }
       </div>
       <Spacer part="spacer" app={app} id={id} layout={host} initial={spacer}>
         <Waveform
+          part="waveform"
           analyser={analyser}
           width={100}
           height={50}
           running={state !== 'suspended'}
         />
         <Code
+          style="border-bottom: 2px solid transparent"
           editorScene={editorScene} value={deps.monoCode}
         />
         <Presets
+          style="border-bottom: 2px solid transparent"
           app={app}
           id={id}
           detail={detail}

@@ -22,20 +22,19 @@ export interface Preset<T = any> {
 export const Presets = web('presets', view(
   class props {
     app!: App
-
     id!: string
     presets!: Preset[]
     detail!: any
   }, class local {
   host = element
   selected: string | false = false
-
   size?: Point
 }, ({ $, fx }) => {
   $.css = /*css*/`
   & {
     --cols: 1;
     --rows: 1;
+    box-sizing: border-box;
     width: 100%;
     height: 100%;
     display: flex;
@@ -83,6 +82,7 @@ export const Presets = web('presets', view(
       height: 100%;
       background-repeat: repeat;
       background-size: 30px 30px;
+      background-position: center;
     }
 
     &:hover,
@@ -92,6 +92,9 @@ export const Presets = web('presets', view(
       }
       & [part=overlay] {
         opacity: 1;
+      }
+      & [part=draft] {
+        opacity: 0.8;
       }
     }
   }
@@ -121,6 +124,8 @@ export const Presets = web('presets', view(
         onpointerdown={(e) => {
           if (e.shiftKey && (e.ctrlKey || e.metaKey)) {
             app.removePresetById(id, preset.id)
+          } else if (e.buttons & 4) { // middle button
+            app.renamePresetRandom(id, preset.id, e.altKey)
           } else {
             app.selectPreset(id, preset.id, true)
           }
@@ -132,8 +137,8 @@ export const Presets = web('presets', view(
         <div part="overlay"></div>
         <div part="draft" style={preset.isDraft ? {
           backgroundImage: `url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 90 90" preserveAspectRatio="xMidYMid meet">\
-          <circle cx="22.5" cy="22.5" r="20" fill="hsl(${(preset.hue + 180) % 360}, 75%, 20%)" />\
-          <circle cx="67.5" cy="67.5" r="20" fill="hsl(${(preset.hue + 180) % 360}, 75%, 20%)" />\
+          <circle cx="22.5" cy="22.5" r="20" fill="hsl(${(preset.hue + 45) % 360}, 75%, 20%)" />\
+          <circle cx="67.5" cy="67.5" r="20" fill="hsl(${(preset.hue + 45) % 360}, 75%, 20%)" />\
           " /></svg>')` } : {}}></div>
         <Stretchy width={30} height={27}>
           {preset.name}

@@ -1,7 +1,7 @@
 /** @jsxImportSource minimal-view */
 
 import { Point, Rect, Scalar } from 'geometrik'
-import { web, view, element, on } from 'minimal-view'
+import { web, view, element, on, chain, queue } from 'minimal-view'
 
 import { App } from './app'
 import { Layout } from './components'
@@ -36,13 +36,15 @@ export const Spacer = web('spacer', view(class props {
   [part=handle] {
     position: absolute;
     z-index: 10;
-    width: 10px;
+    width: 2px;
+    padding: 0 4px 0 4px;
     margin-left: -5px;
     height: 100%;
     cursor: ew-resize;
     &.dragging,
     &:hover {
-      background: #f94a;
+      background: #5efa;
+      background-clip: content-box;
     }
     transition:
       left 3.5ms linear
@@ -55,14 +57,18 @@ export const Spacer = web('spacer', view(class props {
     $.cells = $.intents = [...initial]
   })
 
-  fx(({ host, layout }) =>
-    observe.resize.initial(layout, () => {
+  fx(({ host, layout }) => {
+    const resize = queue.raf(() => {
       $.rect = new Rect(layout.getBoundingClientRect()).round()
       Object.assign(host.style, $.rect.toStyle())
     })
-  )
+    return chain(
+      on(window, 'resize')(resize),
+      observe.resize.initial(layout, resize)
+    )
+  })
 
-  const handleDown = fn(({ host, rect, cells, intents }) => function spacerHandleDown(el: HTMLDivElement, e: PointerEvent, index: number) {
+  const handleDown = fn(({ rect, cells, intents }) => function spacerHandleDown(el: HTMLDivElement, e: PointerEvent, index: number) {
     el.classList.add('dragging')
 
     const moveTo = (pos: Point) => {
@@ -109,7 +115,7 @@ export const Spacer = web('spacer', view(class props {
     }
 
     const getPointerPos = (e: PointerEvent) => {
-      return new Point(e.pageX, e.pageY)
+      return new Point(e.pageX, e.pageY).sub(rect.pos)
     }
 
     let ended = false
@@ -125,7 +131,10 @@ export const Spacer = web('spacer', view(class props {
         if (index === $.cells.length - 1 && $.cells.at(-1)! > 0.99) {
           moveTo(new Point(window.innerWidth, 0))
         } else {
-          moveTo(getPointerPos(e).gridRound(15).translate(-(15 - (window.innerWidth % 15)), 0))
+          moveTo(getPointerPos(e)
+            .gridRound(15)
+            // .translate(-(15 - (rect.width % 15)), 0)
+          )
         }
         $.intents = [...$.cells]
         el.classList.remove('dragging')

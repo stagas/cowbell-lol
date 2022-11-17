@@ -10,8 +10,6 @@ export const Code = web('code', view(
     value!: Dep<string>
   }, class local {
   host = element
-
-  code?: string
   editor?: CanvyElement
 }, ({ $, fx, refs }) => {
   $.css = /*css*/`
@@ -23,15 +21,17 @@ export const Code = web('code', view(
   `
 
   fx(({ value }) =>
-    effect({ value }, ({ value }) =>
-      fx(({ editor }) =>
-        editor.$.effect(({ files, ready }) => {
-          if (ready) {
-            $.code = files[0].value = value
-            files[0].setData(files[0])
-          }
-        })
-      )
+    fx(({ editor }) =>
+      editor.$.effect(({ files, ready }) => {
+        if (ready) {
+          return effect({ value }, ({ value }) => {
+            if (value !== files[0].value) {
+              files[0].value = value
+              files[0].setData(files[0])
+            }
+          })
+        }
+      })
     )
   )
 
