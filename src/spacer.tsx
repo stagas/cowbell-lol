@@ -122,7 +122,6 @@ export const Spacer = web('spacer', view(class props {
       off()
       ended = true
       requestAnimationFrame(() => {
-        console.log($.cells, index)
         if (index === $.cells.length - 1 && $.cells.at(-1)! > 0.99) {
           moveTo(new Point(window.innerWidth, 0))
         } else {

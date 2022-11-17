@@ -9,6 +9,7 @@ import { IconSvg } from 'icon-svg'
 import { Button, Code, Waveform, Spacer, Presets } from './components'
 import { MachineData } from './machine-data'
 import type { App } from './app'
+import { setParam } from './util/audio'
 
 const monoDefaultEditorValue = `\\\\\\ a track \\\\\\
 #:6,3;
@@ -57,6 +58,7 @@ export const Mono = web('mono', view(
 
   monoNode?: MonoNode
   monoCode!: string
+  gainNode?: GainNode
 }, ({ $, fx, fn, deps }) => {
   $.css = /*css*/`
   & {
@@ -99,6 +101,21 @@ export const Mono = web('mono', view(
     })
   })
 
+  fx(({ audioContext, analyser, monoNode }) => {
+    const gainNode = $.gainNode = new GainNode(audioContext, { channelCount: 1, gain: 0 })
+    monoNode.connect(gainNode)
+    monoNode.connect(analyser)
+    gainNode.connect(audioContext.destination)
+
+    return () => {
+      setParam(audioContext, gainNode.gain, 0)
+      setTimeout(() => {
+        gainNode.disconnect(audioContext.destination)
+        monoNode.disconnect(gainNode)
+      }, 50)
+    }
+  })
+
   let prev: any
   fx.debounce(250)(abort.latest(signal => async ({ app, id, monoNode, monoCode }) => {
     try {
@@ -123,23 +140,26 @@ export const Mono = web('mono', view(
     }
   }))
 
-  const start = fn(({ audioContext, analyser, monoNode }) => () => {
-    monoNode.connect(audioContext.destination)
+  const start = fn(({ audioContext, analyser, monoNode, gainNode }) => () => {
+    setParam(audioContext, gainNode.gain, 1)
     monoNode.connect(analyser)
+    monoNode.resume()
     $.state = 'running'
   })
 
-  const stop = fn(({ audioContext, analyser, monoNode }) => () => {
+  const stop = fn(({ audioContext, analyser, monoNode, gainNode }) => () => {
     if ($.state === 'suspended') return
-    try {
-      monoNode.disconnect(audioContext.destination)
-    } catch (err) { console.warn(err) }
+    setParam(audioContext, gainNode.gain, 0)
+    // try {
+    //   monoNode.disconnect(audioContext.destination)
+    // } catch (err) { console.warn(err) }
     try {
       monoNode.disconnect(analyser)
     } catch (err) { console.warn(err) }
     try {
-      monoNode.worklet.suspend()
+      monoNode.suspend()
     } catch (err) { console.warn(err) }
+
     $.state = 'suspended'
   })
 

@@ -169,6 +169,20 @@ export const App = web('app', view(
           throw new Error('No target audio node found with id: ' + targetId)
         }
         sourceNode.connect(targetNode as any)
+        const off = on(targetNode, 'suspend' as never)(() => {
+          sourceNode.disconnect(targetNode as any)
+          on(targetNode, 'resume' as never).once(() => {
+            sourceNode.connect(targetNode as any)
+          })
+        })
+        return () => {
+          try {
+            sourceNode.disconnect(targetNode as any)
+          } catch (error) {
+            console.warn(error)
+          }
+          off()
+        }
       }),
 
       disconnectNode: fn(({ audioNodes }) => (sourceNode, targetId) => {
@@ -509,7 +523,7 @@ export const App = web('app', view(
   fx(({ app, state, itemsView, detail, presets, height }) => {
     if (state === 'init') return
     $.view = <>
-      <Presets app={app} id="app" detail={detail} presets={presets} />
+      <Presets app={app} id="app" detail={detail} presets={presets} style="position:sticky;top:0;z-index:2;background:#000a" />
       <Vertical app={app} id="app" height={height} />
       {itemsView}
       <Button onClick={() => {

@@ -45,14 +45,11 @@ export const Scheduler = web('scheduler', view(
     editorScene!: EditorScene
   }, class local {
   host = element
+
   sandbox?: Sandbox
-
   groupNode?: SchedulerEventGroupNode
-
   schedulerCode!: string
-
   numberOfBars = 1
-
   midiEvents: WebMidi.MIDIMessageEvent[] = []
 }, ({ $, fx, deps, refs }) => {
   $.css = /*css*/`
@@ -95,14 +92,12 @@ export const Scheduler = web('scheduler', view(
   })
 
   fx(({ app, schedulerNode, groupNode, outputs }) =>
-    chain(outputs.map((output) => {
-      app.connectNode(schedulerNode, output)
-      app.connectNode(groupNode, output)
-      return () => {
-        app.disconnectNode(schedulerNode, output)
-        app.disconnectNode(groupNode, output)
-      }
-    }))
+    chain(outputs.map((output) =>
+      chain(
+        app.connectNode(schedulerNode, output),
+        app.connectNode(groupNode, output)
+      )
+    ))
   )
 
   fx(async () => {
