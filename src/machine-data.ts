@@ -30,6 +30,7 @@ export class MachineData<T extends ItemDetail = ItemDetail> {
   declare editor?: CanvyElement
   declare updateSliders?: () => Map<string, SliderParam> | undefined
   declare onWheel?: (ev: WheelEvent, sliderId?: string) => void
+  declare updateMarkers?: (sliders: Map<string, SliderParam>) => void
   declare setSliderNormal?: (sliderId: string, newNormal: number) => void
   declare updateEditorValueArgs?: (
     editorValue: string,

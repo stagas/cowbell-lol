@@ -297,6 +297,12 @@ export const Mono = web('mono', view(
     }
   })
 
+  const updateMarkers = fn(({ editor }) => (sliders: Map<string, SliderParam>) => {
+    const paramMarkers = [...sliders.values()].map(markerForSlider)
+
+    editor!.setMarkers([...paramMarkers, ...($.errorMarkers ?? [])])
+  })
+
   const setSliderNormal = fn(({ id, app, editor, errorMarkers }) => function setSliderNormal(sliderId: string, newNormal: number) {
     const machine = app.machines.getById(id)
 
@@ -367,7 +373,7 @@ export const Mono = web('mono', view(
   })
 
   fx(({ app, id, editor }) => {
-    app.setMachineControls(id, { start, stop, compile, editor, updateSliders, onWheel, setSliderNormal, updateEditorValueArgs })
+    app.setMachineControls(id, { start, stop, compile, editor, updateSliders, onWheel, setSliderNormal, updateEditorValueArgs, updateMarkers })
   })
 
   let initial = true

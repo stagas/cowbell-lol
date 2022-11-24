@@ -20,7 +20,6 @@ import { SliderParam } from './slider'
 import { copySliders, removeSliderArgsFromCode } from './util/args'
 import { Detail, ItemDetail } from './util/detail'
 import { List } from './util/list'
-import { markerForSlider } from './util/marker'
 import { ancient, emoji, randomName } from './util/random-name'
 import { Vertical } from './vertical'
 
@@ -131,7 +130,6 @@ export class App {
   removeMachinesInGroup: (groupId: string) => void
   setMachineState: (id: string, newState: MachineState) => void
   setMachineControls: (id: string, controls: Partial<MachineData>) => void
-  setMachineSliders: (id: string, sliders: Map<string, SliderParam>) => void
 
   // presets
   getPresetByDetail: (id: string, detail: Detail<ItemDetail>) => Preset<any> | undefined
@@ -303,15 +301,6 @@ export class App {
       $.machines = $.machines.updateById(id, controls)
     }
 
-    this.setMachineSliders = (id, newSliders) => {
-      const machine = $.machines.getById(id) as MachineData<MonoDetail>
-      const preset = machine.presets.getById(machine.selectedPresetId)
-      const sliders = preset.detail.data.sliders
-
-      if (isEqual(sliders, newSliders)) return
-      this.setPresetDetailData(id, preset.detail.merge({ sliders: newSliders }).data)
-    }
-
     this.getPresetByDetail = (id, detail) => {
       const candidates = $.machines.getById(id)
         .presets.items.filter((preset) =>
@@ -453,9 +442,7 @@ export class App {
                 })
               })
 
-              const paramMarkers = [...nextSliders.values()].map(markerForSlider)
-
-              machine.editor!.setMarkers([...paramMarkers])
+              machine.updateMarkers!(nextSliders)
               return
             }
           }
@@ -470,9 +457,7 @@ export class App {
                   })
                 })
 
-                const paramMarkers = [...newSliders.values()].map(markerForSlider)
-
-                machine.editor!.setMarkers([...paramMarkers])
+                machine.updateMarkers!(newSliders)
               }
             })
         } else {
@@ -498,17 +483,16 @@ export class App {
 
               machine.editor!.setValue(code)
 
-              if (sliders) {
-                const paramMarkers = [...sliders.values()].map(markerForSlider)
-
-                machine.editor!.setMarkers([...paramMarkers])
-              }
+              if (sliders) machine.updateMarkers!(sliders)
 
               machine.compile!(code).then(() => {
                 // nothing to do
               })
             }
-
+            else {
+              const sliders = (nextDetail as Detail<MonoDetail>).data.sliders
+              if (sliders) machine.updateMarkers!(sliders)
+            }
           }
         }
 
@@ -552,9 +536,7 @@ export class App {
           if (prev && prevDetail && prevDetail.data.sliders && nextDetail && machine.editor && nextMonoDetail.data.sliders) {
             if (byClick && !sameCodeNoArgs) {
               machine.editor.setValue(nextMonoDetail.data.editorValue)
-            } else if (
-              nextMonoDetail.data.editorValue !== machine.editor.value
-            ) {
+            } else if (nextMonoDetail.data.editorValue !== machine.editor.value) {
               try {
                 machine.updateEditorValueArgs!(
                   prevDetail.data.editorValue,
@@ -567,9 +549,7 @@ export class App {
               }
             }
 
-            const paramMarkers = [...nextMonoDetail.data.sliders.values()].map(markerForSlider)
-
-            machine.editor.setMarkers([...paramMarkers])
+            machine.updateMarkers!(nextMonoDetail.data.sliders)
           }
         }
       }
@@ -695,6 +675,7 @@ export class App {
       if (current.isDraft) {
         setDraft(id, { index, preset: current })
         this.selectPreset(id, current.id, false, newDetail, byGroup)
+        // machine.updateMarkers!(newDetail.data.sliders)
         return
       }
 
