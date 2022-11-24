@@ -1,8 +1,8 @@
 /** @jsxImportSource minimal-view */
 
-import { memoize } from 'everyday-utils'
+import { memoize, once } from 'everyday-utils'
 import { Point, Rect } from 'geometrik'
-import { element, view, web } from 'minimal-view'
+import { chain, element, Off, on, view, web } from 'minimal-view'
 
 import { App } from './app'
 import { Stretchy } from './stretchy'
@@ -18,6 +18,7 @@ export class Preset<T extends ItemDetail = ItemDetail> {
   detail!: Detail<T>
   isIntent?: boolean
   isDraft?: boolean
+  isRemoved?: boolean
 }
 
 const bgForHue = memoize((hue: number) => {
@@ -27,6 +28,8 @@ const bgForHue = memoize((hue: number) => {
   " /></svg>')`
 })
 
+const removers = new Set<Off>()
+
 const PresetView = view(class extends Preset {
   app!: App
   machineId!: string
@@ -34,8 +37,42 @@ const PresetView = view(class extends Preset {
   height!: string
   isSelected!: boolean
 }, class local {
-}, ({ $, fx }) => {
-  fx(({ app, name, machineId, id, hue, width, height, isSelected, isDraft }) => {
+}, ({ $, fx, fn }) => {
+  let offEvents: Off
+
+  const maybeRemove = (e: PointerEvent | KeyboardEvent) => {
+    if (!(e.shiftKey && (e.ctrlKey || e.metaKey))) {
+      removers.forEach((remove) => remove())
+      removers.clear()
+      offEvents()
+    }
+  }
+
+  const onPointerDown = fn(({ app, machineId, id }) => function onPresetPointerDown(e: PointerEvent) {
+    if ($.isRemoved) return
+
+    if (e.shiftKey && (e.ctrlKey || e.metaKey)) {
+      app.updatePresetById(machineId, id, { isRemoved: true })
+
+      const remove = () => {
+        app.removePresetById(machineId, id)
+        offEvents?.()
+      }
+
+      removers.add(remove)
+
+      offEvents = once(chain(
+        on(((e.target as HTMLElement).getRootNode() as any).host as HTMLElement, 'pointerleave').once(maybeRemove),
+        on(window, 'keyup').once(maybeRemove)
+      ))
+    } else if (e.buttons & 4) { // middle button
+      app.renamePresetRandom(machineId, id, e.altKey)
+    } else {
+      app.selectPreset(machineId, id, true)
+    }
+  })
+
+  fx(({ app, name, machineId, id, hue, width, height, isSelected, isDraft, isRemoved }) => {
     $.view = <div
       id={id}
       part="preset"
@@ -47,18 +84,11 @@ const PresetView = view(class extends Preset {
       class={
         classes({
           ['selected']: isSelected,
+          ['removed']: isRemoved,
           ['draft']: isDraft
         })
       }
-      onpointerdown={(e) => {
-        if (e.shiftKey && (e.ctrlKey || e.metaKey)) {
-          app.removePresetById(machineId, id)
-        } else if (e.buttons & 4) { // middle button
-          app.renamePresetRandom(machineId, id, e.altKey)
-        } else {
-          app.selectPreset(machineId, id, true)
-        }
-      }}
+      onpointerdown={onPointerDown}
       ondblclick={(e) => {
         // removing so cancel dblclick
         if (e.shiftKey && (e.ctrlKey || e.metaKey)) return
@@ -184,6 +214,10 @@ export const Presets = web('presets', view(
       }
     }
 
+    &.removed {
+      visibility: hidden;
+    }
+
     &:hover,
     &.selected {
       --shadow-color: hsl(var(--hue), 85%, 65%);
@@ -230,7 +264,7 @@ export const Presets = web('presets', view(
   })
 
   fx(({ app, id, presets, selectedPresetId, width, height }) => {
-    $.view = presets.map((preset) =>
+    const Preset = (preset: Preset) =>
       <PresetView
         {...preset}
         part="preset"
@@ -240,6 +274,9 @@ export const Presets = web('presets', view(
         machineId={id}
         isSelected={selectedPresetId === preset.id}
       />
-    )
+    $.view = presets
+      .filter((preset) => !preset.isRemoved)
+      .concat(presets.filter((preset) => preset.isRemoved))
+      .map(Preset)
   })
 }))

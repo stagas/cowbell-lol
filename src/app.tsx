@@ -134,6 +134,7 @@ export class App {
   // presets
   getPresetByDetail: (id: string, detail: Detail<ItemDetail>) => Preset<any> | undefined
   insertPreset: (id: string, index: number, newDetail: Detail<ItemDetail>, isIntent?: boolean) => void
+  updatePresetById: (id: string, presetId: string, data: Partial<Preset>) => void
   removePresetById: (id: string, presetId: string, fallbackPresetId?: string | undefined) => void
   setPresetDetailData: (id: string, newDetailData: Partial<Detail<ItemDetail>['data']>, bySelect?: boolean | undefined, byGroup?: boolean | undefined) => void
   selectPreset: (id: string, presetId: string | false, byClick?: boolean | undefined, newDetail?: Detail<ItemDetail> | undefined, byGroup?: boolean | undefined) => void
@@ -149,6 +150,7 @@ export class App {
 
     const migrate = <T extends ItemDetail>(machine: MachineData<T>) => {
       for (const preset of machine.presets.items) {
+        preset.isRemoved = false
         if (Array.isArray(preset.detail)) {
           for (const p of preset.detail) {
             p[2] = new Detail(p[2])
@@ -311,20 +313,23 @@ export class App {
       return nonDraft ?? candidates[0]
     }
 
-    this.renamePresetRandom = (id, presetId, useEmoji) => {
+    this.updatePresetById = (id, presetId, data) => {
       $.machines = $.machines.updateById(id, {
         presets: $.machines.getById(id)
-          .presets.updateById(presetId, {
-            hue: (Math.round((Math.random() * 10e4) / 25) * 25) % 360,
-            name: randomName(useEmoji ? emoji : ancient)
-          })
+          .presets.updateById(presetId, data)
+      })
+    }
+
+    this.renamePresetRandom = (id, presetId, useEmoji) => {
+      this.updatePresetById(id, presetId, {
+        hue: (Math.round((Math.random() * 10e4) / 25) * 25) % 360,
+        name: randomName(useEmoji ? emoji : ancient)
       })
     }
 
     this.savePreset = (id, presetId) => {
-      $.machines = $.machines.updateById(id, {
-        presets: $.machines.getById(id)
-          .presets.updateById(presetId, { isDraft: false })
+      this.updatePresetById(id, presetId, {
+        isDraft: false
       })
     }
 
