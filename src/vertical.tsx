@@ -2,7 +2,7 @@
 
 import { Point } from 'geometrik'
 import { getElementOffset } from 'get-element-offset'
-import { element, on, view, web } from 'minimal-view'
+import { element, on, queue, view, web } from 'minimal-view'
 
 import { App } from './app'
 
@@ -94,12 +94,12 @@ export const Vertical = web('vertical', view(class props {
       height + 'px'
   })
 
-  const handleDown = fn(({ app, minHeight, id, host, target, sibling }) => function verticalHandleDown(e: PointerEvent) {
+  const handleDown = fn(({ app, fixed, minHeight, id, host, target, sibling }) => function verticalHandleDown(e: PointerEvent) {
     host.classList.add('dragging')
 
     const getPointerPos = (e: PointerEvent) => {
-      // const scrollTop = fixed ? 0 : document.body.scrollTop
-      return new Point(e.pageX, e.pageY) // + scrollTop)
+      const scrollTop = fixed ? document.documentElement.scrollTop : 0
+      return new Point(e.pageX, e.pageY - scrollTop)
     }
 
     let moveTo: (pos: Point, force?: boolean) => void
@@ -173,7 +173,7 @@ export const Vertical = web('vertical', view(class props {
       moveTo = (pos, force) => {
         if (ended && !force) return
 
-        const targetTop = getElementOffset(target).y
+        const targetTop = fixed ? 0 : getElementOffset(target).y
         const h = pos.y - targetTop
         setHeight(target, height = Math.max(prevHeight < minHeight ? 45 : minHeight, h))
         if (height > minHeight) {
@@ -184,15 +184,15 @@ export const Vertical = web('vertical', view(class props {
       }
     }
 
-    const setHeight = (el: HTMLElement, height: number) => {
+    const setHeight = queue.raf((el: HTMLElement, height: number) => {
       el.style.height =
         el.style.minHeight =
         el.style.maxHeight =
         height + 'px'
-    }
+    })
 
     let ended = false
-    const off = on(window, 'pointermove').raf(function verticalPointerMove(e) {
+    const off = on(window, 'pointermove')(function verticalPointerMove(e) {
       if (ended) return
       moveTo(getPointerPos(e))
     })
@@ -201,7 +201,7 @@ export const Vertical = web('vertical', view(class props {
       ended = true
       off()
       requestAnimationFrame(() => {
-        const targetTop = getElementOffset(target).y
+        const targetTop = fixed ? 0 : getElementOffset(target).y
 
         moveTo(getPointerPos(e)
           .sub(0, targetTop)
