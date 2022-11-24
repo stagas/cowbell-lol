@@ -1,6 +1,6 @@
 /** @jsxImportSource minimal-view */
 
-import { web, view, Dep, effect, element } from 'minimal-view'
+import { Dep, element, view, web } from 'minimal-view'
 
 import { Canvy, CanvyElement, EditorScene } from 'canvy'
 
@@ -8,10 +8,14 @@ export const Code = web('code', view(
   class props {
     editorScene!: EditorScene
     value!: Dep<string>
+    editor?: Dep<CanvyElement>
+    onWheel?: (ev: WheelEvent) => void = () => { }
+    onEnterMarker?: (ev: { detail: { marker: unknown, markerIndex: number } }) => void = () => { }
+    onLeaveMarker?: (ev: { detail: { marker: unknown, markerIndex: number } }) => void = () => { }
   }, class local {
   host = element
-  editor?: CanvyElement
-}, ({ $, fx, refs }) => {
+  waitingEditor?: CanvyElement
+}, ({ $, fx, fn, refs }) => {
   $.css = /*css*/`
   & {
     box-sizing: border-box;
@@ -20,33 +24,40 @@ export const Code = web('code', view(
   }
   `
 
-  fx(({ value }) =>
-    fx(({ editor }) =>
-      editor.$.effect(({ files, ready }) => {
-        if (ready) {
-          return effect({ value }, ({ value }) => {
-            if (value !== files[0].value) {
-              files[0].value = value
-              files[0].setData(files[0])
-            }
-          })
-        }
-      })
-    )
+  const off = fx(({ editor, waitingEditor }) =>
+    waitingEditor.$.effect(({ ready }) => {
+      if (ready) {
+        off()
+        editor.current = waitingEditor
+      }
+    })
   )
 
-  fx(({ editorScene, value }) => {
-    $.view = <Canvy key="text"
-      ref={refs.editor}
+  const onCodeChange = fn(({ value }) => function onCodeChange(this: CanvyElement) {
+    if (this.ready && this.value != null) {
+      value.value = this.value
+    }
+  })
+
+  const onEvent = fn(({ onWheel }) => function onCodeEvent(this: CanvyElement, { detail: ev }) {
+    if (ev.name === 'mousewheel') {
+      onWheel(ev.data)
+    }
+  })
+
+  fx(({ editorScene, onEnterMarker, onLeaveMarker }) => {
+    $.view = <Canvy
+      key="text"
+      ref={refs.waitingEditor}
       part="canvy"
       scene={editorScene}
       font="/example/CascadiaMono.woff2"
-      fontSize={14}
-      onchange={
-        function (this: CanvyElement) {
-          if (this.ready) {
-            value.value = this.value
-          }
-        }} />
+      fontSize={17}
+      onevent={onEvent}
+      onentermarker={onEnterMarker}
+      onleavemarker={onLeaveMarker}
+      onchange={onCodeChange}
+      onedit={onCodeChange}
+    />
   })
 }))

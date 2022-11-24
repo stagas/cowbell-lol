@@ -1,27 +1,33 @@
 /** @jsxImportSource minimal-view */
 
-import { web, view, element, chain, on } from 'minimal-view'
+import { chain, element, on, view, web } from 'minimal-view'
 
-import { EditorScene } from 'canvy'
+import { CanvyElement } from 'canvy'
+// @ts-ignore TODO: suppressing temporarily
 import { createSandbox, Sandbox } from 'sandbox-worklet'
-import { SchedulerEventGroupNode, SchedulerNode } from 'scheduler-node'
+import { SchedulerEventGroupNode } from 'scheduler-node'
 
 import type { App } from './app'
 
-import { Code, Spacer, Midi, Presets } from './components'
+import { Code } from './code'
 import { MachineData } from './machine-data'
+import { Midi } from './midi'
+import { Presets } from './presets'
+import { Spacer } from './spacer'
+import { Detail } from './util/detail'
+import { Wavetracer } from './wavetracer'
 
-let sandbox: Sandbox | null = null
-let sandboxPromise: Promise<Sandbox>
-let sandboxTimeout: any
-  ; (async function create() {
-    sandboxPromise = createSandbox()
-    sandbox = await sandboxPromise
-    sandbox.ondestroy = () => {
-      clearTimeout(sandboxTimeout)
-      sandboxTimeout = setTimeout(create, 3000)
-    }
-  })()
+// let sandbox: Sandbox | null = null
+// let sandboxPromise: Promise<Sandbox>
+// let sandboxTimeout: any
+//   ; (async function create() {
+//     sandboxPromise = createSandbox()
+//     sandbox = await sandboxPromise
+//     sandbox.ondestroy = () => {
+//       clearTimeout(sandboxTimeout)
+//       sandboxTimeout = setTimeout(create, 3000)
+//     }
+//   })()
 
 export interface SchedulerDetail {
   editorValue: string
@@ -40,18 +46,15 @@ on(1/4,delay(
 export const Scheduler = web('scheduler', view(
   class props extends MachineData<SchedulerDetail> {
     app!: App
-    audioContext!: AudioContext
-    schedulerNode!: SchedulerNode
-    editorScene!: EditorScene
   }, class local {
   host = element
-
-  state: 'idle' | 'running' | 'suspended' = 'suspended'
+  detail?: Detail<SchedulerDetail>
   sandbox?: Sandbox
   groupNode?: SchedulerEventGroupNode
   schedulerCode!: string
   numberOfBars = 1
   midiEvents: WebMidi.MIDIMessageEvent[] = []
+  editor!: CanvyElement
 }, ({ $, fx, deps, refs }) => {
   $.css = /*css*/`
   & {
@@ -61,40 +64,44 @@ export const Scheduler = web('scheduler', view(
     max-width: 100%;
   }
   `
-  // $.css = /*css*/`
-  // & {
-  //   display: flex;
-  //   /* > * {
-  //     flex: 1;
-  //   } */
-  // }
 
-  // ${Code} {
-  //   flex: 1;
-  // }
-  // `
-
-  fx(({ detail }) => {
-    $.schedulerCode = (detail && detail.editorValue) || (localStorage.schedulerCode || schedulerDefaultEditorValue)
+  fx(({ app, id, editor, selectedPresetId, presets }) => {
+    if (selectedPresetId) {
+      const preset = presets.getById(selectedPresetId)
+      $.detail = preset.detail
+      editor.setValue($.detail.data.editorValue)
+    } else {
+      if (!$.detail) {
+        app.setPresetDetailData(id, {
+          editorValue: localStorage.schedulerCode || schedulerDefaultEditorValue
+        })
+      }
+    }
   })
 
   fx(({ app, id, schedulerCode }) => {
-    app.onDetailChange(id, {
-      editorValue: schedulerCode
-    })
+    app.setPresetDetailData(id, { editorValue: schedulerCode })
   })
 
+  fx(({ app, id, editor }) => {
+    app.setMachineControls(id, { editor })
+  })
+
+
   fx(({ schedulerNode }) => {
-    const groupNode = $.groupNode =
-      new SchedulerEventGroupNode(schedulerNode)
+    const groupNode =
+      $.groupNode = new SchedulerEventGroupNode(schedulerNode)
     return () => {
       groupNode.destroy()
     }
   })
 
-  fx(({ groupNode }) =>
+  fx(({ app, id, groupNode }) =>
     on(groupNode, 'connectchange')(() => {
-      $.state = groupNode.eventGroup.targets.size ? 'running' : 'suspended'
+      app.setMachineState(id,
+        groupNode.eventGroup.targets.size
+          ? 'running' : 'suspended'
+      )
     })
   )
 
@@ -108,14 +115,29 @@ export const Scheduler = web('scheduler', view(
   )
 
   fx(async () => {
-    $.sandbox = await sandboxPromise.then(() => ({
+    // TODO: temporarily disabling sandbox for demo deployments
+    $.sandbox = {
       eval(code: string) {
-        return sandbox?.eval(code)
+        return new Function(code)()
+        // return sandbox?.eval(code)
       },
       destroy() {
-        sandbox?.destroy()
+        // sandbox?.destroy()
       },
-    } as Sandbox))
+    } as Sandbox
+
+    // ****************************************************************
+    // TODO: should enable sandbox in production
+    // ****************************************************************
+    // $.sandbox = await sandboxPromise.then(() => ({
+    //   eval(code: string) {
+    //     return sandbox?.eval(code)
+    //   },
+    //   destroy() {
+    //     sandbox?.destroy()
+    //   },
+    // } as Sandbox))
+    // ****************************************************************
   })
 
   fx(({ groupNode, numberOfBars }) => {
@@ -137,10 +159,6 @@ export const Scheduler = web('scheduler', view(
         let rand = rnd;
       `
 
-      // eslint-disable-next-line prefer-const
-      // let start = 0
-      // eslint-disable-next-line prefer-const
-      // let end = numberOfBars
       const events: any[] = []
 
       const On = (start: number, end: number) => {
@@ -313,17 +331,42 @@ export const Scheduler = web('scheduler', view(
     }
   })
 
-  fx(({ app, id, host, state, audioContext, editorScene, midiEvents, numberOfBars, presets, detail, spacer }) => {
+  fx(({ app, id, host, state, audioContext, workerBytes, midiEvents, numberOfBars, presets, selectedPresetId, spacer }) => {
     $.view =
-      <Spacer id={id} app={app} layout={host} initial={spacer}>
-        <Midi part="waveform" style="position:absolute; bottom:0" state={state} audioContext={audioContext} midiEvents={midiEvents} numberOfBars={numberOfBars} />
-        <Code editorScene={editorScene} value={deps.schedulerCode} />
+      <Spacer part="spacer" id={id} app={app} layout={host} initial={spacer}>
+        <Code
+          editorScene={app.editorScene}
+          editor={deps.editor}
+          value={deps.schedulerCode}
+        />
+        <div part="overlay">
+          <Wavetracer
+            part="waveform"
+            id={`${id}-tracer`}
+            kind="tracer"
+            style="position:absolute;bottom:0"
+            audioContext={audioContext}
+            workerBytes={workerBytes}
+            running={state === 'running'}
+            loopTime={numberOfBars}
+          />
+          <Midi
+            part="waveform"
+            style="position:absolute; bottom:0"
+            state={state as any}
+            audioContext={audioContext}
+            midiEvents={midiEvents}
+            numberOfBars={numberOfBars}
+          />
+        </div>
         <Presets
           app={app}
           id={id}
-          detail={detail}
-          presets={presets}
+          selectedPresetId={selectedPresetId}
+          presets={presets.items}
+          style="pointer-events: all"
         />
+
       </Spacer>
   })
 }))

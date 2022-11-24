@@ -1,66 +1,67 @@
 /** @jsxImportSource minimal-view */
 
-import { web, view, element, on, queue } from 'minimal-view'
+import { element, on, queue, view, web } from 'minimal-view'
 
-import type { EditorScene } from 'canvy'
-import type { SchedulerNode } from 'scheduler-node'
 import type { App } from './app'
+import { MachineData } from './machine-data'
+import { MonoDetail } from './mono'
+import { SchedulerDetail } from './scheduler'
 
-import { MachineKind, MachineData } from './machine-data'
+export * from './machine-data'
+
+export type MachineAudio = Pick<MachineData,
+  & 'audioContext'
+  & 'audioNode'
+  & 'analyserNode'
+  & 'schedulerNode'
+>
 
 export const Machine = web('machine', view(
   class props {
     app!: App
-
-    audioContext!: AudioContext
-    schedulerNode!: SchedulerNode
-    editorScene!: EditorScene
-
-    machine!: MachineData
-    audioNode!: AudioNode | false
-    Machines!: Record<MachineKind, (props: any) => JSX.Element>
-    showRemoveButton!: boolean
+    audio!: MachineAudio
+    machine!: MachineData<MonoDetail | SchedulerDetail>
   }, class local {
   host = element
 }, ({ $, fx }) => {
-  $.css = /*css*/`
-  & {
-    box-sizing: border-box;
-    display: flex;
-    flex-flow: column wrap;
-    position: relative;
-    max-height: 100%;
+  fx(({ machine }) => {
+    $.css = /*css*/`
+    & {
+      box-sizing: border-box;
+      display: flex;
+      flex-flow: column wrap;
+      position: relative;
+      max-height: 100%;
+      z-index: ${machine.kind === 'scheduler' ? 4 : 3};
+      pointer-events: none;
 
-    > * {
-      flex: 1;
+      > * {
+        flex: 1;
+      }
     }
-  }
-  `
+    `
+  })
+
+  fx(({ host, machine }) => {
+    host.setAttribute('id', machine.id)
+  })
 
   fx(({ host }) => {
     const resize = queue.raf(() => {
-      host.style.width = Math.min(700, window.innerWidth) + 'px'
+      host.style.width = Math.min(800, window.innerWidth - 50) + 'px'
     })
     resize()
     return on(window, 'resize')(resize)
   })
 
-  fx(({ app, Machines, audioContext, editorScene, schedulerNode, audioNode, machine, showRemoveButton }) => {
-    const Kind = Machines[machine.kind]
+  fx(({ app, audio, machine }) => {
+    const Kind = app.Machines[machine.kind]
 
-    $.view = <>
-      <Kind
-        app={app}
-
-        audioContext={audioContext}
-        schedulerNode={schedulerNode}
-        editorScene={editorScene}
-        audioNode={audioNode}
-
-        {...machine}
-
-        showRemoveButton={showRemoveButton}
-      />
-    </>
+    $.view = <Kind
+      app={app}
+      machine={machine}
+      {...audio}
+      {...machine}
+    />
   })
 }))

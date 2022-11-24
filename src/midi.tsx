@@ -1,8 +1,7 @@
 /** @jsxImportSource minimal-view */
 
-import { web, view, element } from 'minimal-view'
 import { Rect } from 'geometrik'
-
+import { element, view, web } from 'minimal-view'
 import { MidiOp } from 'webaudio-tools'
 
 const MidiOps = new Set(Object.values(MidiOp))
@@ -25,7 +24,7 @@ export const Midi = web('midi', view(
     display: inline-flex;
 
     &(:not([state=running])) {
-      --note-color: #6665;
+      --note-color: #666c;
     }
   }
 
@@ -39,6 +38,7 @@ export const Midi = web('midi', view(
   [part=note] {
     shape-rendering: optimizeSpeed;
     fill: var(--note-color);
+    opacity: 0.5;
     &.lit {
       fill: #03f;
       opacity: 1;

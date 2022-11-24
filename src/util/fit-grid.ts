@@ -75,13 +75,13 @@ export const fitGrid = (width: number, height: number, total: number) => {
   }
 
   candidates = candidates
-    .filter(({ frac }) => frac === 0 || frac >= 0.35)
+    .filter(({ frac }) => frac === 0 || frac <= 0.65)//
     .sort((a, b) =>
       sortCompare(a.aspect, b.aspect))
 
-  const search = (candidates: Candidate[]) => {
+  const search = (candidates: Candidate[], maxAspect = 0.85) => {
     for (const c of candidates) {
-      if ((!c.hanging || !c.fitsFrac) && c.aspect < 0.5) {
+      if ((!c.hanging || !c.fitsFrac) && c.aspect <= maxAspect) {
         return c
       }
     }
@@ -93,11 +93,22 @@ export const fitGrid = (width: number, height: number, total: number) => {
   for (const f of [0.5, 0.25]) {
     attempt = candidates.filter(({ frac }) =>
       frac === 0 || frac % f === 0)
-    result = search(attempt)
+
+    result = search(attempt, 0.65)
     if (result) {
       // console.log('o')
       break
     }
+    // result = search(attempt, 0.65)
+    // if (result) {
+    //   // console.log('o')
+    //   break
+    // }
+    // result = search(attempt, 0.85)
+    // if (result) {
+    //   // console.log('o')
+    //   break
+    // }
   }
 
   if (!result) {

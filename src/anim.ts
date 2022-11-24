@@ -1,4 +1,4 @@
-import { queue } from 'minimal-view'
+import { queue } from 'event-toolkit'
 
 function animCall(fn: any) { fn() }
 

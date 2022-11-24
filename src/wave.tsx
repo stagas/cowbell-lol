@@ -1,8 +1,8 @@
 /** @jsxImportSource minimal-view */
 
-import { web, view } from 'minimal-view'
+import { view, web } from 'minimal-view'
 
-import { animSchedule, animRemoveSchedule } from './anim'
+import { animRemoveSchedule, animSchedule } from './anim'
 
 export const Wave = web('wave', view(
   class props {

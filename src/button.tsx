@@ -1,7 +1,7 @@
 /** @jsxImportSource minimal-view */
 
 import { IconSvg } from 'icon-svg'
-import { web, view, event } from 'minimal-view'
+import { event, view, web } from 'minimal-view'
 
 export const Button = web('btn', view(
   class props {
@@ -9,7 +9,7 @@ export const Button = web('btn', view(
     shadow?: false | number = false
     children?: JSX.Element
   }, class local {
-}, ({ $, fx }) => {
+}, ({ $, fx, fn }) => {
   $.css = /*css*/`
   button {
     cursor: pointer;
@@ -20,15 +20,16 @@ export const Button = web('btn', view(
   }
 
   ${IconSvg} {
-  }
-
-  ${IconSvg}::part(svg) {
-    height: 73px;
-    stroke-width: 1.25px;
-  }
-
-  ${IconSvg}.small::part(svg) {
-    height: 56px;
+    &::part(svg) {
+      height: 73px;
+      stroke-width: 1.25px;
+    }
+    &.small::part(svg) {
+      height: 56px;
+    }
+    &.smaller::part(svg) {
+      height: 28px;
+    }
   }
 
   [part=shadow] {
@@ -43,13 +44,14 @@ export const Button = web('btn', view(
     ${IconSvg}::part(svg) {
       stroke-width: var(--shadow-size);
     }
-
   }
   `
 
-  fx(({ onClick, shadow, children }) => {
+  const onClick = fn(({ onClick }) => event.prevent.stop(onClick))
+
+  fx(({ shadow, children }) => {
     $.view = <>
-      <button onclick={event.prevent.stop(onClick)}>
+      <button onclick={onClick}>
         {children}
         {shadow &&
           <div part="shadow" style={`--shadow-size:${shadow}px`}>

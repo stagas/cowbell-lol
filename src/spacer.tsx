@@ -1,10 +1,10 @@
 /** @jsxImportSource minimal-view */
 
 import { Point, Rect, Scalar } from 'geometrik'
-import { web, view, element, on, chain, queue } from 'minimal-view'
+import { chain, element, on, queue, view, web } from 'minimal-view'
 
 import { App } from './app'
-import { Layout } from './components'
+import { Layout } from './layout'
 import { observe } from './util/observe'
 
 const { clamp } = Scalar
@@ -14,6 +14,8 @@ export const Spacer = web('spacer', view(class props {
   id!: string
   layout!: HTMLElement
   initial!: number[]
+  snap?= true
+  vertical?= false
   children?: JSX.Element[]
 }, class local {
   host = element
@@ -22,35 +24,41 @@ export const Spacer = web('spacer', view(class props {
   intents!: number[]
   handles?: JSX.Element[]
 }, ({ $, fx, fn }) => {
-  $.css = /*css*/`
-  & {
-    display: flex;
-    /* overflow: hidden; */
-  }
+  const dims = (vertical?: boolean) =>
+    vertical
+      ? ['height', 'width', 'top', 'ns-resize', 'y', 'column'] as const
+      : ['width', 'height', 'left', 'ew-resize', 'x', 'row'] as const
 
-  > * {
-    width: 100%;
-    height: 100%;
-  }
+  fx(({ vertical }) => {
+    const [dim, opp, pos, cursor, , flow] = dims(vertical)
 
-  [part=handle] {
-    position: absolute;
-    z-index: 10;
-    width: 2px;
-    padding: 0 4px 0 4px;
-    margin-left: -5px;
-    height: 100%;
-    cursor: ew-resize;
-    &.dragging,
-    &:hover {
-      background: #5efa;
-      background-clip: content-box;
+    $.css = /*css*/`
+    & {
+      display: flex;
+      flex-flow: ${flow} nowrap;
     }
-    transition:
-      left 3.5ms linear
-      ;
-  }
-  `
+
+    [part=handle] {
+      pointer-events: all;
+      position: absolute;
+      z-index: 10;
+      ${dim}: 3px;
+      padding: ${vertical ? '' : '0 '} 4px 0 4px;
+      margin-${pos}: -5px;
+      ${opp}: 100%;
+      cursor: ${cursor};
+      background-color: #aaa2;
+      background-clip: content-box;
+      &.dragging,
+      &:hover {
+        background-color: #5efa !important;
+      }
+      transition:
+        left 3.5ms linear
+        ;
+    }
+    `
+  })
 
   const off = fx(({ initial }) => {
     off()
@@ -68,11 +76,13 @@ export const Spacer = web('spacer', view(class props {
     )
   })
 
-  const handleDown = fn(({ rect, cells, intents }) => function spacerHandleDown(el: HTMLDivElement, e: PointerEvent, index: number) {
+  const handleDown = fn(({ rect, cells, intents, vertical, snap }) => function spacerHandleDown(el: HTMLDivElement, e: PointerEvent, index: number) {
     el.classList.add('dragging')
 
+    const [dim, , , , n] = dims(vertical)
+
     const moveTo = (pos: Point) => {
-      let posN = pos.x / rect.width
+      let posN = pos[n] / rect[dim]
       posN = clamp(0, 1, posN)
 
       const newCells = [...cells]
@@ -128,13 +138,12 @@ export const Spacer = web('spacer', view(class props {
       off()
       ended = true
       requestAnimationFrame(() => {
-        if (index === $.cells.length - 1 && $.cells.at(-1)! > 0.99) {
-          moveTo(new Point(window.innerWidth, 0))
-        } else {
-          moveTo(getPointerPos(e)
-            .gridRound(15)
-            // .translate(-(15 - (rect.width % 15)), 0)
-          )
+        if (snap) {
+          if (index === $.cells.length - 1 && $.cells.at(-1)! > 0.99) {
+            moveTo(new Point(window.innerWidth, 0))
+          } else {
+            moveTo(getPointerPos(e).gridRound(15))
+          }
         }
         $.intents = [...$.cells]
         el.classList.remove('dragging')
@@ -146,11 +155,12 @@ export const Spacer = web('spacer', view(class props {
     app.setSpacer(id, intents)
   })
 
-  fx(({ cells }) => {
-    $.handles = cells.slice(1).map((left, i) =>
+  fx(({ cells, vertical }) => {
+    const [, , pos] = dims(vertical)
+    $.handles = cells.slice(1).map((p, i) =>
       <div
         part="handle"
-        style={{ left: left * 100 + '%' }}
+        style={{ [pos]: p * 100 + '%' }}
         onpointerdown={function (this: HTMLDivElement, e) {
           e.preventDefault()
           handleDown(this, e, i + 1)
@@ -159,12 +169,12 @@ export const Spacer = web('spacer', view(class props {
     )
   })
 
-  fx(({ layout, handles, children, cells }) => {
+  fx(({ layout, handles, children, cells, vertical }) => {
     $.view = [
       (Array.isArray(children) ? children : [children]).map((child, i) => {
         const after = (i < children.length - 1 ? cells[i + 1] : 1)
-        const width = after - cells[i]
-        return <Layout layout={layout} width={width}>{child}</Layout>
+        const size = after - cells[i]
+        return <Layout layout={layout} size={size} vertical={vertical}>{child}</Layout>
       }),
       handles
     ]

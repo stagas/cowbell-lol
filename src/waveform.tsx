@@ -1,8 +1,8 @@
 /** @jsxImportSource minimal-view */
 
-import { web, view, element } from 'minimal-view'
+import { element, view, web } from 'minimal-view'
 
-import { animSchedule, animRemoveSchedule } from './anim'
+import { animRemoveSchedule, animSchedule } from './anim'
 
 export const Waveform = web('waveform', view(
   class props {
@@ -12,7 +12,7 @@ export const Waveform = web('waveform', view(
     width = 200
     height = 100
 
-    analyser!: AnalyserNode
+    analyserNode!: AnalyserNode
 
   }, class local {
 
@@ -29,6 +29,8 @@ export const Waveform = web('waveform', view(
   $.css = /*css*/`
   & {
     display: block;
+    width: 100%;
+    height: 100%;
   }
   canvas {
     background: #000;
@@ -46,7 +48,7 @@ export const Waveform = web('waveform', view(
   const pr = window.devicePixelRatio
 
   let stop = () => { }
-  const draw = fn(({ analyser, bytes, canvas, c, width, height }) => {
+  const draw = fn(({ analyserNode: analyser, bytes, canvas, c, width, height }) => {
     stop = () => animRemoveSchedule(waveTick)
     let py = 0.5 * height
 
@@ -97,7 +99,7 @@ export const Waveform = web('waveform', view(
     }
   })
 
-  fx(({ analyser }) => {
+  fx(({ analyserNode: analyser }) => {
     $.bytes = new Uint8Array(analyser.fftSize)
   })
 

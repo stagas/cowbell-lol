@@ -11,7 +11,7 @@ if (false)
   enableDebug(5000)
 effect.maxUpdates = 100000
 
-import { App } from '../src'
+import { AppView } from '..'
 
 const css = /*css*/`
 html, body {
@@ -19,10 +19,10 @@ html, body {
   padding: 0;
   width: 100%;
   height: 100%;
-  overflow-y: scroll;
-}`
+}
+`
 
 render(<>
   <style>{css}</style>
-  <App />
+  <AppView />
 </>, document.body)
