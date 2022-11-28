@@ -22,11 +22,11 @@ export const Layout = web('layout', view(class props {
       /* height: 100%; */
       position: relative;
       display: flex;
-      transition:
+      /* transition:
         ${dim} 3.5ms linear,
         min-${dim} 3.5ms linear,
         max-${dim} 3.5ms linear
-        ;
+        ; */
     }
 
     > *,
@@ -40,25 +40,6 @@ export const Layout = web('layout', view(class props {
       pointer-events: none;
       min-height: 88px; /* 90px-2px border */
     }
-
-    /* [part=sliders] {
-      position: absolute;
-      left: 0;
-      top: 0;
-      z-index: 1;
-      opacity: 1;
-      box-sizing: border-box;
-      /* padding: 12px 12px; */
-      /* padding-left: 30%; */
-      /* overflow: hidden;
-      width: 100%;
-      max-width: 100%;
-      min-height: 88px; 90px-2px border */
-
-      /* &[small] {
-        padding-top: 90px;
-      } */
-    /* } */
 
     [part=editor] {
       pointer-events: none;

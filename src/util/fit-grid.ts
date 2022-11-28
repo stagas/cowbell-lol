@@ -24,64 +24,69 @@ export const fitGrid = (width: number, height: number, total: number) => {
   }
   let candidates: Candidate[] = []
 
-  const vertical = true //asp < 1
+  // const vertical = true //asp < 1
 
-  if (!vertical) {
-    for (let i = 1; i <= total; i++) {
-      const cols = i
-      const rows = total / cols
+  // if (!vertical) {
+  //   for (let i = 1; i <= total; i++) {
+  //     const cols = i
+  //     const rows = total / cols
 
-      const iw = w / cols
-      const ih = h / Math.ceil(rows)
-      const a = iw / ih
+  //     const iw = w / cols
+  //     const ih = h / Math.ceil(rows)
+  //     const a = iw / ih
 
-      const frac = rows - (rows | 0)
-      const fits = Math.abs(cols / rows - 1)
-      const hanging = total - (cols * (rows | 0))
+  //     const frac = rows - (rows | 0)
+  //     const fits = Math.abs(cols / rows - 1)
+  //     const hanging = total - (cols * (rows | 0))
 
-      candidates.push({
-        aspect: Math.abs(a - 1),
-        frac,
-        cols,
-        rows,
-        fits,
-        fitsFrac: fits - (fits | 0),
-        hanging,
-      })
-    }
-  } else {
-    for (let i = 1; i <= total; i++) {
-      const rows = i
-      const cols = total / rows
+  //     candidates.push({
+  //       aspect: Math.abs(a - 1),
+  //       frac,
+  //       cols,
+  //       rows,
+  //       fits,
+  //       fitsFrac: fits - (fits | 0),
+  //       hanging,
+  //     })
+  //   }
+  // } else {
+  for (let i = 1; i <= total; i++) {
+    const rows = i
+    const cols = total / rows
 
-      const iw = w / cols
-      const ih = h / rows
-      const a = iw / ih
+    const iw = w / Math.ceil(cols)
+    const ih = h / rows
+    const a = iw / ih
 
-      const frac = cols - (cols | 0)
-      const fits = Math.abs(cols / rows - 1)
-      const hanging = total - ((cols | 0) * rows)
+    const frac = cols - (cols | 0)
+    const fits = Math.abs(cols / rows - 1)
+    const hanging = total - (Math.ceil(cols) * rows)
 
-      candidates.push({
-        aspect: Math.abs(a - 1),
-        frac,
-        cols,
-        rows,
-        fits,
-        fitsFrac: fits - (fits | 0),
-        hanging,
-      })
-    }
+    candidates.push({
+      aspect: Math.abs(a - 1),
+      frac,
+      cols: Math.ceil(cols),
+      rows,
+      fits,
+      fitsFrac: fits - (fits | 0),
+      hanging,
+    })
   }
+  // }
 
   candidates = candidates
-    .filter(({ frac }) => frac === 0 || frac <= 0.65)//
+    .filter(({ frac, cols, hanging }) =>
+      (frac === 0 || frac <= 0.85)
+      && Math.abs(hanging) <= cols
+    )//
     .sort((a, b) =>
       sortCompare(a.aspect, b.aspect))
+  // sortCompare(Math.abs(a.hanging), Math.abs(b.hanging)))
 
-  const search = (candidates: Candidate[], maxAspect = 0.85) => {
+  const search = (candidates: Candidate[], maxAspect = 0.65) => {
     for (const c of candidates) {
-      if ((!c.hanging || !c.fitsFrac) && c.aspect <= maxAspect) {
+      if (c.aspect <= maxAspect) {
+        // if ((!c.hanging || !c.fitsFrac) && c.aspect <= maxAspect) {
         return c
       }
     }
@@ -90,26 +95,30 @@ export const fitGrid = (width: number, height: number, total: number) => {
   let result
   let attempt
 
+  // console.log(candidates)
   for (const f of [0.5, 0.25]) {
     attempt = candidates.filter(({ frac }) =>
       frac === 0 || frac % f === 0)
-
-    result = search(attempt, 0.65)
+    result = search(attempt, 0.35)
     if (result) {
       // console.log('o')
       break
     }
-    // result = search(attempt, 0.65)
-    // if (result) {
-    //   // console.log('o')
-    //   break
-    // }
-    // result = search(attempt, 0.85)
-    // if (result) {
-    //   // console.log('o')
-    //   break
-    // }
   }
+
+  result ??= search(candidates, 0.35)
+
+  // result = search(attempt, 0.65)
+  // if (result) {
+  //   // console.log('o')
+  //   break
+  // }
+  // result = search(attempt, 0.85)
+  // if (result) {
+  //   // console.log('o')
+  //   break
+  // }
+  // }
 
   if (!result) {
     attempt = candidates
@@ -132,23 +141,23 @@ export const fitGrid = (width: number, height: number, total: number) => {
     return {
       cols: 1,
       rows: 1,
-      vertical: false,
+      // vertical: false,
     }
   }
 
   const { cols: newCols, rows: newRows } = result
 
-  if (vertical) {
-    return {
-      cols: Math.ceil(newCols),
-      rows: newRows,
-      vertical,
-    }
-  } else {
-    return {
-      cols: newCols,
-      rows: Math.ceil(newRows),
-      vertical,
-    }
+  // if (vertical) {
+  //   return {
+  //     cols: Math.ceil(newCols),
+  //     rows: newRows,
+  //     vertical,
+  //   }
+  // } else {
+  return {
+    cols: newCols,
+    rows: Math.ceil(newRows),
+    // vertical,
   }
+  // }
 }

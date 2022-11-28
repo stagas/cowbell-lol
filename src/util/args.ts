@@ -1,6 +1,8 @@
-import { SliderParam } from '../slider'
+import { Slider } from '../slider'
 
-export function removeSliderArgsFromCode(sliders: Map<string, SliderParam> | undefined, code: string | undefined) {
+export const parseArgsRegExp = /'(?<id>\w+)\s*?\[.+\]\s*?=\s*(?<value>[.0-9kKf]+)/gi
+
+export function removeSliderArgsFromCode(sliders: Map<string, Slider> | undefined, code: string | undefined) {
   if (sliders == null) return code
   if (code == null) return
 
@@ -13,14 +15,9 @@ export function removeSliderArgsFromCode(sliders: Map<string, SliderParam> | und
   return code
 }
 
-export function copySliders(sliders: Map<string, SliderParam>) {
+export function copySliders(sliders: Map<string, Slider>) {
   return new Map([...sliders].map(
     ([key, slider]) =>
-      [key, {
-        ...slider,
-        source: {
-          ...slider.source
-        }
-      }]
+      [key, new Slider(slider.toJSON())]
   ))
 }

@@ -1,7 +1,7 @@
-import { SliderParam } from '../slider'
+import { Slider } from '../slider'
 import { checksum } from './checksum'
 
-export function markerForSlider(slider: SliderParam) {
+export function markerForSlider(slider: Slider) {
   return ({
     key: slider.id,
     index: slider.sourceIndex,

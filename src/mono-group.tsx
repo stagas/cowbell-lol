@@ -4,23 +4,29 @@ import { element, view, web } from 'minimal-view'
 import { MonoNode } from 'mono-worklet'
 import { animRemoveSchedule, animSchedule } from './anim'
 
-import { App, AppAudio, HEIGHTS } from './app'
-import { Machine, MachineAudio } from './machine'
-import { MachineData } from './machine-data'
-import { MonoDetail } from './mono'
-import { SchedulerDetail } from './scheduler'
+import { AppLocal, HEIGHTS } from './app'
+import { Audio } from './audio'
+import { MachineView } from './machine'
+import { MonoMachine } from './mono'
+import { SchedulerMachine } from './scheduler'
 import { Vertical } from './vertical'
+
+// TODO: make this a machine kind and pass the group's state context to Mono
+// so it can fill in the start/stop ?
 
 export const MonoGroup = web('mono-group', view(
   class props {
-    app!: App
-    audio!: AppAudio
-    mono!: MachineData<MonoDetail>
-    scheduler!: MachineData<SchedulerDetail>
+    app!: AppLocal
+    audio!: Audio
+    mono!: MonoMachine
+    scheduler!: SchedulerMachine
   }, class local {
   host = element
 
   monoId?: string
+
+  monoAudio?: Audio
+  schedulerAudio?: Audio
 
   monoNode?: AudioNode
   analyserNode?: AnalyserNode
@@ -28,9 +34,6 @@ export const MonoGroup = web('mono-group', view(
   running = false
   bytes?: Uint8Array
   workerBytes?: Uint8Array
-
-  monoAudio?: MachineAudio
-  schedulerAudio?: MachineAudio
 
   monoView?: JSX.Element
   schedulerView?: JSX.Element
@@ -98,33 +101,31 @@ export const MonoGroup = web('mono-group', view(
     }
   })
 
-  fx(({ audio, monoNode, workerBytes, analyserNode }) => {
-    $.monoAudio = { ...audio, audioNode: monoNode, workerBytes, analyserNode }
-    $.schedulerAudio = { ...audio, workerBytes }
+  fx(({ audio, analyserNode, monoNode, workerBytes }) => {
+    $.monoAudio = new Audio({
+      ...audio, audioNode: monoNode, workerBytes, analyserNode
+    })
+    $.schedulerAudio = new Audio({ ...audio, workerBytes })
   })
 
-  fx(({ app, audio, schedulerAudio, scheduler }) => {
+  fx(({ app, schedulerAudio, scheduler }) => {
     $.schedulerView = <>
-      <Machine
+      <MachineView
         app={app}
         audio={schedulerAudio}
         machine={scheduler}
-        {...audio}
-        {...scheduler}
       />
 
       <Vertical app={app} id={scheduler.id} height={scheduler.height ?? HEIGHTS[scheduler.kind]} />
     </>
   })
 
-  fx(({ app, audio, mono, monoAudio }) => {
+  fx(({ app, monoAudio, mono }) => {
     $.monoView = <>
-      <Machine
+      <MachineView
         app={app}
         audio={monoAudio}
         machine={mono}
-        {...audio}
-        {...mono}
       />
       <Vertical app={app} id={mono.id} height={mono.height ?? HEIGHTS[mono.kind]} />
     </>

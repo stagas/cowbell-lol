@@ -9,7 +9,7 @@ import { render, enableDebug, effect } from 'minimal-view'
 
 if (false)
   enableDebug(5000)
-effect.maxUpdates = 100000
+effect.maxUpdates = 1000
 
 import { AppView } from '..'
 
@@ -22,7 +22,9 @@ html, body {
 }
 `
 
-render(<>
-  <style>{css}</style>
-  <AppView />
-</>, document.body)
+setTimeout(() => {
+  render(<>
+    <style>{css}</style>
+    <AppView />
+  </>, document.body)
+})

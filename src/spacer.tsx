@@ -3,14 +3,14 @@
 import { Point, Rect, Scalar } from 'geometrik'
 import { chain, element, on, queue, view, web } from 'minimal-view'
 
-import { App } from './app'
+import { AppLocal } from './app'
 import { Layout } from './layout'
 import { observe } from './util/observe'
 
 const { clamp } = Scalar
 
 export const Spacer = web('spacer', view(class props {
-  app!: App
+  app!: AppLocal
   id!: string
   layout!: HTMLElement
   initial!: number[]
@@ -53,9 +53,9 @@ export const Spacer = web('spacer', view(class props {
       &:hover {
         background-color: #5efa !important;
       }
-      transition:
+      /* transition:
         left 3.5ms linear
-        ;
+        ; */
     }
     `
   })
@@ -129,7 +129,7 @@ export const Spacer = web('spacer', view(class props {
     }
 
     let ended = false
-    const off = on(window, 'pointermove')(function spacerPointerMove(e) {
+    const off = on(window, 'pointermove').raf(function spacerPointerMove(e) {
       if (ended) return
       moveTo(getPointerPos(e))
     })
@@ -152,7 +152,7 @@ export const Spacer = web('spacer', view(class props {
   })
 
   fx(({ app, id, intents }) => {
-    app.setSpacer(id, intents)
+    app.methods.setSpacer(id, intents)
   })
 
   fx(({ cells, vertical }) => {

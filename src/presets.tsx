@@ -2,23 +2,24 @@
 
 import { memoize, once } from 'everyday-utils'
 import { Point, Rect } from 'geometrik'
-import { chain, element, Off, on, view, web } from 'minimal-view'
+import { BasePreset } from 'abstract-presets'
+import { chain, Deps, element, Off, on, view, web } from 'minimal-view'
 
-import { App } from './app'
 import { Stretchy } from './stretchy'
 import { classes } from './util/classes'
-import { Detail, ItemDetail } from './util/detail'
 import { fitGrid } from './util/fit-grid'
 import { observe } from './util/observe'
+import { randomName } from './util/random-name'
+import { MachineDetail } from './machine'
+import { AppLocal } from './app'
 
-export class Preset<T extends ItemDetail = ItemDetail> {
-  id!: string
-  name!: string
-  hue!: number
-  detail!: Detail<T>
-  isIntent?: boolean
-  isDraft?: boolean
-  isRemoved?: boolean
+export class Preset<T extends MachineDetail = MachineDetail> extends BasePreset<T> {
+  name = randomName()
+  hue = (Math.round((Math.random() * 10e4) / 25) * 25) % 360
+  constructor(data: Partial<Preset<T>>) {
+    super(data)
+    Object.assign(this, data)
+  }
 }
 
 const bgForHue = memoize((hue: number) => {
@@ -31,7 +32,7 @@ const bgForHue = memoize((hue: number) => {
 const removers = new Set<Off>()
 
 const PresetView = view(class extends Preset {
-  app!: App
+  app!: AppLocal
   machineId!: string
   width!: string
   height!: string
@@ -52,10 +53,10 @@ const PresetView = view(class extends Preset {
     if ($.isRemoved) return
 
     if (e.shiftKey && (e.ctrlKey || e.metaKey)) {
-      app.updatePresetById(machineId, id, { isRemoved: true })
+      app.methods.updatePresetById(machineId, id, { isRemoved: true })
 
       const remove = () => {
-        app.removePresetById(machineId, id)
+        app.methods.removePresetById(machineId, id)
         offEvents?.()
       }
 
@@ -66,9 +67,9 @@ const PresetView = view(class extends Preset {
         on(window, 'keyup').once(maybeRemove)
       ))
     } else if (e.buttons & 4) { // middle button
-      app.renamePresetRandom(machineId, id, e.altKey)
+      app.methods.renamePresetRandom(machineId, id, e.altKey)
     } else {
-      app.selectPreset(machineId, id, true)
+      app.methods.selectPreset(machineId, id, true)
     }
   })
 
@@ -95,7 +96,7 @@ const PresetView = view(class extends Preset {
         // renaming so cancel dblclick
         if (e.buttons & 4) return
 
-        app.savePreset(machineId, id)
+        app.methods.savePreset(machineId, id)
       }}
     >
       <div part="overlay"></div>
@@ -113,9 +114,9 @@ const PresetView = view(class extends Preset {
   })
 })
 
-export const Presets = web('presets', view(
+export const PresetsView = web('presets', view(
   class props {
-    app!: App
+    app!: AppLocal
     id!: string
     presets!: Preset[]
     selectedPresetId!: string | false
@@ -135,7 +136,7 @@ export const Presets = web('presets', view(
     height: 100%;
     display: flex;
     flex-wrap: wrap;
-    flex-direction: row;
+    flex-direction: column;
     cursor: default;
     user-select: none;
     touch-action: none;
@@ -251,22 +252,30 @@ export const Presets = web('presets', view(
     })
   )
 
-  fx(({ presets }) => {
-    $.presetsLength = presets.length
-  })
+  // fx(({ presets }) => {
+  //   $.presetsLength = presets.length
+  // })
 
-  fx(({ presetsLength, size }) => {
+  // fx(({ presetsLength, size }) => {
+  //   const [w, h] = size
+  //   const total = presetsLength
+  //   const { cols, rows } = fitGrid(w, h, total)
+  //   $.width = 100 / cols + '%'
+  //   $.height = 100 / rows + '%'
+  // })
+
+  fx(({ app, id, presets, selectedPresetId, size }) => {
     const [w, h] = size
-    const total = presetsLength
+    const total = presets.length
     const { cols, rows } = fitGrid(w, h, total)
-    $.width = 100 / cols + '%'
-    $.height = 100 / rows + '%'
-  })
+    const width = 100 / cols + '%'
+    const height = 100 / rows + '%'
+    // console.log(cols, rows, width, height)
 
-  fx(({ app, id, presets, selectedPresetId, width, height }) => {
-    const Preset = (preset: Preset) =>
-      <PresetView
-        {...preset}
+    const Preset = (preset: Preset) => {
+      return <PresetView
+        key={preset.id}
+        {...preset as Deps<Preset>}
         part="preset"
         app={app}
         width={width}
@@ -274,6 +283,8 @@ export const Presets = web('presets', view(
         machineId={id}
         isSelected={selectedPresetId === preset.id}
       />
+    }
+
     $.view = presets
       .filter((preset) => !preset.isRemoved)
       .concat(presets.filter((preset) => preset.isRemoved))

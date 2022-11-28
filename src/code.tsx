@@ -4,6 +4,10 @@ import { Dep, element, view, web } from 'minimal-view'
 
 import { Canvy, CanvyElement, EditorScene } from 'canvy'
 
+export interface EditorDetailData {
+  editorValue: string
+}
+
 export const Code = web('code', view(
   class props {
     editorScene!: EditorScene

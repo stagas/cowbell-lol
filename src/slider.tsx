@@ -3,14 +3,14 @@
 import { Point, Rect, Scalar } from 'geometrik'
 import { chain, element, on, queue, view, web } from 'minimal-view'
 
-import { MachineData } from './machine-data'
+import { MonoMachine } from './mono'
 import { observe } from './util/observe'
 
 const { clamp } = Scalar
 
 let downSlider = false
 
-export class SliderParam {
+export class Slider {
   id!: string
   name!: string
   value!: number
@@ -19,11 +19,24 @@ export class SliderParam {
   hue!: number
   source!: { arg: string; } | { arg: string; id: string; range: string; default: string; }
   sourceIndex!: number
+
+  constructor(data: Partial<Slider>) {
+    Object.assign(this, data)
+  }
+
+  toJSON() {
+    return {
+      ...this,
+      source: {
+        ...this.source
+      }
+    }
+  }
 }
 
-export const Slider = web('slider', view(
-  class props extends SliderParam {
-    machine!: MachineData
+export const SliderView = web('slider', view(
+  class props extends Slider {
+    machine!: MonoMachine
     running!: boolean
     vertical?= true
     children?: JSX.Element
@@ -102,7 +115,7 @@ export const Slider = web('slider', view(
     }
   }
 
-  &([wheels]) {
+  &(:not([drag])) {
     [part=fill] {
       transition:
         height 30ms linear,
@@ -194,10 +207,10 @@ export const Slider = web('slider', view(
     updateNormal(normal)
   })
 
-  const setSliderNormal = fn(({ id, machine }) => (value: number) => machine.setSliderNormal?.(id, value))
+  const setSliderNormal = fn(({ id, machine }) => (value: number) => machine.methods.setSliderNormal(id, value))
 
   let handling = false
-  const handleDown = fn(({ host, id, fill, vertical }) => (e: PointerEvent) => {
+  const handleDown = fn(({ host, vertical }) => (e: PointerEvent) => {
     if (handling || !(e.buttons & 1)) return
 
     if (e.type === 'pointerdown') {
@@ -208,6 +221,8 @@ export const Slider = web('slider', view(
         return
       }
     }
+
+    host.toggleAttribute('drag', true)
 
     handling = true
 
@@ -248,20 +263,13 @@ export const Slider = web('slider', view(
       downSlider = false
       requestAnimationFrame(() => {
         host.classList.remove('active')
+        host.toggleAttribute('drag', false)
       })
     })
   })
 
-  let wheelsTimeout: any
-  const removeWheels = fn(({ host }) => () => {
-    host.toggleAttribute('wheels', false)
-  })
-
   const handleWheel = fn(({ host, id }) => function onSliderWheel(ev: WheelEvent) {
-    host.toggleAttribute('wheels', true)
-    clearTimeout(wheelsTimeout)
-    wheelsTimeout = setTimeout(removeWheels, 100)
-    $.machine.onWheel?.(ev, id)
+    $.machine.methods.onWheel(ev, id)
   })
 
   fx(({ host }) =>
@@ -273,6 +281,7 @@ export const Slider = web('slider', view(
   )
 
   fx(({ name }) => {
+
     $.view = <>
       <div part="hoverable"></div>
       <div part="fill" ref={refs.fill}>

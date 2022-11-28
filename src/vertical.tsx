@@ -2,9 +2,9 @@
 
 import { Point } from 'geometrik'
 import { getElementOffset } from 'get-element-offset'
-import { element, on, queue, view, web } from 'minimal-view'
+import { element, on, view, web } from 'minimal-view'
 
-import { App } from './app'
+import { AppLocal } from './app'
 
 function selectorsToNode(selectors: string[], rootNode = document as any) {
   // let rootNode = document as Document | ShadowRoot | Element | null
@@ -28,7 +28,7 @@ function selectorsToNode(selectors: string[], rootNode = document as any) {
 }
 
 export const Vertical = web('vertical', view(class props {
-  app!: App
+  app!: AppLocal
   id!: string
   height!: number
   minHeight?= 90
@@ -184,14 +184,16 @@ export const Vertical = web('vertical', view(class props {
       }
     }
 
-    const setHeight = queue.raf((el: HTMLElement, height: number) => {
+    const setHeight = (el: HTMLElement, height: number) => {
       el.style.height =
         el.style.minHeight =
         el.style.maxHeight =
         height + 'px'
-    })
+    }
 
     let ended = false
+    // NOTE: this cannot be in a .raf because when resizing
+    // a sticky while scrolled it flickers and messes it up
     const off = on(window, 'pointermove')(function verticalPointerMove(e) {
       if (ended) return
       moveTo(getPointerPos(e))
@@ -211,10 +213,10 @@ export const Vertical = web('vertical', view(class props {
         )
 
         host.classList.remove('dragging')
-        app.setVertical(id, height)
+        app.methods.setVertical(id, height)
 
         if (sibling && heightSibling) {
-          app.setVertical(sibling.id, heightSibling)
+          app.methods.setVertical(sibling.id, heightSibling)
         }
       })
     })

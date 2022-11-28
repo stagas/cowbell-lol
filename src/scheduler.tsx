@@ -2,20 +2,32 @@
 
 import { chain, element, on, view, web } from 'minimal-view'
 
+import { AbstractDetail, BasePresets } from 'abstract-presets'
 import { CanvyElement } from 'canvy'
-// @ts-ignore TODO: suppressing temporarily
-import { createSandbox, Sandbox } from 'sandbox-worklet'
+import { pick } from 'everyday-utils'
 import { SchedulerEventGroupNode } from 'scheduler-node'
 
-import type { App } from './app'
+// @ts-ignore TODO: suppressing temporarily
+import { createSandbox, Sandbox } from 'sandbox-worklet'
 
-import { Code } from './code'
-import { MachineData } from './machine-data'
+import { AppLocal, HEIGHTS, SPACERS } from './app'
+import { Audio } from './audio'
+import { Code, EditorDetailData } from './code'
+import { AudioMachine, MachineKind, MachineState } from './machine'
 import { Midi } from './midi'
-import { Presets } from './presets'
+import { Preset, PresetsView } from './presets'
 import { Spacer } from './spacer'
-import { Detail } from './util/detail'
 import { Wavetracer } from './wavetracer'
+
+const schedulerDefaultEditorValue = `\
+bars=2
+seed=391434
+on(1/4,delay(
+   1/8,0.39,x=>
+  rnd(10)<2?0:[x,
+  24+rnd(5)**2,
+  rnd(100)*3,0.1]))
+`
 
 // let sandbox: Sandbox | null = null
 // let sandboxPromise: Promise<Sandbox>
@@ -29,33 +41,85 @@ import { Wavetracer } from './wavetracer'
 //     }
 //   })()
 
-export interface SchedulerDetail {
-  editorValue: string
+export type SchedulerDetailData = EditorDetailData
+
+export class SchedulerDetail extends AbstractDetail<SchedulerDetailData> {
+  merge(other: this | this['data']) {
+    return new SchedulerDetail(other)
+  }
+
+  equals(other: this | this['data']) {
+    if (!other) return false
+
+    if (other === this) return true
+
+    if (other instanceof SchedulerDetail) other = other.data
+
+    return other.editorValue === this.data.editorValue
+  }
+
+  satisfies(other: this | this['data']) {
+    return this.equals(other)
+  }
 }
 
-const schedulerDefaultEditorValue = `\
-bars=2
-seed=391434
-on(1/4,delay(
-   1/8,0.39,x=>
-  rnd(10)<2?0:[x,
-  24+rnd(5)**2,
-  rnd(100)*3,0.1]))
-`
+export class SchedulerPresets extends BasePresets<SchedulerDetail, Preset<SchedulerDetail>> {
+  constructor(data: Partial<SchedulerPresets> = {}) {
+    super(data, Preset, SchedulerDetail)
+  }
+}
 
-export const Scheduler = web('scheduler', view(
-  class props extends MachineData<SchedulerDetail> {
-    app!: App
-  }, class local {
+export class SchedulerMachine extends AudioMachine<SchedulerPresets> {
+  kind: MachineKind = 'scheduler'
+  height = HEIGHTS['scheduler']
+  spacer = SPACERS.scheduler
+  presets = new SchedulerPresets()
+
+  constructor(data: Partial<SchedulerMachine>) {
+    super(data)
+    Object.assign(this, data)
+  }
+
+  toJSON() {
+    return pick(this, [
+      'id',
+      'kind',
+      'height',
+      'spacer',
+      'presets',
+      'outputs',
+    ])
+  }
+}
+
+export class SchedulerProps {
+  id!: string
+  app!: AppLocal
+  audio!: Audio
+  machine!: SchedulerMachine
+}
+
+export const Scheduler = web('scheduler', view(SchedulerProps, class local {
   host = element
-  detail?: Detail<SchedulerDetail>
-  sandbox?: Sandbox
+  state?: MachineState
+  spacer?: number[]
+  outputs?: SchedulerMachine['outputs']
+
   groupNode?: SchedulerEventGroupNode
+
+  editor!: CanvyElement
+  errorMarkers?: any[] = []
+
+  preset: Preset<SchedulerDetail> | null = null
+  presets?: SchedulerPresets
+
+  sandbox?: Sandbox
   schedulerCode!: string
+
   numberOfBars = 1
   midiEvents: WebMidi.MIDIMessageEvent[] = []
-  editor!: CanvyElement
-}, ({ $, fx, deps, refs }) => {
+
+}, ({ $, fx, deps }) => {
   $.css = /*css*/`
   & {
     display: flex;
@@ -65,14 +129,21 @@ export const Scheduler = web('scheduler', view(
   }
   `
 
-  fx(({ app, id, editor, selectedPresetId, presets }) => {
-    if (selectedPresetId) {
-      const preset = presets.getById(selectedPresetId)
-      $.detail = preset.detail
-      editor.setValue($.detail.data.editorValue)
+  fx(({ machine }) => {
+    $.state = machine.state
+    $.presets = machine.presets
+    $.spacer = machine.spacer
+    $.outputs = machine.outputs
+  })
+
+  fx(({ app, id, editor, presets }) => {
+    const preset = presets.selectedPreset
+    if (preset) {
+      $.preset = preset
+      editor.setValue($.preset.detail.data.editorValue)
     } else {
-      if (!$.detail) {
-        app.setPresetDetailData(id, {
+      if (!$.preset) {
+        app.methods.setPresetDetailData(id, {
           editorValue: localStorage.schedulerCode || schedulerDefaultEditorValue
         })
       }
@@ -80,39 +151,40 @@ export const Scheduler = web('scheduler', view(
   })
 
   fx(({ app, id, schedulerCode }) => {
-    app.setPresetDetailData(id, { editorValue: schedulerCode })
-  })
-
-  fx(({ app, id, editor }) => {
-    app.setMachineControls(id, { editor })
-  })
-
-
-  fx(({ schedulerNode }) => {
-    const groupNode =
-      $.groupNode = new SchedulerEventGroupNode(schedulerNode)
-    return () => {
-      groupNode.destroy()
-    }
+    app.methods.setPresetDetailData(id, { editorValue: schedulerCode })
   })
 
   fx(({ app, id, groupNode }) =>
     on(groupNode, 'connectchange')(() => {
-      app.setMachineState(id,
+      app.methods.setMachineState(id,
         groupNode.eventGroup.targets.size
           ? 'running' : 'suspended'
       )
     })
   )
 
-  fx(({ app, schedulerNode, groupNode, outputs }) =>
+  fx(({ audio: { schedulerNode } }) => {
+    const groupNode = $.groupNode
+      = new SchedulerEventGroupNode(schedulerNode)
+    return () => {
+      groupNode.destroy()
+    }
+  })
+
+  fx(({ app, audio: { schedulerNode }, groupNode, outputs }) =>
     chain(outputs.map((output) =>
       chain(
-        app.connectNode(schedulerNode, output),
-        app.connectNode(groupNode, output)
+        app.methods.connectNode(schedulerNode, output),
+        app.methods.connectNode(groupNode, output)
       )
     ))
   )
+
+
+  fx(({ groupNode, numberOfBars }) => {
+    groupNode.eventGroup.loopEnd = numberOfBars
+    groupNode.eventGroup.loop = true
+  })
 
   fx(async () => {
     // TODO: temporarily disabling sandbox for demo deployments
@@ -138,11 +210,6 @@ export const Scheduler = web('scheduler', view(
     //   },
     // } as Sandbox))
     // ****************************************************************
-  })
-
-  fx(({ groupNode, numberOfBars }) => {
-    groupNode.eventGroup.loopEnd = numberOfBars
-    groupNode.eventGroup.loop = true
   })
 
   fx(async ({ groupNode, sandbox, schedulerCode, numberOfBars }) => {
@@ -331,7 +398,7 @@ export const Scheduler = web('scheduler', view(
     }
   })
 
-  fx(({ app, id, host, state, audioContext, workerBytes, midiEvents, numberOfBars, presets, selectedPresetId, spacer }) => {
+  fx(({ app, id, host, state, audio: { audioContext, workerBytes }, midiEvents, numberOfBars, presets, spacer }) => {
     $.view =
       <Spacer part="spacer" id={id} app={app} layout={host} initial={spacer}>
         <Code
@@ -359,10 +426,10 @@ export const Scheduler = web('scheduler', view(
             numberOfBars={numberOfBars}
           />
         </div>
-        <Presets
+        <PresetsView
           app={app}
           id={id}
-          selectedPresetId={selectedPresetId}
+          selectedPresetId={presets.selectedPresetId}
           presets={presets.items}
           style="pointer-events: all"
         />

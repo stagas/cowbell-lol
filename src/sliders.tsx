@@ -3,14 +3,69 @@
 import { Point, Rect } from 'geometrik'
 import { element, view, web } from 'minimal-view'
 
-import { MachineData } from './machine-data'
-import { Slider, SliderParam } from './slider'
+import { MonoMachine } from './mono'
+import { SliderView, Slider } from './slider'
 import { observe } from './util/observe'
+
+export type Sliders = Map<string, Slider>
+
+export interface SlidersDetailData {
+  sliders: Sliders
+}
+
+// TODO: assertEqual
+export function areSlidersEqual(a: Sliders, b: Sliders | null | undefined) {
+  return [...a].every(([key, x]) => {
+    const y = b?.get(key)
+    if (!y) {
+      console.warn(`Slider ${key} not found.`)
+      return false
+    }
+
+    const equalValue = x.value.toFixed(3) === y.value.toFixed(3)
+    if (!equalValue) {
+      console.warn(`value for slider ${key} not equal: ${x.value.toFixed(3)} !== ${y.value.toFixed(3)}`)
+      return false
+    }
+
+    const equalMin = x.min === y.min
+    if (!equalMin) {
+      console.warn(`min for slider ${key} not equal: ${x.min} !== ${y.min}`)
+      return false
+    }
+
+    const equalMax = x.max === y.max
+    if (!equalMax) {
+      console.warn(`max for slider ${key} not equal: ${x.max} !== ${y.max}`)
+      return false
+    }
+
+    const equalHue = x.hue === y.hue
+    if (!equalHue) {
+      console.warn(`hue for slider ${key} not equal: ${x.hue} !== ${y.hue}`)
+      return false
+    }
+
+    const equalSourceIndex = x.sourceIndex === y.sourceIndex
+    if (!equalSourceIndex) {
+      console.warn(`sourceIndex for slider ${key} not equal: ${x.sourceIndex} !== ${y.sourceIndex}`)
+      return false
+    }
+
+    const equalSourceArg = x.source.arg === y.source.arg
+    if (!equalSourceArg) {
+      console.warn(`source.arg for slider ${key} not equal: ${x.source.arg} !== ${y.source.arg}`)
+      return false
+    }
+
+    return true
+  })
+}
 
 export const Sliders = web('sliders', view(
   class props {
-    machine!: MachineData
-    sliders!: Map<string, SliderParam>
+    machine!: MonoMachine
+    sliders!: Sliders
     running!: boolean
   }, class local {
   host = element
@@ -52,7 +107,7 @@ export const Sliders = web('sliders', view(
       display: none;
     }
 
-    ${Slider} {
+    ${SliderView} {
       margin: 0 -10px;
     }
   }
@@ -73,8 +128,9 @@ export const Sliders = web('sliders', view(
     $.view = <>
       <div part="padding-left" />
       {[...sliders.values()].map((slider) =>
-        <Slider
-          {...slider}
+        <SliderView
+          // TODO: something is going on with this type
+          {...slider as any}
           running={running}
           machine={machine}
           vertical={vertical}

@@ -79,6 +79,7 @@
   "dependencies": {
     "@dylanvann/codemirror-css": "*",
     "@vanillawc/wc-codemirror": "*",
+    "abstract-presets": "file:../abstract-presets",
     "canvy": "file:../canvy",
     "codemirror": "5",
     "event-toolkit": "file:../event-toolkit",
@@ -86,6 +87,7 @@
     "geometrik": "file:../geometrik",
     "get-element-offset": "file:../get-element-offset",
     "icon-svg": "file:../icon-svg",
+    "immutable-list": "file:../immutable-list",
     "json-objectify": "file:../json-objectify",
     "minimal-view": "file:../minimal-view",
     "mono-worklet": "file:../mono-worklet",
