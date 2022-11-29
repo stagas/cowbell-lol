@@ -83,6 +83,7 @@ export class SchedulerMachine extends AudioMachine<SchedulerPresets> {
   toJSON() {
     return pick(this, [
       'id',
+      'groupId',
       'kind',
       'height',
       'spacer',
@@ -398,9 +399,9 @@ export const Scheduler = web('scheduler', view(SchedulerProps, class local {
     }
   })
 
-  fx(({ app, id, host, state, audio: { audioContext, workerBytes }, midiEvents, numberOfBars, presets, spacer }) => {
+  fx(function drawScheduler({ app, id, host, state, audio: { audioContext, workerBytes }, midiEvents, numberOfBars, presets, spacer }) {
     $.view =
-      <Spacer part="spacer" id={id} app={app} layout={host} initial={spacer}>
+      <Spacer part="spacer" id={id} setSpacer={app.methods.setSpacer} layout={host} initial={spacer}>
         <Code
           editorScene={app.editorScene}
           editor={deps.editor}
@@ -429,8 +430,7 @@ export const Scheduler = web('scheduler', view(SchedulerProps, class local {
         <PresetsView
           app={app}
           id={id}
-          selectedPresetId={presets.selectedPresetId}
-          presets={presets.items}
+          presets={presets as any}
           style="pointer-events: all"
         />
 

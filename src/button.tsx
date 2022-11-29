@@ -49,7 +49,7 @@ export const Button = web('btn', view(
 
   const onClick = fn(({ onClick }) => event.prevent.stop(onClick))
 
-  fx(({ shadow, children }) => {
+  fx(function drawButton({ shadow, children }) {
     $.view = <>
       <button onclick={onClick}>
         {children}

@@ -119,11 +119,11 @@ export const Sliders = web('sliders', view(
     })
   )
 
-  fx.raf(({ host, size }) => {
-    host.toggleAttribute('small', size.width < 180)
+  fx.raf(({ host, size, sliders }) => {
+    host.toggleAttribute('small', size.width < 90 * sliders.size)
   })
 
-  fx(({ machine, sliders, running }) => {
+  fx(function drawSliders({ machine, sliders, running }) {
     const vertical = false
     $.view = <>
       <div part="padding-left" />

@@ -9,7 +9,7 @@ import { render, enableDebug, effect } from 'minimal-view'
 
 if (false)
   enableDebug(5000)
-effect.maxUpdates = 1000
+effect.maxUpdates = 10000
 
 import { AppView } from '..'
 

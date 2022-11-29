@@ -108,7 +108,7 @@ export const MonoGroup = web('mono-group', view(
     $.schedulerAudio = new Audio({ ...audio, workerBytes })
   })
 
-  fx(({ app, schedulerAudio, scheduler }) => {
+  fx(function drawSchedulerView({ app, schedulerAudio, scheduler }) {
     $.schedulerView = <>
       <MachineView
         app={app}
@@ -120,7 +120,7 @@ export const MonoGroup = web('mono-group', view(
     </>
   })
 
-  fx(({ app, monoAudio, mono }) => {
+  fx.task(function drawMonoView({ app, monoAudio, mono }) {
     $.monoView = <>
       <MachineView
         app={app}
@@ -131,7 +131,7 @@ export const MonoGroup = web('mono-group', view(
     </>
   })
 
-  fx(({ monoView, schedulerView }) => {
+  fx.task(function drawMonoGroup({ monoView, schedulerView }) {
     $.view = [monoView, schedulerView]
   })
 }))

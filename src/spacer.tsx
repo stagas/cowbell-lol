@@ -10,13 +10,13 @@ import { observe } from './util/observe'
 const { clamp } = Scalar
 
 export const Spacer = web('spacer', view(class props {
-  app!: AppLocal
   id!: string
   layout!: HTMLElement
   initial!: number[]
   snap?= true
   vertical?= false
   children?: JSX.Element[]
+  setSpacer?: AppLocal['methods']['setSpacer']
 }, class local {
   host = element
   rect?: Rect
@@ -41,6 +41,7 @@ export const Spacer = web('spacer', view(class props {
     [part=handle] {
       pointer-events: all;
       position: absolute;
+      touch-action: none;
       z-index: 10;
       ${dim}: 3px;
       padding: ${vertical ? '' : '0 '} 4px 0 4px;
@@ -151,8 +152,8 @@ export const Spacer = web('spacer', view(class props {
     })
   })
 
-  fx(({ app, id, intents }) => {
-    app.methods.setSpacer(id, intents)
+  fx(({ setSpacer, id, intents }) => {
+    setSpacer(id, intents)
   })
 
   fx(({ cells, vertical }) => {

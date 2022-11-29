@@ -120,7 +120,7 @@ export const MachineView = web('machine', view(
     return on(window, 'resize')(resize)
   })
 
-  fx(({ app, audio, machine }) => {
+  fx(function drawMachine({ app, audio, machine }) {
     const Kind = app.Machines[machine.kind] as any
 
     $.view = <Kind

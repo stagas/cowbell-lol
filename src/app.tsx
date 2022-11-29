@@ -13,10 +13,10 @@ import { SchedulerNode } from 'scheduler-node'
 import { AppAudioNode, Audio } from './audio'
 import { Button } from './button'
 import { AudioMachine, Machine, MachineDetail, MachineKind, MachineState } from './machine'
-import { Mono, MonoMachine } from './mono'
+import { Mono, MonoMachine, MonoPresets } from './mono'
 import { MonoGroup } from './mono-group'
 import { Preset, PresetsView } from './presets'
-import { Scheduler, SchedulerMachine } from './scheduler'
+import { Scheduler, SchedulerMachine, SchedulerPresets } from './scheduler'
 import { Slider } from './slider'
 import { ancient, emoji, randomName } from './util/random-name'
 import { deserialize, serialize } from './util/serialize'
@@ -85,7 +85,7 @@ export class AppMethods {
   // presets
   declare getPresetByDetail: <T extends MachineDetail>(id: string, detail: T) => Preset<T> | undefined
   declare insertPreset: <T extends MachineDetail>(id: string, index: number, newDetail: T, isIntent?: boolean) => void
-  declare updatePresetById: <T extends Preset>(id: string, presetId: string, data: Partial<T>) => void
+  declare updatePresetById: <T extends Preset>(id: string, presetId: string, data: Partial<T>) => T
   declare removePresetById: (id: string, presetId: string, fallbackPresetId?: string | undefined) => void
   declare setPresetDetailData: <T extends MachineDetail>(id: string, newDetailData: T['data'], bySelect?: boolean, byIntent?: boolean) => Preset<T>
   declare selectPreset: <T extends MachineDetail>(id: string, presetId: string | false, byClick?: boolean | undefined, newDetail?: T | undefined, byGroup?: boolean | undefined) => void
@@ -235,10 +235,12 @@ export class AppMethods {
     }
 
     this.updatePresetById = (id, presetId, data) => {
+      let presets = $.machines.getById(id).presets
+      presets = presets.updateById(presetId, data)
       $.machines = $.machines.updateById(id, {
-        presets: $.machines.getById(id)
-          .presets.updateById(presetId, data)
+        presets
       })
+      return presets.getById(presetId)
     }
 
     this.renamePresetRandom = (id, presetId, useEmoji) => {
@@ -307,7 +309,7 @@ export class AppMethods {
       $.machines = $.machines.updateById(id, { height })
     }
 
-    debugObjectMethods(this)
+    // debugObjectMethods(this)
 
     return this
   }
@@ -318,8 +320,6 @@ export class AppMachine extends Machine<AppPresets>  {
   kind: MachineKind = 'app'
   height = HEIGHTS['app']
   presets = new AppPresets()
-
-  methods!: AppMethods
 
   constructor(data: Partial<AppMachine> = {}) {
     super(data)
@@ -368,6 +368,8 @@ export class AppLocal {
   fftSize = 32
   audio?: Audio
 
+  playing?: number
+
   sources?: any
 
   // editor
@@ -381,6 +383,15 @@ export class AppLocal {
       pos: new Point(0, 0)
     }
   })
+
+  // jsx views
+  mainControlsView?: JSX.Element
+  addButtonView?: JSX.Element
+  appPresetsView?: JSX.Element
+
+  // optimizations
+  presetsChecksum?: string
+  machinesChecksum?: string
 }
 
 export const AppView = web('app', view(class props { }, AppLocal, ({ $, fx, fn }) => {
@@ -479,7 +490,7 @@ export const AppView = web('app', view(class props { }, AppLocal, ({ $, fx, fn }
     document.body.appendChild(saveBtn)
   })
 
-  fx(({ machines }) => {
+  fx(function updateMachines({ machines }) {
     $.sources = getSources()
     const app = machines.getById('app') as AppMachine
     if (!app.equals($.app)) {
@@ -487,15 +498,14 @@ export const AppView = web('app', view(class props { }, AppLocal, ({ $, fx, fn }
     }
   })
 
-  fx(({ app }) => {
-    app.methods = $.methods
+  fx(function updateAppProps({ app }) {
     $.state = app.state
     $.height = app.height
     $.presets = app.presets
   })
 
-  fx(({ presets }) => {
-    const preset = presets.selectedPreset
+  fx(({ presetsChecksum: _ }) => {
+    const preset = $.presets.selectedPreset
     if (preset) {
       $.preset = preset
     }
@@ -507,7 +517,7 @@ export const AppView = web('app', view(class props { }, AppLocal, ({ $, fx, fn }
     ))
   }
 
-  fx(({ state, sources }) => {
+  fx.task(function updatePresetDetailData({ state, sources }) {
     if (state === 'init') return
 
     if (!$.preset) {
@@ -521,7 +531,8 @@ export const AppView = web('app', view(class props { }, AppLocal, ({ $, fx, fn }
 
     const newDetail = $.preset.detail.collectData($.sources)
 
-    if ($.preset && newDetail.equals($.preset.detail)) return
+    if ($.preset && newDetail.satisfies($.preset.detail)) return
+    // if ($.preset && $.preset.detail.satisfies(newDetail)) return
 
     $.preset = $.methods.setPresetDetailData('app', newDetail.data)
   })
@@ -552,7 +563,7 @@ export const AppView = web('app', view(class props { }, AppLocal, ({ $, fx, fn }
           })
 
           $.sources = getSources()
-          $.preset = presets.createWithDetailData(({ ...next.detail.data, sources: $.sources }))
+          $.preset = presets.createWithDetailData({ ...next.detail.data, sources: $.sources }, next)
           $.machines = machines
         }
       }
@@ -589,7 +600,13 @@ export const AppView = web('app', view(class props { }, AppLocal, ({ $, fx, fn }
     })
   })
 
-  fx(({ state, audio, machines }) => {
+  fx.task(function calcMachinesChecksum({ machines }) {
+    $.machinesChecksum = machines.items.map((m) =>
+      `${m.height}${m.state}${checksumOfPresets(m.presets)}`
+    ).join()
+  })
+
+  fx(function drawItemsView({ state, audio, machinesChecksum }) {
     if (state === 'init') return
 
     const itemsView: any[] = []
@@ -597,7 +614,7 @@ export const AppView = web('app', view(class props { }, AppLocal, ({ $, fx, fn }
     let mono: MonoMachine | undefined
     let scheduler: SchedulerMachine | undefined
 
-    for (const machine of machines.items) {
+    for (const machine of $.machines.items) {
       if (machine.kind === 'app') continue
       if (machine.kind === 'mono') mono = machine as any
       if (machine.kind === 'scheduler') scheduler = machine as any
@@ -606,7 +623,7 @@ export const AppView = web('app', view(class props { }, AppLocal, ({ $, fx, fn }
         itemsView.push(
           <MonoGroup
             part="item"
-            // key={mono.groupId}
+            key={mono.groupId}
             app={$}
             audio={audio}
             mono={mono}
@@ -617,13 +634,69 @@ export const AppView = web('app', view(class props { }, AppLocal, ({ $, fx, fn }
       }
     }
 
-    $.itemsView = itemsView
+    $.itemsView = <div part="items">{itemsView}</div>
   })
 
-  fx(({ machines, itemsView, state, presets, height }) => {
-    if (state === 'init') return
+  fx(({ machines }) => {
+    $.playing = machines.items.filter((machine) => machine.kind === 'mono' && machine.state === 'running').length
+  })
 
-    const playing = machines.items.filter((machine) => machine.kind === 'mono' && machine.state === 'running').length
+  fx(function drawMainControls({ playing }) {
+    $.mainControlsView = <div part="main-controls">
+      <Button onClick={playing ? $.methods.stopPlaying : $.methods.startPlaying}>
+        <IconSvg class="small" set="feather" icon={playing ? 'pause' : 'play'} />
+      </Button>
+      <Button onClick={() => { }}>
+        <IconSvg class="small" set="feather" icon="more-vertical" />
+      </Button>
+    </div>
+  })
+
+  fx(function drawAddButton() {
+    $.addButtonView = <div part="add">
+      <Button onClick={() => {
+        const a = cheapRandomId()
+        const b = cheapRandomId()
+        const groupId = cheapRandomId()
+
+        $.machines = $.machines
+          .add(new MonoMachine({
+            ...defaultMachines.mono,
+            id: a,
+            groupId
+          }))
+          .add(new SchedulerMachine({
+            ...defaultMachines.scheduler,
+            id: b,
+            groupId,
+            outputs: [a]
+          }))
+      }}>
+        <IconSvg class="small" set="feather" icon="plus-circle" />
+      </Button>
+    </div>
+  })
+
+  fx(function drawAppPresets({ presetsChecksum: _, height }) {
+    $.appPresetsView = <div part="header">
+      <PresetsView app={$} id="app" presets={$.presets as any} />
+      <Vertical app={$} id="app" height={height} fixed minHeight={45} />
+    </div>
+  })
+
+  function checksumOfPresets(presets: AppPresets | MonoPresets | SchedulerPresets) {
+    return presets.selectedPresetId + presets.items.map(
+      ({ id, isRemoved, isDraft, hue, name }) =>
+        `${id}${hue}${name}${isRemoved ? 1 : 0}${isDraft ? 1 : 0}`
+    ).join()
+  }
+
+  fx.task(function calcPresetsChecksum({ presets }) {
+    $.presetsChecksum = checksumOfPresets(presets)
+  })
+
+  fx.task(function drawApp({ mainControlsView, addButtonView, itemsView, appPresetsView, state }) {
+    if (state === 'init') return
 
     // {/* <div>
     //     <Button onClick={() => { }}>
@@ -633,45 +706,11 @@ export const AppView = web('app', view(class props { }, AppLocal, ({ $, fx, fn }
     //       <IconSvg class="small" set="feather" icon="maximize-2" />
     //     </Button>
     //   </div> */}
-    $.view = <>
-      <div part="main-controls">
-        <Button onClick={playing ? $.methods.stopPlaying : $.methods.startPlaying}>
-          <IconSvg class="small" set="feather" icon={playing ? 'pause' : 'play'} />
-        </Button>
-        <Button onClick={() => { }}>
-          <IconSvg class="small" set="feather" icon="more-vertical" />
-        </Button>
-      </div>
-
-      <div part="header">
-        <PresetsView app={$} id="app" presets={presets.items as Preset<AppDetail>[]} selectedPresetId={presets.selectedPresetId} />
-        <Vertical app={$} id="app" height={height} fixed minHeight={45} />
-      </div>
-      <div part="items">
-        {itemsView}
-      </div>
-      <div part="add">
-        <Button onClick={() => {
-          const a = cheapRandomId()
-          const b = cheapRandomId()
-          const groupId = cheapRandomId()
-
-          $.machines = $.machines
-            .add(new MonoMachine({
-              ...defaultMachines.mono,
-              id: a,
-              groupId
-            }))
-            .add(new SchedulerMachine({
-              ...defaultMachines.scheduler,
-              id: b,
-              groupId,
-              outputs: [a]
-            }))
-        }}>
-          <IconSvg class="small" set="feather" icon="plus-circle" />
-        </Button>
-      </div>
-    </>
+    $.view = [
+      mainControlsView,
+      appPresetsView,
+      itemsView,
+      addButtonView
+    ]
   })
 }))

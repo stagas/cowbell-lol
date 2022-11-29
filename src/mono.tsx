@@ -1,6 +1,6 @@
 /** @jsxImportSource minimal-view */
 
-import { element, State, view, web } from 'minimal-view'
+import { element, queue, State, view, web } from 'minimal-view'
 
 import { AbstractDetail, BasePresets } from 'abstract-presets'
 import { CanvyElement } from 'canvy'
@@ -14,7 +14,7 @@ import { Code, EditorDetailData } from './code'
 import { AudioMachine, MachineKind, MachineState } from './machine'
 import { MachineControls } from './machine-controls'
 import { Preset, PresetsView } from './presets'
-import { Slider } from './slider'
+import { Slider, SliderUpdateNormalMap } from './slider'
 import { areSlidersEqual, Sliders, SlidersDetailData } from './sliders'
 import { Spacer } from './spacer'
 import { copySliders, parseArgsRegExp, removeSliderArgsFromCode } from './util/args'
@@ -54,6 +54,7 @@ export class MonoDetail extends AbstractDetail<MonoDetailData> {
       if ('sliders' in this.data) {
         return areSlidersEqual(other.sliders, this.data.sliders)
       }
+      return false
     }
 
     return true
@@ -77,7 +78,8 @@ export class MonoMethods {
   declare updateSliders: () => Sliders | undefined
   declare onWheel: (ev: WheelEvent, sliderId?: string) => void
   declare updateMarkers: (sliders: Sliders) => void
-  declare setSliderNormal: (sliderId: string, newNormal: number) => void
+  declare updateSliderNormals: (sliders: Sliders) => void
+  declare setSliderNormal: (sliderId: string, newNormal: number) => number
   declare updateEditorValueArgs: (
     editorValue: string,
     targetSliders?: Sliders,
@@ -85,7 +87,11 @@ export class MonoMethods {
   ) => MonoDetail | undefined
   declare reconcilePresets: (
     next: Preset<MonoDetail> | null,
-    prev: Preset<MonoDetail> | null
+    prev: Preset<MonoDetail> | null,
+    nextDetail?: MonoDetail | null,
+    prevDetail?: MonoDetail | null,
+    byClick?: boolean,
+    byGroup?: boolean
   ) => void
   declare compileAndUpdateSliders: (nextPreset: Preset<MonoDetail>) => void
 
@@ -185,19 +191,25 @@ export class MonoMethods {
               newSliders
               && editor.value === nextPreset.detail.data.editorValue
             ) {
-              app.methods.updatePresetById(id, nextPreset.id, {
+              $.preset = app.methods.updatePresetById(id, nextPreset.id, {
                 detail: nextPreset.detail.merge({
-                  ...nextPreset.detail.data, sliders: newSliders
+                  ...nextPreset.detail.data,
+                  sliders: newSliders
                 })
-              })
+              }) as Preset<MonoDetail>
+
               $.methods.updateMarkers(newSliders)
             }
           })
       })
 
     this.reconcilePresets = fn(({ app, id, editor, monoNode, audio: { setParam } }) => function reconcilePresets(
-      next: Preset<MonoDetail> | null,
-      prev: Preset<MonoDetail> | null,
+      next,
+      prev,
+      nextDetail,
+      prevDetail,
+      byClick,
+      byGroup
     ) {
       if (next && prev) {
         const sameCode =
@@ -218,7 +230,7 @@ export class MonoMethods {
               if (nextSliders && !areSlidersEqual(nextSliders, next.detail.data.sliders)) {
                 queueMicrotask(() => {
                   app.methods.setPresetDetailData(id, {
-                    ...next.detail.data, sliders: nextSliders
+                    ...next.detail.data, sliders: nextSliders!
                   })
                 })
               }
@@ -244,6 +256,7 @@ export class MonoMethods {
         }
         // else {
         // }
+        if (nextSliders && byGroup) $.methods.updateSliderNormals(nextSliders)
 
         return
       }
@@ -311,9 +324,9 @@ export class MonoMethods {
 
             if ('default' in slider.source) {
               const newDefault = `${parseFloat(targetSlider.value.toFixed(3))}`
+
               if (`${parseFloat(parseFloat(slider.source.default).toFixed(3))}`
                 !== newDefault) {
-
                 if (monoNode.params.has(slider.id)) {
                   const { monoParam, audioParam } = monoNode.params.get(slider.id)!
 
@@ -384,6 +397,12 @@ export class MonoMethods {
       return sliders
     })
 
+    this.updateSliderNormals = (sliders) => {
+      sliders.forEach(function updateSliderNormalEach(slider) {
+        SliderUpdateNormalMap.get(slider.id)?.(slider.normal)
+      })
+    }
+
     this.start = fn(({ id, app, monoNode, gainNode, audio: { analyserNode, setParam } }) => () => {
       setParam(gainNode.gain, 1)
       monoNode.connect(analyserNode)
@@ -404,7 +423,7 @@ export class MonoMethods {
       app.methods.setMachineState(id, 'suspended')
     })
 
-    this.updateMarkers = fn(({ editor }) => (sliders: Map<string, Slider>) => {
+    this.updateMarkers = fn(({ editor }) => function updateMarkers(sliders: Map<string, Slider>) {
       const paramMarkers = [...sliders.values()].map(markerForSlider)
 
       editor.setMarkers([...paramMarkers, ...($.errorMarkers ?? [])])
@@ -428,7 +447,13 @@ export class MonoMethods {
         }
       }))
 
-      $.methods.updateMarkers(preset.detail.data.sliders)
+      // NOTE: this was put here because it was solving
+      // some inconsistency which seems to be gone now
+      // with recent changes, but left here as a reminder
+      // if we encounter issues with the markers this would
+      // be to be enabled again.
+      // it was removed because it was causing perf issues.
+      // $.methods.updateMarkers(preset.detail.data.sliders)
 
       const newDetail =
         $.methods.updateEditorValueArgs(editor.value, newSliders)
@@ -465,15 +490,16 @@ export class MonoMethods {
             )
           )
 
+          SliderUpdateNormalMap.get(slider.id)?.(newNormal)
+
           return $.methods.setSliderNormal(slider.id, newNormal)
         }
       }
     })
 
-    debugObjectMethods(this)
+    // debugObjectMethods(this)
 
     return this
-
   }
 }
 
@@ -493,6 +519,7 @@ export class MonoMachine extends AudioMachine<MonoPresets> {
   toJSON() {
     return pick(this, [
       'id',
+      'groupId',
       'kind',
       'height',
       'spacer',
@@ -544,6 +571,7 @@ export class MonoLocal {
   methods!: MonoMethods
 
   state?: MachineState
+  groupId?: string
   sliders?: InstanceType<typeof Sliders.Element>
 
   monoNode?: MonoNode
@@ -558,6 +586,8 @@ export class MonoLocal {
   spacer?: number[]
 
   monoCode!: string
+
+  presetsChecksum?: string
 }
 
 export const Mono = web('mono', view(MonoProps, MonoLocal, ({ $, fx, fn, deps, refs }) => {
@@ -577,6 +607,13 @@ export const Mono = web('mono', view(MonoProps, MonoLocal, ({ $, fx, fn, deps, r
 
   fx.raf(({ host, state }) => {
     host.setAttribute('state', state)
+  })
+
+  fx(function calcPresetsChecksum({ presets }) {
+    $.presetsChecksum = presets.selectedPresetId + presets.items.map(
+      ({ id, isRemoved, isDraft, hue, name }) =>
+        `${id}${hue}${name}${isRemoved ? 1 : 0}${isDraft ? 1 : 0}`
+    ).join()
   })
 
   fx(({ id, audio: { audioContext, audioNode } }) => {
@@ -600,11 +637,12 @@ export const Mono = web('mono', view(MonoProps, MonoLocal, ({ $, fx, fn, deps, r
     }
   })
 
-  fx(({ machine }) => {
+  fx(function updateMachineProps({ machine }) {
     machine.methods = $.methods
     $.presets = machine.presets
     $.spacer = machine.spacer
     $.state = machine.state
+    $.groupId = machine.groupId
   })
 
   const offPresetsFx = fx(({ presets }) => {
@@ -682,9 +720,9 @@ export const Mono = web('mono', view(MonoProps, MonoLocal, ({ $, fx, fn, deps, r
     leaveSlider(markerIndex)
   }
 
-  fx(({ app, audio: { audioContext, workerBytes }, id, host, state, presets, spacer }) => {
+  fx(function drawMono({ app, audio: { audioContext, workerBytes }, id, groupId, methods, host, state, presetsChecksum: _, spacer }) {
     $.view = <>
-      <Spacer part="spacer" app={app} id={id} layout={host} initial={spacer}>
+      <Spacer part="spacer" setSpacer={app.methods.setSpacer} id={id} layout={host} initial={spacer}>
 
         <Code
           part="editor"
@@ -698,7 +736,7 @@ export const Mono = web('mono', view(MonoProps, MonoLocal, ({ $, fx, fn, deps, r
         />
 
         <div part="side">
-          <MachineControls app={app} {...$.machine} />
+          <MachineControls app={app} groupId={groupId} state={state} methods={methods} />
 
           <Sliders
             ref={refs.sliders}
@@ -728,8 +766,7 @@ export const Mono = web('mono', view(MonoProps, MonoLocal, ({ $, fx, fn, deps, r
           style="border-bottom: 2px solid transparent;"
           app={app}
           id={id}
-          presets={presets.items}
-          selectedPresetId={presets.selectedPresetId}
+          presets={$.presets as any}
         />
 
       </Spacer>

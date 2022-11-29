@@ -13,8 +13,14 @@ export const MachineControls = view(class props {
   groupId!: MonoMachine['groupId']
   state!: Machine['state']
   methods!: MonoMachine['methods']
+}, class local {
+  appMethods?: AppLocal['methods']
 }, ({ $, fx }) => {
-  fx(({ app, groupId, state, methods: { start, stop } }) => {
+  fx(({ app }) => {
+    $.appMethods = app.methods
+  })
+
+  fx(({ appMethods, groupId, state, methods: { start, stop } }) => {
     $.view = <div part="controls">
       <Button
         shadow={3}
@@ -38,7 +44,7 @@ export const MachineControls = view(class props {
         />
       </Button>
       {
-        app.methods.getMachinesInGroup(groupId)
+        appMethods.getMachinesInGroup(groupId)
           .flatMap((machine) =>
             machine.presets
           ).length === 0
@@ -47,7 +53,7 @@ export const MachineControls = view(class props {
           part="remove"
           shadow={3}
           onClick={() =>
-            app.methods.removeMachinesInGroup(groupId)} style={{
+            appMethods.removeMachinesInGroup(groupId)} style={{
               color: '#f30'
             }}>
           <IconSvg

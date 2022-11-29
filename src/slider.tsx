@@ -1,10 +1,13 @@
 /** @jsxImportSource minimal-view */
 
+import { defineProperty } from 'everyday-utils'
 import { Point, Rect, Scalar } from 'geometrik'
 import { chain, element, on, queue, view, web } from 'minimal-view'
 
 import { MonoMachine } from './mono'
 import { observe } from './util/observe'
+
+export const SliderUpdateNormalMap = new Map<string, (normal: number) => void>()
 
 const { clamp } = Scalar
 
@@ -20,8 +23,21 @@ export class Slider {
   source!: { arg: string; } | { arg: string; id: string; range: string; default: string; }
   sourceIndex!: number
 
+  declare readonly normal: number
+
   constructor(data: Partial<Slider>) {
     Object.assign(this, data)
+
+    defineProperty
+      .not.enumerable
+      .get(() =>
+        Math.max(0,
+          Math.min(1,
+            (this.value - this.min) / (this.max - this.min)
+          )
+        )
+      )
+      (this, 'normal')
   }
 
   toJSON() {
@@ -186,7 +202,10 @@ export const SliderView = web('slider', view(
   const yDims = ['height', 'minHeight', 'maxHeight'] as const
   const xDims = ['width', 'minWidth', 'maxWidth'] as const
 
+  let currentNormal = -1
   const updateNormal = fn(({ fill, vertical }) => (newNormal) => {
+    if (currentNormal === newNormal) return
+    currentNormal = newNormal
 
     const [[dim, dimMin, dimMax], [opp, oppMin, oppMax]] = vertical
       ? [xDims, yDims]
@@ -207,7 +226,7 @@ export const SliderView = web('slider', view(
     updateNormal(normal)
   })
 
-  const setSliderNormal = fn(({ id, machine }) => (value: number) => machine.methods.setSliderNormal(id, value))
+  const setSliderNormal = fn(({ id, machine }) => function setSliderNormalWrap(value: number) { return machine.methods.setSliderNormal(id, value) })
 
   let handling = false
   const handleDown = fn(({ host, vertical }) => (e: PointerEvent) => {
@@ -235,19 +254,19 @@ export const SliderView = web('slider', view(
       ? [xDims, yDims]
       : [yDims, xDims]
 
-
     const getPointerPos = (e: PointerEvent) => {
       return new Point(e.pageX, e.pageY)
     }
 
     const ownRect = new Rect(host.getBoundingClientRect())
 
-    const moveTo = (pos: Point) => {
+    const moveTo = function moveSliderTo(pos: Point) {
       let newSize = (pos[n] - ownRect[n])
       if (!vertical) newSize = ownRect[dim] - newSize
 
       const size = Math.max(0, Math.min(ownRect[dim], newSize))
       const normal = size / ownRect[dim]
+      updateNormal(normal)
       setSliderNormal(normal)
     }
 
@@ -268,7 +287,13 @@ export const SliderView = web('slider', view(
     })
   })
 
-  const handleWheel = fn(({ host, id }) => function onSliderWheel(ev: WheelEvent) {
+  fx(({ id }) => {
+    SliderUpdateNormalMap.set(id, (normal) => {
+      requestAnimationFrame(() => updateNormal(normal))
+    })
+  })
+
+  const handleWheel = fn(({ id }) => function onSliderWheel(ev: WheelEvent) {
     $.machine.methods.onWheel(ev, id)
   })
 
@@ -280,8 +305,7 @@ export const SliderView = web('slider', view(
     )
   )
 
-  fx(({ name }) => {
-
+  fx(function drawSlider({ name }) {
     $.view = <>
       <div part="hoverable"></div>
       <div part="fill" ref={refs.fill}>

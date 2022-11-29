@@ -11,7 +11,9 @@ import { fitGrid } from './util/fit-grid'
 import { observe } from './util/observe'
 import { randomName } from './util/random-name'
 import { MachineDetail } from './machine'
-import { AppLocal } from './app'
+import { AppLocal, AppPresets } from './app'
+import { MonoPresets } from './mono'
+import { SchedulerPresets } from './scheduler'
 
 export class Preset<T extends MachineDetail = MachineDetail> extends BasePreset<T> {
   name = randomName()
@@ -118,14 +120,13 @@ export const PresetsView = web('presets', view(
   class props {
     app!: AppLocal
     id!: string
-    presets!: Preset[]
-    selectedPresetId!: string | false
+    presets!: MonoPresets & SchedulerPresets & AppPresets
   }, class local {
   host = element
   size?: Point
   width?: string
   height?: string
-  presetsLength?: number
+  presetsChecksum?: string
 }, ({ $, fx }) => {
   $.css = /*css*/`
   & {
@@ -143,6 +144,9 @@ export const PresetsView = web('presets', view(
   }
 
   [part=preset] {
+    user-select: none;
+    touch-action: none;
+
     position: relative;
     color: hsl(var(--hue), 85%, 65%);
     font-family: Helvetica, 'Helvetica Neue', 'Open Sans', Cambria, Cochin, Georgia, Times, 'Times New Roman', serif;
@@ -252,25 +256,21 @@ export const PresetsView = web('presets', view(
     })
   )
 
-  // fx(({ presets }) => {
-  //   $.presetsLength = presets.length
-  // })
+  fx(({ presets }) => {
+    $.presetsChecksum = presets.selectedPresetId + presets.items.map(
+      ({ id, isRemoved, isDraft, hue, name }) =>
+        `${id}${hue}${name}${isRemoved ? 1 : 0}${isDraft ? 1 : 0}`
+    ).join()
+  })
 
-  // fx(({ presetsLength, size }) => {
-  //   const [w, h] = size
-  //   const total = presetsLength
-  //   const { cols, rows } = fitGrid(w, h, total)
-  //   $.width = 100 / cols + '%'
-  //   $.height = 100 / rows + '%'
-  // })
-
-  fx(({ app, id, presets, selectedPresetId, size }) => {
+  fx(function drawPresets({ app, id, presetsChecksum: _, size }) {
     const [w, h] = size
-    const total = presets.length
+    const total = $.presets.items.length
     const { cols, rows } = fitGrid(w, h, total)
     const width = 100 / cols + '%'
     const height = 100 / rows + '%'
-    // console.log(cols, rows, width, height)
+
+    const { selectedPresetId } = $.presets
 
     const Preset = (preset: Preset) => {
       return <PresetView
@@ -285,9 +285,9 @@ export const PresetsView = web('presets', view(
       />
     }
 
-    $.view = presets
-      .filter((preset) => !preset.isRemoved)
-      .concat(presets.filter((preset) => preset.isRemoved))
-      .map(Preset)
+    $.view = [
+      ...$.presets.items.filter((preset) => !preset.isRemoved),
+      ...$.presets.items.filter((preset) => preset.isRemoved)
+    ].map(Preset)
   })
 }))
