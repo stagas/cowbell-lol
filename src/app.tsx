@@ -7,7 +7,7 @@ import { BasePresets, PresetsGroupDetail } from 'abstract-presets'
 import { EditorScene } from 'canvy'
 import { cheapRandomId, MapMap, pick } from 'everyday-utils'
 import { IconSvg } from 'icon-svg'
-import { List } from 'immutable-list'
+import { List } from '@stagas/immutable-list'
 import { SchedulerEventGroupNode, SchedulerNode } from 'scheduler-node'
 import { compressUrlSafe, decompressUrlSafe } from 'urlsafe-lzma'
 

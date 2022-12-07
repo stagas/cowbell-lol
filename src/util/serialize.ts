@@ -1,6 +1,6 @@
 import { PresetsGroupDetail } from 'abstract-presets'
 import { cheapRandomId, deepMutate, isEqual } from 'everyday-utils'
-import { List } from 'immutable-list'
+import { List } from '@stagas/immutable-list'
 import { deobjectify, objectify } from 'json-objectify'
 import { createContext, Ptr } from 'serialize-whatever'
 
