@@ -5,9 +5,8 @@ import { Point, Rect, Scalar } from 'geometrik'
 import { chain, element, on, queue, view, web } from 'minimal-view'
 
 import { MonoMachine } from './mono'
+import { SliderScene } from './sliders'
 import { observe } from './util/observe'
-
-export const SliderUpdateNormalMap = new Map<string, (normal: number) => void>()
 
 const { clamp } = Scalar
 
@@ -20,297 +19,360 @@ export class Slider {
   min!: number
   max!: number
   hue!: number
-  source!: { arg: string; } | { arg: string; id: string; range: string; default: string; }
-  sourceIndex!: number
+  sourceIndex?: number
+  source?: {
+    arg: string
+    id: string
+    range: string
+    default: string
+  }
 
-  declare readonly normal: number
+  declare readonly normal?: number
 
   constructor(data: Partial<Slider>) {
+    // if (Array.isArray(data)) {
+    //   if (Array.isArray(data)) {
+    //     Object.assign(this,
+    //       Object.fromEntries(
+    //         Object.keys(this).map((key, i) =>
+    //           [key, data[i]])
+    //       ))
+    //   }
+    // } else {
     Object.assign(this, data)
+    // }
 
     defineProperty
       .not.enumerable
       .get(() =>
-        Math.max(0,
-          Math.min(1,
-            (this.value - this.min) / (this.max - this.min)
-          )
+        clamp(0, 1,
+          (this.value - this.min) / (this.max - this.min)
         )
       )
       (this, 'normal')
   }
 
-  toJSON() {
+  toJSON?() {
     return {
       ...this,
-      source: {
+      source: !this.source ? void 0 : {
         ...this.source
       }
     }
   }
+
+  // toJSON?() {
+  //   return {
+  //     ...this,
+  //     source: !this.source ? void 0 : {
+  //       ...this.source
+  //     }
+  //   }
+  // }
 }
 
 export const SliderView = web('slider', view(
   class props extends Slider {
+    scene!: SliderScene
     machine!: MonoMachine
     running!: boolean
-    vertical?= true
+    vertical!: boolean
+    showBg!: boolean
     children?: JSX.Element
-  }, class local {
-  host = element
-  rect?: Rect
-  fill?: HTMLDivElement
-  size?: number
-}, ({ $, fx, fn, refs }) => {
-  fx(({ vertical }) => {
-    const [dim, opp, pos, oppPos, line, oppLine] = vertical
-      ? ['height', 'width', 'left', 'bottom', 'top', 'left']
-      : ['width', 'height', 'bottom', 'left', 'left', 'top']
-    $.css = /*css*/`
-  & {
-    --hue: #f00;
-    --sat: 85%;
-    --lum: 65%;
-    z-index: 1;
-    display: flex;
-    position: relative;
-    box-sizing: border-box;
-    width: 100%;
-    max-width: 100px;
-    height: 100%;
-    margin: 0 -17.5px 0 0;
-    pointer-events: none;
-    user-select: none;
-    touch-action: none;
-  }
+  },
 
-  [part=name] {
-    position: absolute;
-    top: 0px;
-    color: #fff;
-    left: calc(50% - 10px);
-    line-height: 20px;
-    vertical-align: middle;
-    white-space: nowrap;
-    writing-mode: vertical-lr;
-    text-orientation: upright;
-    direction: ltr;
-    font-family: monospace;
-    font-weight: bold;
-    text-shadow: 1px 1px #000;
-  }
+  class local {
+    host = element
+    rect?: Rect
+    fill?: HTMLDivElement
+    size?: number
+    colorCss = ''
+  },
 
-  &:before {
-    content: ' ';
-    position: absolute;
-    ${line}: calc(50% - max(45%, 12px) / 2);
-    ${oppLine}: 0;
-    ${dim}: max(45%, 12px);
-    ${opp}: 100%;
-    background: #fff0;
-  }
+  function actions({ $, fn, fns }) {
+    const yDims = ['height', 'minHeight', 'maxHeight'] as const
+    const xDims = ['width', 'minWidth', 'maxWidth'] as const
 
-  [part=hoverable] {
-    position: absolute;
-    left: 0;
-    top: 0;
-    width: 100%;
-    height: 100%;
-    pointer-events: all;
+    let currentNormal = -1
 
-    ${line}: calc(50% - max(45%, 12px) / 2);
-    ${oppLine}: 0;
-    ${dim}: max(45%, 12px);
-    ${opp}: 100%;
+    let handling = false
 
-    &:hover {
-      ${line}: calc(50% - max(80%, 20px) / 2);
-      ${oppLine}: 0;
-      ${dim}: max(80%, 20px);
-      ${opp}: 100%;
-    }
-  }
+    return fns(new class actions {
+      updateNormal = fn(({ fill, vertical }) => (newNormal) => {
+        if (currentNormal === newNormal) return
+        currentNormal = newNormal
 
-  &(:not([drag])) {
-    [part=fill] {
-      transition:
-        height 30ms linear,
-        min-height 30ms linear,
-        max-height 30ms linear
-        ;
-    }
-  }
+        const [[dim, dimMin, dimMax], [opp, oppMin, oppMax]] = vertical
+          ? [xDims, yDims]
+          : [yDims, xDims]
 
-  [part=fill] {
-    position: absolute;
-    ${dim}: 100%;
-    ${opp}: auto;
-    ${pos}: 0;
-    ${oppPos}: auto;
-    &:before {
-      box-shadow: 5px 5px 0 0px #000;
-      content: ' ';
-      position: absolute;
-      ${line}: calc(50% - max(45%, 12px) / 2);
-      ${oppLine}: 0;
-      ${dim}: max(45%, 12px);
-      ${opp}: 100%;
-      background: hsl(var(--hue), var(--sat), calc(var(--lum) - 5%));
-    }
-  }
+        fill.style[dim] =
+          fill.style[dimMin] =
+          fill.style[dimMax] =
+          newNormal * 100 + '%'
 
-  &(.active),
-  &(:hover) {
-    cursor: ns-resize;
-    z-index: 2;
-    &:before {
-      ${line}: calc(50% - max(80%, 20px) / 2);
-      ${oppLine}: 0;
-      ${dim}: max(80%, 20px);
-      ${opp}: 100%;
-      background: #aaf2;
-    }
-    [part=fill] {
-      &:before {
-        ${line}: calc(50% - max(80%, 20px) / 2);
-        ${oppLine}: 0;
-        ${dim}: max(80%, 20px);
-        ${opp}: 100%;
-        background: hsl(var(--hue), var(--sat), calc(var(--lum) + 5%));
-      }
-    }
-  }
-  &([running]:hover) {
-    &:before {
-      background: #aaf3;
-    }
-  }
-  `
-  })
-
-  fx.raf(({ host, running }) => {
-    host.toggleAttribute('running', running)
-  })
-
-  fx(({ host }) => {
-    const resize = queue.raf(() => {
-      $.rect = new Rect(host.getBoundingClientRect()).round()
-    })
-    return observe.resize.initial(host, resize)
-  })
-
-  const yDims = ['height', 'minHeight', 'maxHeight'] as const
-  const xDims = ['width', 'minWidth', 'maxWidth'] as const
-
-  let currentNormal = -1
-  const updateNormal = fn(({ fill, vertical }) => (newNormal) => {
-    if (currentNormal === newNormal) return
-    currentNormal = newNormal
-
-    const [[dim, dimMin, dimMax], [opp, oppMin, oppMax]] = vertical
-      ? [xDims, yDims]
-      : [yDims, xDims]
-
-    fill.style[dim] =
-      fill.style[dimMin] =
-      fill.style[dimMax] =
-      newNormal * 100 + '%'
-
-    fill.style[opp] =
-      fill.style[oppMin] =
-      fill.style[oppMax] = '100%'
-  })
-
-  fx.raf(({ fill: _, value, min, max }) => {
-    const normal = clamp(0, 1, (value - min) / (max - min))
-    updateNormal(normal)
-  })
-
-  const setSliderNormal = fn(({ id, machine }) => function setSliderNormalWrap(value: number) { return machine.methods.setSliderNormal(id, value) })
-
-  let handling = false
-  const handleDown = fn(({ host, vertical }) => (e: PointerEvent) => {
-    if (handling || !(e.buttons & 1)) return
-
-    if (e.type === 'pointerdown') {
-      downSlider = true
-    } else {
-      if (!downSlider) return
-      if (e.type === 'pointerenter' && !e.altKey) {
-        return
-      }
-    }
-
-    host.toggleAttribute('drag', true)
-
-    handling = true
-
-    host.classList.add('active')
-
-    const yDims = ['height', 'minHeight', 'maxHeight', 'y'] as const
-    const xDims = ['width', 'minWidth', 'maxWidth', 'x'] as const
-
-    const [[dim, , , n]] = vertical
-      ? [xDims, yDims]
-      : [yDims, xDims]
-
-    const getPointerPos = (e: PointerEvent) => {
-      return new Point(e.pageX, e.pageY)
-    }
-
-    const ownRect = new Rect(host.getBoundingClientRect())
-
-    const moveTo = function moveSliderTo(pos: Point) {
-      let newSize = (pos[n] - ownRect[n])
-      if (!vertical) newSize = ownRect[dim] - newSize
-
-      const size = Math.max(0, Math.min(ownRect[dim], newSize))
-      const normal = size / ownRect[dim]
-      updateNormal(normal)
-      setSliderNormal(normal)
-    }
-
-    moveTo(getPointerPos(e))
-
-    const off = on(e.altKey ? host : window, 'pointermove').raf(function verticalPointerMove(e) {
-      moveTo(getPointerPos(e))
-    })
-
-    on(window, 'pointerup').once((e) => {
-      off()
-      handling = false
-      downSlider = false
-      requestAnimationFrame(() => {
-        host.classList.remove('active')
-        host.toggleAttribute('drag', false)
+        fill.style[opp] =
+          fill.style[oppMin] =
+          fill.style[oppMax] = '100%'
       })
+
+      setSliderNormal =
+        fn(({ id }) =>
+          (value: number) =>
+            $.machine.methods.setSliderNormal(id, value))
+
+      handleDown = fn(({ host, vertical }) => (e: PointerEvent) => {
+        if (handling || !(e.buttons & 1)) return
+
+        if (e.type === 'pointerdown') {
+          downSlider = true
+        } else {
+          if (!downSlider) return
+          if (e.type === 'pointerenter' && !e.altKey) {
+            return
+          }
+        }
+
+        host.toggleAttribute('drag', true)
+
+        handling = true
+
+        host.classList.add('active')
+
+        const yDims = ['height', 'minHeight', 'maxHeight', 'y'] as const
+        const xDims = ['width', 'minWidth', 'maxWidth', 'x'] as const
+
+        const [[dim, , , n]] = vertical
+          ? [xDims, yDims]
+          : [yDims, xDims]
+
+        const getPointerPos = (e: PointerEvent) => {
+          const scrollTop = document.documentElement.scrollTop
+          return new Point(e.pageX, e.pageY - scrollTop)
+        }
+
+        const ownRect = new Rect(host.getBoundingClientRect())
+
+        const moveTo = (pos: Point) => {
+          let newSize = (pos[n] - ownRect[n])
+          if (!vertical) newSize = ownRect[dim] - newSize
+
+          const size = Math.max(0, Math.min(ownRect[dim], newSize))
+          const normal = size / ownRect[dim]
+          this.updateNormal(normal)
+          this.setSliderNormal(normal)
+        }
+
+        moveTo(getPointerPos(e))
+
+        const off = on(e.altKey ? host : window, 'pointermove').raf(function verticalPointerMove(e) {
+          moveTo(getPointerPos(e))
+        })
+
+        on(window, 'pointerup').once((e) => {
+          off()
+          handling = false
+          downSlider = false
+          requestAnimationFrame(() => {
+            host.classList.remove('active')
+            host.toggleAttribute('drag', false)
+          })
+        })
+      })
+
+      handleWheel =
+        fn(({ id }) =>
+          (ev: WheelEvent) => {
+            $.machine.methods.onWheel(ev, id)
+          })
+
+      resize = fn(({ host }) => queue.raf(() => {
+        $.rect = new Rect(host.getBoundingClientRect()).round()
+      }))
+
+    })
+  },
+
+  function effect({ $, fx, refs }) {
+    fx(function sliderCss({ vertical, showBg }) {
+      const [small, big] = ['70%', '95%']
+
+      const [dim, opp, pos, oppPos, line, oppLine] = vertical
+        ? ['height', 'width', 'left', 'bottom', 'top', 'left']
+        : ['width', 'height', 'bottom', 'left', 'left', 'top']
+
+      $.css = /*css*/`
+
+      & {
+        --hue: #f00;
+        --sat: 85%;
+        --lum: 65%;
+        z-index: 1;
+        display: flex;
+        position: relative;
+        box-sizing: border-box;
+        width: 100%;
+        max-width: 80px;
+        height: 100%;
+        /* margin: 0 -17.5px 0 0; */
+        pointer-events: none;
+        user-select: none;
+        touch-action: none;
+      }
+
+      [part=name] {
+        position: absolute;
+        ${vertical ? 'right' : 'top'}: 0px;
+        color: #fff;
+        ${vertical ? 'top' : 'left'}: calc(50% - 10px);
+        line-height: 20px;
+        vertical-align: middle;
+        white-space: nowrap;
+        ${vertical ? '' : `
+        writing-mode: vertical-lr;
+        text-orientation: upright;
+        `}
+        direction: ltr;
+        font-family: monospace;
+        font-weight: bold;
+        text-shadow: 1px 1px #000;
+      }
+
+      &:before {
+        content: ' ';
+        position: absolute;
+        ${line}: calc(50% - max(${small}, 12px) / 2);
+        ${oppLine}: 0;
+        ${dim}: max(${small}, 12px);
+        ${opp}: 100%;
+        background: ${showBg ? '#aaf2' : '#fff0'};
+      }
+
+      [part=hoverable] {
+        position: absolute;
+        left: 0;
+        top: 0;
+        width: 100%;
+        height: 100%;
+        pointer-events: all;
+
+        ${line}: calc(50% - max(${small}, 12px) / 2);
+        ${oppLine}: 0;
+        ${dim}: max(${small}, 12px);
+        ${opp}: 100%;
+
+        &:hover {
+          ${line}: calc(50% - max(${big}, 20px) / 2);
+          ${oppLine}: 0;
+          ${dim}: max(${big}, 20px);
+          ${opp}: 100%;
+        }
+      }
+
+      &(:not([drag])) {
+        [part=fill] {
+          transition:
+            height 30ms linear,
+            min-height 30ms linear,
+            max-height 30ms linear
+            ;
+        }
+      }
+
+      [part=fill] {
+        position: absolute;
+        ${dim}: 100%;
+        ${opp}: auto;
+        ${pos}: 0;
+        ${oppPos}: auto;
+        &:before {
+          box-shadow: 5px 5px 0 0px #000;
+          content: ' ';
+          position: absolute;
+          ${line}: calc(50% - max(${small}, 12px) / 2);
+          ${oppLine}: 0;
+          ${dim}: max(${small}, 12px);
+          ${opp}: 100%;
+          background: hsl(var(--hue), var(--sat), calc(var(--lum) - 5%));
+        }
+      }
+
+      &(.active),
+      &(:hover) {
+        cursor: ns-resize;
+        z-index: 2;
+        &:before {
+          ${line}: calc(50% - max(${big}, 20px) / 2);
+          ${oppLine}: 0;
+          ${dim}: max(${big}, 20px);
+          ${opp}: 100%;
+          background: #aaf2;
+        }
+        [part=fill] {
+          &:before {
+            ${line}: calc(50% - max(${big}, 20px) / 2);
+            ${oppLine}: 0;
+            ${dim}: max(${big}, 20px);
+            ${opp}: 100%;
+            background: hsl(var(--hue), var(--sat), calc(var(--lum) + 5%));
+          }
+        }
+      }
+
+      &([running]:hover) {
+        &:before {
+          background: #aaf3;
+        }
+      }
+      `
+    })
+
+    fx.raf(function updateAttrRunning({ host, running }) {
+      host.toggleAttribute('running', running)
+    })
+
+    fx.raf(function onValueChange({ fill: _, value, min, max }) {
+      const normal = clamp(0, 1, (value - min) / (max - min))
+      $.updateNormal(normal)
+    })
+
+    fx(function updateColorCss({ hue, running }) {
+
+      $.colorCss = /*css*/`
+
+      :host {
+        --hue: ${(Math.round(hue / 25) * 25) % 360};
+        --sat: ${running ? '85%' : '80%'};
+        --lum: ${running ? '40%' : '30%'};
+      }
+      `
+    })
+
+    fx(function listenHostResize({ host }) {
+      return observe.resize.initial(host, $.resize)
+    })
+
+
+    fx(function registerSliderUpdateNormal({ id, scene }) {
+      scene.updateNormalMap.set($.machine.id, id, $.updateNormal)
+    })
+
+    fx(function listenPointerEvents({ host }) {
+      return chain(
+        on(host, 'pointerdown')($.handleDown),
+        on(host, 'pointerenter')($.handleDown),
+        on(host, 'wheel').not.passive($.handleWheel),
+      )
+    })
+
+    fx(function drawSlider({ name, colorCss }) {
+      $.view = <>
+        <style>{colorCss}</style>
+        <div part="hoverable"></div>
+        <div part="fill" ref={refs.fill}>
+          <span part="name">{name}</span>
+        </div>
+      </>
     })
   })
-
-  fx(({ id }) => {
-    SliderUpdateNormalMap.set(id, (normal) => {
-      requestAnimationFrame(() => updateNormal(normal))
-    })
-  })
-
-  const handleWheel = fn(({ id }) => function onSliderWheel(ev: WheelEvent) {
-    $.machine.methods.onWheel(ev, id)
-  })
-
-  fx(({ host }) =>
-    chain(
-      on(host, 'pointerdown')(handleDown),
-      on(host, 'pointerenter')(handleDown),
-      on(host, 'wheel').not.passive(handleWheel),
-    )
-  )
-
-  fx(function drawSlider({ name }) {
-    $.view = <>
-      <div part="hoverable"></div>
-      <div part="fill" ref={refs.fill}>
-        <span part="name">{name}</span>
-      </div>
-    </>
-  })
-}))
+)

@@ -2,9 +2,10 @@
 
 import { element, view, web } from 'minimal-view'
 import { MonoNode } from 'mono-worklet'
+import { SchedulerEventGroupNode } from 'scheduler-node'
 import { animRemoveSchedule, animSchedule } from './anim'
 
-import { AppLocal, HEIGHTS } from './app'
+import { AppContext, SIZES } from './app'
 import { Audio } from './audio'
 import { MachineView } from './machine'
 import { MonoMachine } from './mono'
@@ -16,122 +17,272 @@ import { Vertical } from './vertical'
 
 export const MonoGroup = web('mono-group', view(
   class props {
-    app!: AppLocal
+    groupId!: string
+    app!: AppContext
     audio!: Audio
     mono!: MonoMachine
     scheduler!: SchedulerMachine
-  }, class local {
-  host = element
+  },
 
-  monoId?: string
+  class local {
+    host = element
+    align?: AppContext['align']
 
-  monoAudio?: Audio
-  schedulerAudio?: Audio
+    monoId?: string
+    schedulerId?: string
 
-  monoNode?: AudioNode
-  analyserNode?: AnalyserNode
+    monoAudio?: Audio | null
+    schedulerAudio?: Audio
 
-  running = false
-  bytes?: Uint8Array
-  workerBytes?: Uint8Array
+    analyserNode?: AnalyserNode | null
+    monoNode?: MonoNode | null
+    gainNode?: GainNode | null
+    groupNode?: SchedulerEventGroupNode
 
-  monoView?: JSX.Element
-  schedulerView?: JSX.Element
-}, ({ $, fx, fn }) => {
-  fx(({ mono }) => {
-    $.monoId = mono.id
-  })
+    running = false
+    bytes?: Uint8Array
+    freqs?: Uint8Array
+    workerBytes?: Uint8Array
+    workerFreqs?: Uint8Array
 
-  fx(({ analyserNode }) => {
-    $.bytes = new Uint8Array(analyserNode.fftSize)
-  })
+    monoView?: JSX.Element
+    schedulerView?: JSX.Element
+  },
 
-  fx(({ bytes }) => {
-    $.workerBytes = new Uint8Array(new SharedArrayBuffer(bytes.byteLength))
-  })
+  function actions({ $, fn, fns }) {
+    let tick = () => { }
 
-  fx(async ({ audio, monoId }) => {
-    const monoNode = $.monoNode = await MonoNode.create(audio.audioContext, {
-      numberOfInputs: 0,
-      numberOfOutputs: 1,
-      processorOptions: {
-        metrics: 0,
+    return fns(new class actions {
+      analyseStop = () => {
+        animRemoveSchedule(tick)
+      }
+
+      analyseStart =
+        fn(({ analyserNode, bytes, freqs, workerBytes, workerFreqs }) => {
+
+          tick = () => {
+            analyserNode.getByteTimeDomainData(bytes)
+            analyserNode.getByteFrequencyData(freqs)
+            workerBytes.set(bytes)
+            workerFreqs.set(freqs)
+            animSchedule(tick)
+          }
+
+          return () => {
+            animSchedule(tick)
+          }
+        })
+    })
+  },
+
+  function effects({ $, fx }) {
+    // fx(({ align }) => {
+    //   const [dim, flow, oppFlow, ctrlJustify, ctrlAlign, pad] = [
+    //     ['height', 'column', 'row', 'flex-start', 'center', '0 '] as const,
+    //     ['width', 'row', 'column', 'center', 'flex-start', ''] as const,
+    //   ][+(align === 'y')]
+    //   $.css = /*css*/`
+    //   & {
+    //     display: flex;
+    //     flex-flow: ${oppFlow} nowrap;
+    //     /* height: 100%; */
+    //     /* background: red; */
+    //     border-bottom: 1px solid #aaf3;
+    //     box-sizing: border-box;
+    //     position: relative;
+    //   }
+
+    //   [part=machines] {
+    //     display: flex;
+    //     flex-flow: ${oppFlow} nowrap;
+    //     ${dim}: calc(100% - 100px);
+    //     /* flex: 1; */
+    //   }
+
+    //   [part=machines-outer] {
+    //     display: flex;
+    //     flex-flow: ${flow} nowrap;
+    //     min-width: 100%;
+    //     /* height: 100%; */
+    //   }
+    //   `
+    // })
+
+    fx(function updateAlign({ app }) {
+      $.align = app.align
+    })
+
+    fx(function updateMonoId({ mono }) {
+      $.monoId = mono.id
+      // $.monoNode = null
+      // $.monoAudio = null
+      // $.gainNode = null
+      // $.analyserNode = null
+    })
+
+    fx(function updateSchedulerId({ scheduler }) {
+      $.schedulerId = scheduler.id
+    })
+
+    fx(function createAnalyserBytes({ analyserNode }) {
+      $.bytes = new Uint8Array(analyserNode.fftSize)
+      $.freqs = new Uint8Array(analyserNode.frequencyBinCount)
+    })
+
+    fx(function createWorkerBytes({ bytes, freqs }) {
+      $.workerBytes = new Uint8Array(new SharedArrayBuffer(bytes.byteLength))
+        .fill(128) // center it at 128 (0-256)
+      $.workerFreqs = new Uint8Array(new SharedArrayBuffer(freqs.byteLength))
+    })
+
+    fx(async function createMonoNode({ audio }) {
+      const monoNode = $.monoNode = await audio.monoNodePool.acquire()
+
+      // app.addNode(monoId, monoNode)
+
+      return () => {
+        monoNode.suspend()
+        monoNode.disconnect()
+        // app.removeNode(monoId)
+        audio.monoNodePool.release(monoNode)
       }
     })
-    audio.audioNodes.set(monoId, monoNode)
 
-    const analyserNode = $.analyserNode = new AnalyserNode(audio.audioContext, {
-      channelCount: 1,
-      fftSize: audio.fftSize,
-      smoothingTimeConstant: 0.5
+    fx(async function createSchedulerEventGroupNode({ audio }) {
+      const groupNode = $.groupNode = await audio.groupNodePool.acquire()
+
+      // app.addNode(schedulerId, groupNode)
+
+      return () => {
+        // app.removeNode(schedulerId)
+        audio.groupNodePool.release(groupNode)
+      }
     })
 
-    return () => {
-      monoNode.disconnect()
-      analyserNode.disconnect()
-    }
-  })
+    // fx(({ monoNode, gainNode }) => {
+    //   monoNode.connect(gainNode)
+    //   return () => {
+    //     monoNode.disconnect(gainNode)
+    //   }
+    // })
 
-  let analyseStop = () => { }
-  const analyseStart = fn(({ analyserNode, bytes, workerBytes }) => {
-    analyseStop = () => {
-      animRemoveSchedule(tick)
-    }
+    fx(async function createGainNode({ audio }) {
+      const gainNode = $.gainNode = await audio.gainNodePool.acquire()
+      //  new GainNode(audio.audioContext, { channelCount: 1, gain: 0 })
 
-    function tick() {
-      analyserNode.getByteTimeDomainData(bytes)
-      workerBytes.set(bytes)
-      animSchedule(tick)
-    }
+      gainNode.connect(audio.audioContext.destination)
 
-    return () => {
-      animSchedule(tick)
-    }
-  })
+      // app.addGainNode(monoId, gainNode)
 
-  fx(({ mono: { state } }) => {
-    $.running = state === 'running'
-  })
-
-  fx(({ running }) => {
-    if (running) {
-      analyseStart()
-    } else {
-      analyseStop()
-    }
-  })
-
-  fx(({ audio, analyserNode, monoNode, workerBytes }) => {
-    $.monoAudio = new Audio({
-      ...audio, audioNode: monoNode, workerBytes, analyserNode
+      return () => {
+        // app.removeGainNode(monoId)
+        gainNode.disconnect(audio.audioContext.destination)
+        audio.gainNodePool.release(gainNode)
+      }
     })
-    $.schedulerAudio = new Audio({ ...audio, workerBytes })
-  })
 
-  fx(function drawSchedulerView({ app, schedulerAudio, scheduler }) {
-    $.schedulerView = <>
-      <MachineView
-        app={app}
-        audio={schedulerAudio}
-        machine={scheduler}
-      />
+    fx(async function createAnalyserNode({ audio }) {
+      const analyserNode = $.analyserNode = await audio.analyserNodePool.acquire()
 
-      <Vertical app={app} id={scheduler.id} height={scheduler.height ?? HEIGHTS[scheduler.kind]} />
-    </>
-  })
+      // app.addAnalyserNode(monoId, analyserNode)
 
-  fx.task(function drawMonoView({ app, monoAudio, mono }) {
-    $.monoView = <>
-      <MachineView
-        app={app}
-        audio={monoAudio}
-        machine={mono}
-      />
-      <Vertical app={app} id={mono.id} height={mono.height ?? HEIGHTS[mono.kind]} />
-    </>
-  })
+      return () => {
+        // app.removeAnalyserNode(monoId)
+        audio.analyserNodePool.release(analyserNode)
+      }
+    })
 
-  fx.task(function drawMonoGroup({ monoView, schedulerView }) {
-    $.view = [monoView, schedulerView]
-  })
-}))
+    fx(function updateRunningState({ mono: { state } }) {
+      $.running = $.running && state === 'init' ? $.running : state === 'running'
+    })
+
+    fx(function connectNodes({ audio, running, monoNode, groupNode, gainNode, analyserNode }) {
+      if (running) {
+        audio.setParam(gainNode.gain, $.mono.gainValue)
+        groupNode.connect(monoNode)
+
+        monoNode.resume()
+        monoNode.connect(gainNode)
+        monoNode.connect(analyserNode)
+      } else {
+        audio.setParam(gainNode.gain, 0)
+        try {
+          groupNode.disconnect(monoNode)
+        } catch (error) { console.warn(error) }
+        setTimeout(() => {
+          monoNode.suspend()
+          try {
+            monoNode.disconnect(gainNode)
+          } catch (error) { console.warn(error) }
+          try {
+            monoNode.disconnect(analyserNode)
+          } catch (error) { console.warn(error) }
+        }, 50)
+      }
+    })
+
+    fx(function startOrStopAnalyser({ running }) {
+      if (running) {
+        $.analyseStart()
+      } else {
+        $.analyseStop()
+      }
+    })
+
+    fx(function createMonoAudio({ audio, analyserNode, monoNode, gainNode, workerBytes, workerFreqs }) {
+      $.monoAudio = new Audio({
+        ...audio,
+        audioNode: monoNode,
+        gainNode,
+        analyserNode,
+        workerBytes,
+        workerFreqs,
+      })
+    })
+
+    fx(function createSchedulerAudio({ audio, groupNode, workerBytes, workerFreqs }) {
+      $.schedulerAudio = new Audio({
+        ...audio,
+        audioNode: groupNode,
+        workerBytes,
+        workerFreqs,
+      })
+    })
+
+    fx(function drawSchedulerView({ app, schedulerAudio, scheduler }) {
+      $.schedulerView = <>
+        <MachineView
+          app={app}
+          audio={schedulerAudio}
+          machine={scheduler}
+        />
+        <Vertical
+          app={app}
+          id={scheduler.id}
+          align={app.align}
+          size={scheduler.size ?? SIZES[scheduler.kind]}
+        />
+      </>
+    })
+
+    // TODO: possible optimization: monoChecksum for mono: id
+    fx(function drawMonoView({ app, monoAudio, mono }) {
+      $.monoView = <>
+        <MachineView
+          app={app}
+          audio={monoAudio}
+          machine={mono}
+        />
+        <Vertical
+          app={app}
+          id={mono.id}
+          align={app.align}
+          size={mono.size ?? SIZES[mono.kind]}
+        />
+      </>
+    })
+
+    fx(function drawMonoGroup({ monoView, schedulerView }) {
+      $.view = [monoView, schedulerView]
+    })
+  }))

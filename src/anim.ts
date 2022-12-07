@@ -1,21 +1,29 @@
-import { queue } from 'event-toolkit'
+// import { queue } from 'event-toolkit'
 
 function animCall(fn: any) { fn() }
 
-const anim = queue.raf(function animRaf() {
+let scheduled = false
+
+const anim = function animRaf() {
   if (animFns.size) {
-    anim()
+    requestAnimationFrame(anim)
     const fns = [...animFns]
     animFns.clear()
     fns.forEach(animCall)
+  } else {
+    scheduled = false
   }
-})
+}
 
 const animFns = new Set<any>()
 export function animSchedule(fn: any) {
   animFns.add(fn)
-  anim()
+  if (!scheduled) {
+    scheduled = true
+    requestAnimationFrame(anim)
+  }
 }
+
 export function animRemoveSchedule(fn: any) {
   animFns.delete(fn)
 }

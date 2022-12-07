@@ -1,26 +1,30 @@
 /** @jsxImportSource minimal-view */
 
-import { element, on, queue, view, web } from 'minimal-view'
+import { element, view, web } from 'minimal-view'
+import { cheapRandomId, isEqual, pick } from 'everyday-utils'
 
-import type { AppLocal, AppDetail, AppPresets } from './app'
+import type { AppContext, AppDetail, AppPresets } from './app'
 import type { SchedulerDetail, SchedulerPresets } from './scheduler'
 
 import { MonoDetail, MonoPresets } from './mono'
 import { Audio } from './audio'
-import { cheapRandomId, pick } from 'everyday-utils'
 
 export type MachineKind = 'app' | 'mono' | 'scheduler'
 
-export type MachineState = 'init' | 'idle' | 'ready' | 'errored' | 'compiling' | 'running' | 'suspended'
+export type MachineState = 'init' | 'idle' | 'ready' | 'running' | 'suspended'
+
+export type MachineCompileState = 'init' | 'compiling' | 'compiled' | 'errored'
 
 export type MachineDetail = AppDetail | MonoDetail | SchedulerDetail
 
 export type MachinePresets = AppPresets | MonoPresets | SchedulerPresets
 
+export type AudioMachinePresets = MonoPresets | SchedulerPresets
+
 export abstract class Machine<T extends MachinePresets = any> {
   abstract id: string
   abstract kind: MachineKind
-  abstract height: number
+  abstract size: number
   abstract presets: T
 
   state: MachineState = 'init'
@@ -28,7 +32,7 @@ export abstract class Machine<T extends MachinePresets = any> {
   toJSON(): unknown {
     return pick(this, [
       'id',
-      'height',
+      'size',
       'presets',
     ])
   }
@@ -39,6 +43,7 @@ export abstract class Machine<T extends MachinePresets = any> {
     return !other
       || (this.id === other.id
         && this.state === other.state
+        && this.size === other.size
         &&
         (this.presets === other.presets
           || (
@@ -57,7 +62,7 @@ export abstract class Machine<T extends MachinePresets = any> {
   }
 }
 
-export abstract class AudioMachine<T extends MachinePresets> extends Machine<T> {
+export abstract class AudioMachine<T extends AudioMachinePresets = AudioMachinePresets> extends Machine<T> {
   id = cheapRandomId()
   groupId!: string
   abstract spacer?: number[]
@@ -70,10 +75,21 @@ export abstract class AudioMachine<T extends MachinePresets> extends Machine<T> 
     Object.assign(this, data)
   }
 
+  equals(other?: this) {
+    if (this === other) return true
+
+    return !other
+      || (this.id === other.id
+        && isEqual(this.spacer, other.spacer)
+        && isEqual(this.outputs, other.outputs)
+        && super.equals(other)
+      )
+  }
+
   toJSON(): unknown {
     return pick(this, [
       'id',
-      'height',
+      'size',
       'groupId',
       'outputs',
       'audio',
@@ -84,50 +100,81 @@ export abstract class AudioMachine<T extends MachinePresets> extends Machine<T> 
 
 export const MachineView = web('machine', view(
   class props {
-    app!: AppLocal
+    app!: AppContext
     audio!: Audio
     machine!: Machine
-  }, class local {
-  host = element
-}, ({ $, fx }) => {
-  fx(({ machine }) => {
-    $.css = /*css*/`
-    & {
-      box-sizing: border-box;
-      display: flex;
-      flex-flow: column wrap;
-      position: relative;
-      max-height: 100%;
-      z-index: ${machine.kind === 'scheduler' ? 4 : 3};
-      pointer-events: none;
+  },
 
-      > * {
-        flex: 1;
-      }
-    }
-    `
-  })
+  class local {
+    host = element
+    align?: AppContext['align']
+    kind?: Machine['kind']
+  },
 
-  fx(({ host, machine }) => {
-    host.setAttribute('id', machine.id)
-  })
+  function actions({ $, fn, fns }) {
+    return fns(new class actions {
 
-  fx(({ host }) => {
-    const resize = queue.raf(() => {
-      host.style.width = Math.min(800, window.innerWidth - 50) + 'px'
     })
-    resize()
-    return on(window, 'resize')(resize)
-  })
+  },
 
-  fx(function drawMachine({ app, audio, machine }) {
-    const Kind = app.Machines[machine.kind] as any
+  function effects({ $, fx }) {
+    fx(function machineCss({ align, kind }) {
+      const [dim, wrap] = [
+        ['width', 'row'] as const,
+        ['height', 'column'] as const
+      ][+(align === 'y')]
 
-    $.view = <Kind
-      id={machine.id}
-      app={app}
-      audio={audio}
-      machine={machine}
-    />
-  })
-}))
+      $.css = /*css*/`
+
+      & {
+        box-sizing: border-box;
+        display: flex;
+        flex-flow: ${wrap} wrap;
+        position: relative;
+        max-${dim}: 100%;
+        z-index: ${kind === 'scheduler' ? 3 : 4};
+        pointer-events: none;
+
+        > * {
+          flex: 1;
+        }
+      }
+      `
+    })
+
+    fx(function updateAppAlign({ app }) {
+      $.align = app.align
+    })
+
+    fx(function updateMachineKind({ machine }) {
+      $.kind = machine.kind
+    })
+
+    fx(function updateAttrId({ host, machine }) {
+      host.setAttribute('id', machine.id)
+    })
+
+    // fx(({ host, align }) => {
+    //   const [dim, innerDim] = [
+    //     ['height', 'innerHeight'] as const,
+    //     ['width', 'innerWidth'] as const
+    //   ][+(align === 'y')]
+
+    //   const resize = queue.raf(() => {
+    //     host.style[dim] = Math.min(800, window[innerDim] - 50) + 'px'
+    //   })
+    //   resize()
+    //   return on(window, 'resize')(resize)
+    // })
+
+    fx(function drawMachine({ app, audio, machine }) {
+      const Kind = app.Machines[machine.kind] as any
+
+      $.view = <Kind
+        id={machine.id}
+        app={app}
+        audio={audio}
+        machine={machine}
+      />
+    })
+  }))

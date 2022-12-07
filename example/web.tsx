@@ -7,24 +7,42 @@ import { render, enableDebug, effect } from 'minimal-view'
 // window.recorder = new DOMRecorder()
 // document.body.appendChild(window.recorder.el)
 
-if (false)
-  enableDebug(5000)
+// @ts-ignore
+// globalThis.DEBUG = ['app', 'mono', 'scheduler', 'mono-group', 'wavetracer']
+
+// @ts-ignore
+const isDebug = !!globalThis.DEBUG
+
+// if (isDebug) enableDebug(5000)
+
 effect.maxUpdates = 10000
 
 import { AppView } from '..'
 
-const css = /*css*/`
-html, body {
-  margin: 0;
-  padding: 0;
-  width: 100%;
-  height: 100%;
-}
-`
+// const css = /*css*/`
+// .dual {
+//   display: flex;
+//   flex-flow: row nowrap;
+//   max-height: 100%;
+// }
 
-setTimeout(() => {
-  render(<>
-    <style>{css}</style>
-    <AppView />
-  </>, document.body)
-})
+// .pane {
+//   max-width: 50%;
+//   max-height: 100%;
+//   overflow-y: scroll;
+// }
+// `
+render(<>
+  <AppView distRoot="/example" apiUrl="https://devito.test" />
+</>, document.body)
+  // render(<>
+  //   <style>{css}</style>
+  //   <div class="dual">
+  //     <div class="pane">
+  //       <AppView />
+  //     </div>
+  //     <div class="pane">
+  //       <AppView />
+  //     </div>
+  //   </div>
+  // </>, document.body)

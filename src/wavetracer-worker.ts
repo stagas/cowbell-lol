@@ -1,3 +1,4 @@
+// import { hslToRgb, rgbToHsl } from 'everyday-utils'
 import { animRemoveSchedule, animSchedule } from './anim'
 
 export interface WavetracerWorkerInit {
@@ -32,6 +33,17 @@ export interface WavetracerWorkerStop {
 export interface WavetracerWorkerBytes {
   id: string
   bytes: Uint8Array
+  freqs: Uint8Array
+}
+
+export interface WavetracerWorkerLoopTime {
+  id: string
+  loopTime: number
+}
+
+export interface WavetracerWorkerCurrentTime {
+  id: string
+  currentTime: number
 }
 
 export type WavetracerWorkerMessage =
@@ -40,14 +52,20 @@ export type WavetracerWorkerMessage =
   | WavetracerWorkerStart
   | WavetracerWorkerStop
   | WavetracerWorkerBytes
+  | WavetracerWorkerLoopTime
+  | WavetracerWorkerCurrentTime
 
 function createWorkerTask(id: string, kind: WavetracerWorkerInit['kind'], canvas: HTMLCanvasElement): Task {
-  const c = canvas.getContext('2d')!
+  const c = canvas.getContext('2d', {
+    alpha: false,
+    desynchronized: false
+  })!
 
   /** Device pixel ratio */
   let pr: number
 
   let bytes: Uint8Array
+  let freqs: Uint8Array
 
   let offsetTime: number
   let width: number
@@ -58,21 +76,31 @@ function createWorkerTask(id: string, kind: WavetracerWorkerInit['kind'], canvas
 
   let loopTime = 1
 
+  const rgb = [0, 0, 0]
+  // const hsl = [0, 0, 0]
+
   function setTimers(_offsetTime: number, _loopTime: number) {
     offsetTime = _offsetTime
     loopTime = _loopTime
+  }
+
+  function setOffsetTime(_offsetTime: number) {
+    offsetTime = _offsetTime
   }
 
   function setLoopTime(newLoopTime: number) {
     loopTime = newLoopTime
   }
 
-  function setBytes(_bytes: Uint8Array) {
+  function setBytes(_bytes: Uint8Array, _freqs: Uint8Array) {
     bytes = _bytes
+    freqs = _freqs
   }
 
   function setSizes(pixelRatio: number, newWidth: number, newHeight: number) {
     pr = pixelRatio
+    c.lineWidth = pr
+
     width = newWidth //* pr | 0
     height = newHeight * pr | 0
 
@@ -100,8 +128,15 @@ function createWorkerTask(id: string, kind: WavetracerWorkerInit['kind'], canvas
     x = currentTime / loopTime
     x = (x - (x | 0)) * width
     y = (height - pr) * h + pr / 2
+
+    if ((x | 0) === 0) {
+      c.globalCompositeOperation = 'darken'
+      c.fillStyle = '#0002'
+      c.fillRect(0, 0, width, height)
+      c.globalCompositeOperation = 'source-over'
+    }
+
     c.beginPath()
-    c.lineWidth = pr
     c.moveTo(x, py)
     c.lineTo(x, y)
     c.closePath()
@@ -113,7 +148,6 @@ function createWorkerTask(id: string, kind: WavetracerWorkerInit['kind'], canvas
 
     y = (height - pr) * h + pr / 2
     c.beginPath()
-    c.lineWidth = pr
     c.moveTo(width - 1, py)
     c.lineTo(width, y)
     c.closePath()
@@ -125,6 +159,16 @@ function createWorkerTask(id: string, kind: WavetracerWorkerInit['kind'], canvas
     if (!c || !bytes) return
 
     h = bytes[0] / 256
+
+    rgb[2] = (freqs[0] + freqs[1] + freqs[2] + freqs[3] + freqs[4] + freqs[5]) / 6 / 256
+    rgb[1] = (freqs[6] + freqs[7] + freqs[8] + freqs[9] + freqs[10]) / 5 / 256
+    rgb[0] = (freqs[11] + freqs[12] + freqs[13] + freqs[14] + freqs[15]) / 5 / 256
+
+    // hsl = rgbToHsl([rgb[0], rgb[1] ** 0.8, rgb[2]])
+    // rgb = hslToRgb([hsl[0], hsl[1] ** 0.1, hsl[2] ** 1])
+
+    c.strokeStyle = `rgb(${rgb[0] ** 0.2 * 255},${rgb[1] ** 0.8 * 255},${rgb[2] ** 1.15 * 255})`
+
     const normal = 1 - h * 2
     const sign = Math.sign(normal)
     h = ((Math.abs(normal) ** 0.38) * sign * 0.5 + 0.5)
@@ -138,6 +182,7 @@ function createWorkerTask(id: string, kind: WavetracerWorkerInit['kind'], canvas
     setLoopTime,
     setSizes,
     setTimers,
+    setOffsetTime,
     setBytes
   }
 }
@@ -147,7 +192,8 @@ interface Task {
   setLoopTime: (loopTime: number) => void
   setSizes: (pixelRatio: number, width: number, height: number) => void
   setTimers: (offsetTime: number, loopTime: number) => void
-  setBytes: (bytes: Uint8Array) => void
+  setOffsetTime: (offsetTime: number) => void
+  setBytes: (bytes: Uint8Array, freqs: Uint8Array) => void
   draw: () => void
 }
 
@@ -168,7 +214,8 @@ self.onmessage = (e: { data: WavetracerWorkerMessage }) => {
 
   if ('width' in e.data) {
     task.setSizes(e.data.pixelRatio, e.data.width, e.data.height)
-  } else if ('start' in e.data) {
+  }
+  else if ('start' in e.data) {
     if (e.data.kind === 'tracer') {
       task.setTimers(
         e.data.currentTime - performance.now() * 0.001,
@@ -183,7 +230,13 @@ self.onmessage = (e: { data: WavetracerWorkerMessage }) => {
     animRemoveSchedule(task.draw)
   }
   else if ('bytes' in e.data) {
-    task.setBytes(e.data.bytes)
+    task.setBytes(e.data.bytes, e.data.freqs)
+  }
+  else if ('loopTime' in e.data) {
+    task.setLoopTime(e.data.loopTime)
+  }
+  else if ('currentTime' in e.data) {
+    task.setOffsetTime(e.data.currentTime - performance.now() * 0.001)
   }
   else {
     console.error(e)
