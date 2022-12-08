@@ -74,6 +74,7 @@ export class SchedulerPresets extends BasePresets<SchedulerDetail, Preset<Schedu
 
 export class SchedulerMachine extends AudioMachine<SchedulerPresets> {
   kind: MachineKind = 'scheduler'
+  name = 'scheduler'
   size = SIZES['scheduler']
   spacer = SPACERS.scheduler
   presets = new SchedulerPresets()

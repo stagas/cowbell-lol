@@ -94,6 +94,48 @@ export const Layout = web('layout', view(
         pointer-events: all;
       }
 
+      [part=app-side] {
+        position: sticky;
+        left: 0;
+        top: 45px;
+        height: calc(100vh - 45px);
+        /* bottom: 0; */
+        padding-right: 17.5px;
+        z-index: 99999;
+        background: #001d;
+      }
+
+      [part=app-side-spacer] {
+        /* height: 100px; */
+        /* position: absolute; */
+        /* top: 0; */
+      }
+      [part=items] {
+        padding-left: 17.5px;
+      }
+      [part=app-presets] {
+        /* height: 100px; */
+        /* position: absolute; */
+        /* top: 0; */
+      }
+
+      [part=add-button] {
+        margin: 7px;
+        display: flex;
+        justify-content: center;
+        ${Button} {
+          cursor: pointer;
+          opacity: 0.35;
+          color: #667;
+          &:hover {
+            opacity: 1;
+          }
+        }
+      }
+
+      [part=items] {
+      }
+
       .column {
         display: flex;
         flex-flow: ${wrap} nowrap;

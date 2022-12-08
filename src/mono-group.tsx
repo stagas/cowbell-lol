@@ -37,12 +37,12 @@ export const MonoGroup = web('mono-group', view(
     monoAudio?: Audio | null
     schedulerAudio?: Audio
 
-    analyserNode?: AnalyserNode | null
     monoNode?: MonoNode | null
     gainNode?: GainNode | null
     groupNode?: SchedulerEventGroupNode
     keysNode?: SchedulerEventGroupNode
 
+    analyserNode?: AnalyserNode | null
     bytes?: Uint8Array
     freqs?: Uint8Array
     workerBytes?: Uint8Array
@@ -174,10 +174,10 @@ export const MonoGroup = web('mono-group', view(
     fx(async function createGainNode({ audio }) {
       const gainNode = $.gainNode = await audio.gainNodePool.acquire()
 
-      gainNode.connect(audio.audioContext.destination)
+      gainNode.connect(audio.gainNode)
 
       return () => {
-        gainNode.disconnect(audio.audioContext.destination)
+        gainNode.disconnect(audio.gainNode)
         audio.gainNodePool.release(gainNode)
       }
     })

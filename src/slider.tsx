@@ -3,6 +3,7 @@
 import { defineProperty } from 'everyday-utils'
 import { Point, Rect, Scalar } from 'geometrik'
 import { chain, element, on, queue, view, web } from 'minimal-view'
+import { AppMachine } from './app'
 
 import { MonoMachine } from './mono'
 import { SliderScene } from './sliders'
@@ -74,7 +75,7 @@ export class Slider {
 export const SliderView = web('slider', view(
   class props extends Slider {
     scene!: SliderScene
-    machine!: MonoMachine
+    machine!: AppMachine | MonoMachine
     running!: boolean
     vertical!: boolean
     showBg!: boolean

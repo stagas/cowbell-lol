@@ -23,6 +23,7 @@ export const Spacer = web('spacer', view(
     align: 'x' | 'y' = 'x'
     children?: JSX.Element[]
     setSpacer?: AppContext['setSpacer']
+    minHandlePos?= 0
   },
 
   class local {
@@ -110,9 +111,14 @@ export const Spacer = web('spacer', view(
         })
       })
 
-      resize = fn(({ host, layout }) => queue.raf(() => {
-        $.rect = new Rect(layout.getBoundingClientRect()).round()
-        Object.assign(host.style, $.rect.toStyle())
+      resize = fn(({ host, align, layout }) => queue.raf(() => {
+        const [, oppDim] = dims(align)
+
+        $.rect = new Rect(layout.getBoundingClientRect()) //.round()
+        Object.assign(host.style, {
+          ...$.rect.toStyle(),
+          [oppDim]: '100%'
+        })
       }))
 
     })
@@ -167,12 +173,12 @@ export const Spacer = web('spacer', view(
       setSpacer(id, intents)
     })
 
-    fx(function drawHandles({ cells, align }) {
+    fx(function drawHandles({ cells, align, minHandlePos }) {
       const [, , pos] = dims(align)
       $.handles = cells.slice(1).map((p, i) =>
         <div
           part="handle"
-          style={{ [pos]: p * 100 + '%' }}
+          style={{ [pos]: `max(${minHandlePos}px, ${p * 100}%)` }}
           onpointerdown={function (this: HTMLDivElement, e) {
             e.preventDefault()
             $.handleDown(this, e, i + 1)

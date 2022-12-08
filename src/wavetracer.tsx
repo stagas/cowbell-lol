@@ -17,8 +17,8 @@ export const Wavetracer = web('wavetracer', view(
     kind!: 'tracer' | 'scroller'
     running = false
     app!: AppContext
-    workerBytes?: Uint8Array
-    workerFreqs?: Uint8Array
+    workerBytes!: Uint8Array
+    workerFreqs!: Uint8Array
     width?= 100
     height?= 50
     loopTime?= 1

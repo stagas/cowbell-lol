@@ -81,6 +81,16 @@ export class MonoMachine extends AudioMachine<MonoPresets> {
     Object.assign(this, data)
   }
 
+  get name() {
+    const code = this.presets.selectedPreset?.detail.data.editorValue
+    if (code) {
+      const name = code.slice(4, code.indexOf(' \\'))
+      return name
+    } else {
+      return '?!?'
+    }
+  }
+
   equals(other?: this) {
     return !other
       || (this.id === other.id
@@ -751,7 +761,9 @@ export const Mono = web('mono', view(
     }) {
       console.log('mono state:', state)
       $.view = <>
-        <Spacer part="spacer" align={app.align === 'x' ? 'y' : 'x'} setSpacer={app.setSpacer} id={id} layout={host} initial={spacer ?? [0, 0.2, 0.55]}>
+        <Spacer part="spacer" align={app.align === 'x' ? 'y' : 'x'} setSpacer={app.setSpacer} id={id} layout={host} initial={spacer ?? [0, 0.2, 0.55]}
+          minHandlePos={2}
+        >
 
           <Code
             part="editor"

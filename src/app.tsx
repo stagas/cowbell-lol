@@ -1,6 +1,6 @@
 /** @jsxImportSource minimal-view */
 
-import { Matrix, Point, Rect } from 'geometrik'
+import { Scalar, Matrix, Point, Rect } from 'geometrik'
 import { chain, element, event, Off, on, queue, view, web } from 'minimal-view'
 
 import { BasePresets, PresetsGroupDetail } from 'abstract-presets'
@@ -20,12 +20,16 @@ import { Preset, PresetsView } from './presets'
 import { Scheduler, SchedulerMachine } from './scheduler'
 import { ancient, emoji, randomName } from './util/random-name'
 import { deserialize, serialize } from './util/serialize'
-import { Vertical } from './vertical'
 import { SliderScene } from './sliders'
 import { classes } from './util/classes'
 import { bgForHue } from './util/bg-for-hue'
 import { ObjectPool } from './util/pool'
 import { MonoNode } from 'mono-worklet'
+import { Spacer } from './spacer'
+import { MixerView } from './mixer'
+import { animRemoveSchedule, animSchedule } from './anim'
+
+const { clamp } = Scalar
 
 export interface Save {
   name: string
@@ -90,10 +94,17 @@ export class AppPresets extends BasePresets<AppDetail, Preset<AppDetail>> {
 
 export class AppMachine extends Machine<AppPresets>  {
   id = 'app'
+  name = 'main'
   kind: MachineKind = 'app'
+  hue = 230
   size = SIZES['app']
   align: 'x' | 'y' = 'y'
   presets = new AppPresets()
+
+  declare methods: AppContext
+  declare audio?: Audio
+
+  gainValue = 0.7
 
   constructor(data: Partial<AppMachine> = {}) {
     super(data)
@@ -108,6 +119,12 @@ export class AppMachine extends Machine<AppPresets>  {
       'align',
       'presets',
     ])
+  }
+
+  equals(other?: this) {
+    return !other
+      || (this.gainValue === other.gainValue
+        && super.equals(other))
   }
 }
 
@@ -150,15 +167,19 @@ export const AppView = web('app', view(
 
     // audio
     audioContext = new AudioContext({ sampleRate: 44100, latencyHint: 0.04 })
-    // audioNodes = new ImmMap<string, AppAudioNode>()
-    // gainNodes = new ImmMap<string, GainNode>()
-    // disconnects = new Map<string, Off>()
-    // playingNodes = new Map<string, Off>()
-    // analyserNodes = new ImmMap<string, AnalyserNode>()
     schedulerNode?: SchedulerNode
     startTime?: number
     fftSize = 32
     audio?: Audio
+
+    appAudio?: Audio
+    gainNode?: GainNode
+    gainValue?: number
+    analyserNode?: AnalyserNode
+    bytes?: Uint8Array
+    freqs?: Uint8Array
+    workerBytes?: Uint8Array
+    workerFreqs?: Uint8Array
 
     playing = 0
 
@@ -184,7 +205,8 @@ export const AppView = web('app', view(
     mainControlsView?: JSX.Element
     addButtonView?: JSX.Element
     savesView?: JSX.Element
-    appPresetsView?: JSX.Element
+    headerView?: JSX.Element
+    presetsView?: JSX.Element
 
     // refs
     saveEl?: HTMLDivElement
@@ -198,6 +220,8 @@ export const AppView = web('app', view(
   },
 
   function actions({ $, fns, fn }) {
+    let tick = () => { }
+
     const updateTitle = ({ name, date, isAutoSave }: Save, serializedSave?: string, isFromUrl?: boolean) => {
       const url = new URL(location.href)
 
@@ -232,8 +256,6 @@ export const AppView = web('app', view(
           const isFromUrl = serializedSave != null
           serializedSave ??= localStorage[saveId]
 
-          // console.log(saveId, serializedSave)
-
           const json = JSON.parse(serializedSave!)
           const obj = deserialize(json) as Save
 
@@ -242,8 +264,6 @@ export const AppView = web('app', view(
           if (Array.isArray(obj.machines)) {
             obj.machines = new List({ items: obj.machines })
           }
-
-          // console.log(obj)
 
           localStorage.lastSave = serializedSave
           $.lastSave = obj
@@ -262,35 +282,14 @@ export const AppView = web('app', view(
           console.warn(error)
         }
 
-        // const machineIds = (localStorage.machines ?? '').split(',').filter(Boolean)
-
-        // machineIds.forEach((id: string) => {
-        //   try {
-        //     const machineJson = JSON.parse(localStorage[`machine_${id}`])
-        //     const machine = deserialize(machineJson)
-        //     machines.push(machine)
-        //     if (id === 'app') {
-        //       $.app = machine as AppMachine
-        //     }
-        //   } catch (error) {
-        //     console.warn('Failed to load machine with id', id)
-        //     console.warn(error)
-        //   }
-        // })
-
         if (!machines.items.length) {
           machines = machines
             .add($.app)
             .add(defaultMachines.mono.copy())
             .add(defaultMachines.scheduler.copy())
-
-          //   $.app,
-          //   defaultMachines.mono.copy(),
-          //   defaultMachines.scheduler.copy(),
-          // )
         }
 
-        $.machines = machines //new List({ items: machines })
+        $.machines = machines
         $.app = machines.getById('app')
         this.setMachineState('app', 'ready')
       }
@@ -393,8 +392,6 @@ export const AppView = web('app', view(
       deleteSave = (
         saveId: string
       ) => {
-        console.log('will delete:', saveId)
-
         $.saves = (localStorage.saves ?? '')
           .split(DELIMITERS.SAVES)
           .filter((key: string) => key !== saveId)
@@ -427,45 +424,6 @@ export const AppView = web('app', view(
         }
       }
 
-      // addNode = (
-      //   id: string,
-      //   audioNode: AppAudioNode
-      // ) => {
-      //   $.audioNodes = $.audioNodes.set(id, audioNode)
-      // }
-
-      // removeNode = (
-      //   id: string
-      // ) => {
-      //   $.audioNodes = $.audioNodes.delete(id)
-      // }
-
-      // addGainNode = (
-      //   id: string,
-      //   gainNode: GainNode
-      // ) => {
-      //   $.gainNodes = $.gainNodes.set(id, gainNode)
-      // }
-
-      // removeGainNode = (
-      //   id: string
-      // ) => {
-      //   $.gainNodes = $.gainNodes.delete(id)
-      // }
-
-      // addAnalyserNode = (
-      //   id: string,
-      //   analyserNode: AnalyserNode
-      // ) => {
-      //   $.analyserNodes = $.analyserNodes.set(id, analyserNode)
-      // }
-
-      // removeAnalyserNode = (
-      //   id: string
-      // ) => {
-      //   $.analyserNodes = $.analyserNodes.delete(id)
-      // }
-
       connectNode = (
         sourceNode: AppAudioNode,
         targetNode: AppAudioNode
@@ -490,7 +448,6 @@ export const AppView = web('app', view(
 
         let off: Off
         if ('state' in targetNode) {
-          // console.log('HAS TARGET STATE')
           off = chain(
             on(targetNode, 'suspend' as never)(disconnectAndRetry),
             on(targetNode, 'disable' as never)(disconnectAndRetry),
@@ -502,7 +459,6 @@ export const AppView = web('app', view(
             sourceNode.connect(targetNode as any)
           }
         } else {
-          // console.log('NO STATE IN TARGET')
           sourceNode.connect(targetNode as any)
         }
 
@@ -531,19 +487,19 @@ export const AppView = web('app', view(
       //   }
       // }
 
-      startPlaying = () => {
+      start = () => {
         $.machines.items
           .filter((machine) =>
             // @ts-ignore
-            'methods' in machine && 'start' in machine.methods)
+            machine.kind !== 'app' && 'methods' in machine && 'start' in machine.methods)
           .forEach(({ methods: { start } }: any) => start())
       }
 
-      stopPlaying = () => {
+      stop = () => {
         $.machines.items
           .filter((machine) =>
             // @ts-ignore
-            'methods' in machine && 'stop' in machine.methods)
+            machine.kind !== 'app' && 'methods' in machine && 'start' in machine.methods)
           .forEach(({ methods: { stop } }: any) => stop())
       }
 
@@ -761,6 +717,52 @@ export const AppView = web('app', view(
       getCurrentTimeAdjusted = fn(({ audioContext, startTime }) => () => {
         return audioContext.currentTime - startTime
       })
+
+      setSliderNormal = fn(({ audio }) => (sliderId: string, newNormal: number) => {
+        if (sliderId === 'vol') {
+          audio.setParam(audio.gainNode.gain, newNormal)
+          this.setGainValue('app', newNormal)
+        }
+        return newNormal
+      })
+
+      onWheel = fn(() => (ev: WheelEvent) => {
+        ev.preventDefault?.()
+        ev.stopPropagation?.()
+
+        const normal = $.app.gainValue
+
+        const newNormal = clamp(0, 1, (normal ?? 0)
+          + Math.sign(ev.deltaY) * (
+            0.01
+            + 0.10 * Math.abs(ev.deltaY * 0.005) ** 1.05
+          )
+        )
+
+        $.sliderScene.updateNormalMap.get('app', 'vol')?.(newNormal)
+
+        return this.setSliderNormal('vol', newNormal)
+      })
+
+      analyseStop = () => {
+        animRemoveSchedule(tick)
+      }
+
+      analyseStart =
+        fn(({ analyserNode, bytes, freqs, workerBytes, workerFreqs }) => {
+
+          tick = () => {
+            analyserNode.getByteTimeDomainData(bytes)
+            analyserNode.getByteFrequencyData(freqs)
+            workerBytes.set(bytes)
+            workerFreqs.set(freqs)
+            animSchedule(tick)
+          }
+
+          return () => {
+            animSchedule(tick)
+          }
+        })
     })
   },
 
@@ -792,7 +794,7 @@ export const AppView = web('app', view(
         padding: 0;
         width: 100%;
         height: 100%;
-        overflow-x: hidden;
+        overflow-y: scroll;
       }
       `
 
@@ -804,13 +806,8 @@ export const AppView = web('app', view(
         flex-flow: ${flow} nowrap;
         align-items: center;
         background: #000;
-        /* ${dim}: fit-content; */
-        /* min-${dim}: 100%; */
-        /* scroll-behavior: smooth; */
-        /* min-${dim}: 100%; */
         max-${dim}: 100%;
         min-${oppDim}: 100%;
-        /* overflow: hidden; */
         padding-${padDim}: 65${viewportDim};
       }
 
@@ -821,8 +818,28 @@ export const AppView = web('app', view(
         z-index: 99999;
         background: #001d;
         ${dim}: 100%;
-        /* overflow: hidden; */
-        /* display: flex; */
+      }
+
+      ${Spacer} {
+        &::part(handle) {
+          height: calc(100% - 45px);
+        }
+      }
+
+      [part=app-side] {
+        position: fixed;
+        right: 0;
+        top: 45px;
+        max-height: 1vh;
+        bottom: 0;
+        z-index: 99999;
+        background: #001d;
+      }
+
+      [part=app-presets] {
+        max-height: 100px !important;
+        height: 100px !important;
+        min-height: 100px !important;
       }
 
       [part=main-controls] {
@@ -879,19 +896,6 @@ export const AppView = web('app', view(
         /* max-width: max(900px, calc(1vw - 50px)); */
       }
 
-      [part=add] {
-        margin: 7px;
-        display: flex;
-        justify-content: center;
-        ${Button} {
-          cursor: pointer;
-          opacity: 0.35;
-          color: #667;
-          &:hover {
-            opacity: 1;
-          }
-        }
-      }
 
       /* [part=saves] {
         display: flex;
@@ -998,6 +1002,21 @@ export const AppView = web('app', view(
         }
       }
 
+      [part=shorten-url] {
+        all: unset;
+        width: 72px;
+        height: 45px;
+        display: inline-flex;
+        justify-content: center;
+        margin: 0;
+        color: #556;
+        cursor: pointer;
+        &:hover {
+          color: #fff;
+          background-color: #aaf3;
+        }
+      }
+
       [part=topbar-controls] {
         display: flex;
         flex-flow: row nowrap;
@@ -1018,6 +1037,14 @@ export const AppView = web('app', view(
         [part=topbar-controls] {
           color: #4f1;
         }
+      }
+
+      [part=main-view] {
+        display: flex;
+        position: relative;
+        max-width: 95%;
+        width: 100%;
+        height: 100%;
       }
       `
     })
@@ -1078,7 +1105,11 @@ export const AppView = web('app', view(
       $.save()
     })
 
-    fx(function updateAppProps({ app }) {
+    fx(function updateAppProps({ app, appAudio }) {
+      app.methods = $
+      app.audio = appAudio
+      $.gainValue = app.gainValue
+
       $.size = app.size
 
       // $.align = app.align
@@ -1135,7 +1166,7 @@ export const AppView = web('app', view(
       // monoNode?.worklet.setTimeToSuspend(Infinity)
     })
 
-    fx(function createAudio({ audioContext, fftSize, schedulerNode }) {
+    fx(async function createAudio({ audioContext, fftSize, schedulerNode }) {
       const gainNodePool = new ObjectPool(() => {
         return new GainNode(audioContext, { channelCount: 1, gain: 0 })
       })
@@ -1162,158 +1193,28 @@ export const AppView = web('app', view(
         })
       })
 
+      const gainNode = $.gainNode = await gainNodePool.acquire()
+
+      gainNode.connect(audioContext.destination)
+
       $.audio = new Audio({
         audioContext,
         fftSize,
+        gainNode,
         schedulerNode,
         gainNodePool,
         monoNodePool,
         groupNodePool,
         analyserNodePool,
       })
+
+      $.audio.setParam(gainNode.gain, $.gainValue ?? 0.7)
+
+      return () => {
+        gainNode.disconnect(audioContext.destination)
+        gainNodePool.release(gainNode)
+      }
     })
-
-    // fx(function reconcileAudioNodes({ audioNodes, disconnects, machines }) {
-    //   // const toDisconnect: string[] = []
-    //   const keep = new Set<string>()
-
-    //   for (const machine of machines.items) {
-    //     if ('outputs' in machine) {
-    //       const sourceNode = audioNodes.get(machine.id)
-
-    //       if (sourceNode) {
-    //         for (const outputId of machine.outputs) {
-    //           const pairId = `${machine.id}_${outputId}`
-
-    //           const targetNode = audioNodes.get(outputId)
-
-    //           if (disconnects.has(pairId)) {
-    //             // if (!targetNode) {
-    //             //   toDisconnect.push(pairId)
-    //             // } else {
-    //             if (targetNode) {
-    //               keep.add(pairId)
-    //             }
-    //           } else {
-    //             if (targetNode) {
-    //               const off = $.connectNode(sourceNode, targetNode)
-    //               disconnects.set(pairId, off)
-    //               keep.add(pairId)
-    //             }
-    //           }
-    //         }
-    //       }
-    //       //  else {
-    //       //   for (const pairId of disconnects.keys()) {
-    //       //     const [sourceId] = pairId.split('_')
-    //       //     if (sourceId === machine.id) {
-    //       //       toDisconnect.push(pairId)
-    //       //     }
-    //       //   }
-    //       // }
-    //     }
-    //   }
-
-    //   for (const [pairId, off] of [...disconnects]) {
-    //     if (!keep.has(pairId)) {
-    //       off()
-    //       disconnects.delete(pairId)
-    //     }
-    //     // const off = disconnects.get(pairId)!
-    //     // disconnects.delete(pairId)
-    //     // off()
-    //   }
-    //   // for (const pairId of toDisconnect) {
-    //   //   const off = disconnects.get(pairId)!
-    //   //   disconnects.delete(pairId)
-    //   //   off()
-    //   // }
-    // })
-
-    // fx(function reconcilePlayingNodes({ audio, audioNodes, playingNodes, gainNodes, analyserNodes, machines }) {
-    //   const keep = new Set<string>()
-
-    //   for (const machine of machines.items) {
-    //     if (!('gainValue' in machine)) continue
-
-    //     if (machine.state === 'running') {
-    //       keep.add(machine.id)
-
-    //       if (!playingNodes.has(machine.id)) {
-    //         const audioNode = audioNodes.get(machine.id) as AudioNode
-    //         const gainNode = gainNodes.get(machine.id)
-    //         const analyserNode = analyserNodes.get(machine.id)
-
-    //         if (audioNode && gainNode && analyserNode) {
-    //           if (audioNode instanceof MonoNode) {
-    //             if (machine.state !== 'running') {
-    //               audioNode.suspend()
-    //               // console.log('should suspend??')
-    //             } else {
-    //               audioNode.resume()
-    //               // console.log('should resume??')
-    //             }
-    //           }
-    //           audio.setParam(gainNode.gain, machine.gainValue)
-    //           audioNode.connect(gainNode)
-    //           audioNode.connect(analyserNode)
-
-    //           playingNodes.set(machine.id, () => {
-    //             audio.setParam(gainNode.gain, 0)
-    //             // setTimeout(() => {
-    //             try {
-    //               if (audioNode instanceof MonoNode) {
-    //                 // console.log('should suspend??')
-    //                 audioNode.suspend()
-    //               }
-    //               audioNode.disconnect(gainNode)
-    //             } catch (error) {
-    //               console.warn(error)
-    //             }
-    //             try {
-    //               audioNode.disconnect(analyserNode)
-    //             } catch (error) {
-    //               console.warn(error)
-    //             }
-    //             // }, 50)
-    //           })
-    //         }
-    //       }
-    //     } else {
-    //       if (!playingNodes.has(machine.id)) {
-    //         const audioNode = audioNodes.get(machine.id) as AudioNode
-    //         if (audioNode) {
-    //           if (audioNode instanceof MonoNode) {
-    //             audioNode.suspend()
-    //             console.log('should suspend')
-    //           }
-    //         }
-    //       }
-    //     }
-    //     // else {
-    //     //   if (playingNodes.has(machine.id)) {
-    //     //     const off = playingNodes.get(machine.id)!
-    //     //     playingNodes.delete(machine.id)
-    //     //     off()
-    //     //   }
-    //     // }
-
-    //   }
-
-    //   for (const [id, off] of [...playingNodes]) {
-    //     if (!keep.has(id)) {
-    //       off()
-    //       playingNodes.delete(id)
-    //     }
-    //   }
-
-    // })
-
-    // fx(function calcMachinesChecksum({ machines }) {
-    //   $.machinesChecksum = machines.items.map((m) =>
-    //     `${m.size}${m.state}${checksumOfPresets(m.presets)}`
-    //   ).join()
-    // })
 
     fx(function drawItemsView({ addButtonView, state, audio, machines }) {
       if (state === 'init') return
@@ -1347,33 +1248,59 @@ export const AppView = web('app', view(
       $.itemsView = <div part="items">{itemsView}{addButtonView}</div>
     })
 
-    fx.raf(function updatePlayingState({ host, machines }) {
-      $.playing = machines.items.filter((machine) => machine.kind === 'mono' && machine.state === 'running').length
-
-      host.toggleAttribute('playing', Boolean($.playing))
+    fx(function updatePlayingState({ machines }) {
+      $.setMachineState('app',
+        machines.items.filter((machine) => machine.kind === 'mono' && machine.state === 'running').length
+          ? 'running'
+          : 'suspended'
+      )
     })
 
-    fx(function drawMainControls({ playing }) {
-      $.mainControlsView = <div part="main-controls">
-        <Button onClick={playing ? $.stopPlaying : $.startPlaying}>
-          <IconSvg class="normal" set="feather" icon={playing ? 'pause' : 'play'} />
-        </Button>
+    fx(async function createAnalyserNode({ audio }) {
+      const analyserNode = $.analyserNode = await audio.analyserNodePool.acquire()
 
-        <Button onClick={() => {
-          $.getShort().then((shortId) => {
-            prompt(
-              'Here is your short url:',
-              `https://play.${location.hostname}/${shortId.split('-').pop()}`
-            )
-          })
-        }}>
-          <IconSvg class="normal" set="feather" icon="send" />
-        </Button>
-      </div>
+      return () => {
+        audio.analyserNodePool.release(analyserNode)
+      }
+    })
+
+    fx(function createAppAudio({ audio, analyserNode, gainNode, workerBytes, workerFreqs }) {
+      gainNode.connect(analyserNode)
+
+      $.appAudio = new Audio({
+        ...audio,
+        gainNode,
+        analyserNode,
+        workerBytes,
+        workerFreqs,
+      })
+
+      return () => {
+        gainNode.disconnect(analyserNode)
+      }
+    })
+
+    fx(function startOrStopAnalyser({ state }) {
+      if (state === 'running' || state === 'preview') {
+        $.analyseStart()
+      } else {
+        $.analyseStop()
+      }
+    })
+
+    fx(function createAnalyserBytes({ analyserNode }) {
+      $.bytes = new Uint8Array(analyserNode.fftSize)
+      $.freqs = new Uint8Array(analyserNode.frequencyBinCount)
+    })
+
+    fx(function createWorkerBytes({ bytes, freqs }) {
+      $.workerBytes = new Uint8Array(new SharedArrayBuffer(bytes.byteLength))
+        .fill(128) // center it at 128 (0-256)
+      $.workerFreqs = new Uint8Array(new SharedArrayBuffer(freqs.byteLength))
     })
 
     fx(function drawAddButton() {
-      $.addButtonView = <div part="add">
+      $.addButtonView = <div part="add-button">
         <Button onClick={() => {
           const a = cheapRandomId()
           const b = cheapRandomId()
@@ -1397,24 +1324,15 @@ export const AppView = web('app', view(
       </div>
     })
 
-    fx(function drawAppPresets({ savesView, presets, size, align }) {
-      $.appPresetsView = <div part="header">
+    fx(function drawHeader({ savesView }) {
+      $.headerView = <div part="header">
         {savesView}
-        <PresetsView app={$} id="app" presets={presets as any} />
-        <Vertical app={$} id="app" size={size} align={align} minSize={45} />
       </div>
     })
 
-    // function checksumOfPresets(presets: AppPresets | MonoPresets | SchedulerPresets) {
-    //   return presets.selectedPresetId + presets.items.map(
-    //     ({ id, isRemoved, isDraft, hue, name }) =>
-    //       `${id}${hue}${name}${isRemoved ? 1 : 0}${isDraft ? 1 : 0}`
-    //   ).join()
-    // }
-
-    // fx(function calcPresetsChecksum({ presets }) {
-    //   $.presetsChecksum = checksumOfPresets(presets)
-    // })
+    fx(function drawPresets({ savesView, presets, size, align }) {
+      $.presetsView = <PresetsView part="app-presets" app={$} id="app" presets={presets as any} />
+    })
 
     fx(function updateAutoSave({ lastSave }) {
       if (lastSave) {
@@ -1425,14 +1343,6 @@ export const AppView = web('app', view(
     fx(function listenOnWindowPopState() {
       return on(window, 'popstate')($.onWindowPopState)
     })
-
-    // fx(({ saveEl, saves: _ }) => {
-    //   saveEl.scrollLeft = Number.MAX_SAFE_INTEGER
-    //   requestAnimationFrame(() => {
-    //     saveEl.scrollLeft = Number.MAX_SAFE_INTEGER
-    //   })
-    // })
-
 
     fx(function focusSave({ saveEl, lastSave }) {
       const lastSaveId = lastSave && getSaveId(lastSave)
@@ -1498,31 +1408,46 @@ export const AppView = web('app', view(
           </div>
         </div>
 
-        <button
-          title={!isAutoSave ? "You need to make some changes to be able to save." : "Click to save.\nMiddle or right click for another icon."}
-          class="big"
-          disabled={!isAutoSave}
-          style={
-            isAutoSave
-              ? `background-image:${bgForHue(Math.round((Math.random() * 360 | 0) * 25) / 25)}`
-              : ''
-          }
-          oncontextmenu={event.prevent.stop()}
-          onpointerdown={(e) => {
-            if (e.buttons & 1 && isAutoSave) {
-              if (!$.save(nextSaveEmoji)) return
-              requestAnimationFrame(() => {
-                $.saveEl!.scrollLeft = Number.MAX_SAFE_INTEGER
+        <div style="display: flex">
+          <Button part="shorten-url"
+            title="Share project"
+            onClick={() => {
+              $.getShort().then((shortId) => {
+                prompt(
+                  'Here is your short url:',
+                  `https://play.${location.hostname}/${shortId.split('-').pop()}`
+                )
               })
+            }}>
+            <IconSvg class="topbar" set="feather" icon="send" />
+          </Button>
+
+          <button
+            title={!isAutoSave ? "You need to make some changes to be able to save." : "Click to save.\nMiddle or right click for another icon"}
+            class="big"
+            disabled={!isAutoSave}
+            style={
+              isAutoSave
+                ? `background-image:${bgForHue(Math.round((Math.random() * 360 | 0) * 25) / 25)}`
+                : ''
             }
-            if ((e.buttons & 2) || (e.buttons & 4)) {
-              $.nextSaveEmoji = randomName(emoji)
-            }
-          }}>{nextSaveEmoji}</button>
+            oncontextmenu={event.prevent.stop()}
+            onpointerdown={(e) => {
+              if (e.buttons & 1 && isAutoSave) {
+                if (!$.save(nextSaveEmoji)) return
+                requestAnimationFrame(() => {
+                  $.saveEl!.scrollLeft = Number.MAX_SAFE_INTEGER
+                })
+              }
+              if ((e.buttons & 2) || (e.buttons & 4)) {
+                $.nextSaveEmoji = randomName(emoji)
+              }
+            }}>{nextSaveEmoji}</button>
+        </div>
       </div>
     })
 
-    fx(function drawApp({ mainControlsView, itemsView, appPresetsView, state }) {
+    fx(function drawApp({ host, machines, itemsView, headerView, presetsView, state, workerBytes, workerFreqs }) {
       if (state === 'init') return
 
       // {/* <div>
@@ -1533,10 +1458,66 @@ export const AppView = web('app', view(
       //       <IconSvg class="small" set="feather" icon="maximize-2" />
       //     </Button>
       //   </div> */}
-      $.view = [
-        mainControlsView,
-        appPresetsView,
-        itemsView,
-      ]
+      $.view = <>
+        {headerView}
+        <MainView
+          part="main-view"
+          app={$}
+          machines={machines}
+          workerBytes={workerBytes}
+          workerFreqs={workerFreqs}
+          presetsView={presetsView}
+          itemsView={itemsView} />
+      </>
     })
-  }))
+  })
+)
+
+const MainView = web('main-view', view(class props {
+  app!: AppContext
+  machines!: List<Machine | AudioMachine | MonoMachine>
+  workerBytes!: Uint8Array
+  workerFreqs!: Uint8Array
+  itemsView!: JSX.Element
+  presetsView!: JSX.Element
+}, class local {
+  host = element
+}, function actions() { return ({}) }, function effects({ $, fx }) {
+
+  fx(({ host, app, machines, itemsView, presetsView, workerBytes, workerFreqs }) => {
+    $.view = <Spacer align="x" initial={[0, 0.35]} layout={host} id="app-spacer" part="app-spacer">
+      <SideView
+        part="app-side"
+        app={app}
+        machines={machines}
+        workerBytes={workerBytes}
+        workerFreqs={workerFreqs}
+        presetsView={presetsView}
+      />
+      {itemsView}
+    </Spacer>
+  })
+}))
+
+const SideView = web('side-view', view(class props {
+  app!: AppContext
+  machines!: List<Machine | AudioMachine | MonoMachine>
+  workerBytes!: Uint8Array
+  workerFreqs!: Uint8Array
+  presetsView!: JSX.Element
+}, class local {
+  host = element
+}, function actions() { return ({}) }, function effects({ $, fx }) {
+
+  fx(({ host, app, machines, presetsView, workerBytes, workerFreqs }) => {
+    $.view = <Spacer align="y" initial={[0, 0.44]} layout={host} id="app-side-spacer">
+      <MixerView
+        app={app}
+        machines={machines}
+        workerBytes={workerBytes}
+        workerFreqs={workerFreqs}
+      />
+      {presetsView}
+    </Spacer>
+  })
+}))
