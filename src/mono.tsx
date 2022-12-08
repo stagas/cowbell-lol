@@ -1,6 +1,6 @@
 /** @jsxImportSource minimal-view */
 
-import { element, view, web } from 'minimal-view'
+import { element, queue, view, web } from 'minimal-view'
 
 import { AbstractDetail, BasePresets } from 'abstract-presets'
 import { CanvyElement } from 'canvy'
@@ -439,26 +439,19 @@ export const Mono = web('mono', view(
       })
 
       start = fn(({ id, app }) => () => {
-        // if ($.state === 'running') return
-        // monoNode.connect(analyserNode)
-        // monoNode.connect(gainNode)
-        // monoNode.resume()
-        // setParam(gainNode.gain, gainValue)
         app.setMachineState(id, 'running')
-        // console.log('mono state: should become running??')
+      })
+
+      preview = fn(({ id, app }) => () => {
+        app.setMachineState(id, 'preview')
+        this.stopPreview()
+      })
+
+      stopPreview = queue.debounce(3000)(() => {
+        this.stop()
       })
 
       stop = fn(({ id, app }) => () => {
-        // if ($.state === 'suspended') return
-        // console.log('connectNodes STOPPPED????')
-        // setParam(gainNode.gain, 0)
-        // try {
-        //   monoNode.disconnect(analyserNode)
-        // } catch (err) { console.warn(err) }
-        // try {
-        //   monoNode.suspend()
-        // } catch (err) { console.warn(err) }
-
         app.setMachineState(id, 'suspended')
       })
 

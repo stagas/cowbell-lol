@@ -6,10 +6,6 @@ import { AbstractDetail, BasePresets } from 'abstract-presets'
 import { CanvyElement } from 'canvy'
 import { cheapRandomId, pick } from 'everyday-utils'
 import { SchedulerEventGroupNode } from 'scheduler-node'
-
-// @ts-ignore TODO: suppressing temporarily
-// import { createSandbox, Sandbox } from 'sandbox-worklet'
-
 import defineFunction from 'define-function'
 
 import { AppContext, SIZES, SPACERS } from './app'
@@ -20,6 +16,8 @@ import { Midi } from './midi'
 import { Preset, PresetsView } from './presets'
 import { Spacer } from './spacer'
 import { Wavetracer } from './wavetracer'
+
+export type NoteEvent = [number, number, number, number]
 
 const schedulerDefaultEditorValue = `\
 bars=2
@@ -45,17 +43,6 @@ let sandboxTimeout: any
       sandboxTimeout = setTimeout(create, 3000)
     }
   })()
-// let sandbox: Sandbox | null = null
-// let sandboxPromise: Promise<Sandbox>
-// let sandboxTimeout: any
-//   ; (async function create() {
-//     sandboxPromise = createSandbox()
-//     sandbox = await sandboxPromise
-//     sandbox.ondestroy = () => {
-//       clearTimeout(sandboxTimeout)
-//       sandboxTimeout = setTimeout(create, 3000)
-//     }
-//   })()
 
 export type SchedulerDetailData = EditorDetailData
 
@@ -213,29 +200,15 @@ export const Scheduler = web('scheduler', view(
     })
 
     fx(async function createSandbox() {
-      // TODO: temporarily disabling sandbox for demo deployments
-      // $.sandbox = {
-      //   eval(code: string) {
-      //     return new Function(code)()
-      //     // return sandbox?.eval(code)
-      //   },
-      //   destroy() {
-      //     // sandbox?.destroy()
-      //   },
-      // } as Sandbox
-
-      // ****************************************************************
-      // TODO: should enable sandbox in production
-      // ****************************************************************
       $.sandbox = await sandboxPromise.then(() => ({
         eval(code: string) {
           return sandbox?.(code)
         },
         destroy() {
+          // TODO: noop at the moment, what should we do here?
           // sandbox?.destroy()
         },
       }))
-      // ****************************************************************
     })
 
     fx(async function onCodeChange({ groupNode, sandbox, schedulerCode, numberOfBars }) {
@@ -450,9 +423,11 @@ export const Scheduler = web('scheduler', view(
       state,
       midiEvents,
       numberOfBars,
+      groupNode,
       presets,
       spacer,
       audio: {
+        audioContext,
         workerBytes,
         workerFreqs,
       },

@@ -3,11 +3,12 @@
 import { element, view, web } from 'minimal-view'
 import { MonoNode } from 'mono-worklet'
 import { SchedulerEventGroupNode } from 'scheduler-node'
+import { PianoKeys } from 'x-pianokeys'
 import { animRemoveSchedule, animSchedule } from './anim'
 
 import { AppContext, SIZES } from './app'
 import { Audio } from './audio'
-import { MachineView } from './machine'
+import { MachineState, MachineView } from './machine'
 import { MonoMachine } from './mono'
 import { SchedulerMachine } from './scheduler'
 import { Vertical } from './vertical'
@@ -28,6 +29,8 @@ export const MonoGroup = web('mono-group', view(
     host = element
     align?: AppContext['align']
 
+    state?: MachineState
+
     monoId?: string
     schedulerId?: string
 
@@ -38,8 +41,8 @@ export const MonoGroup = web('mono-group', view(
     monoNode?: MonoNode | null
     gainNode?: GainNode | null
     groupNode?: SchedulerEventGroupNode
+    keysNode?: SchedulerEventGroupNode
 
-    running = false
     bytes?: Uint8Array
     freqs?: Uint8Array
     workerBytes?: Uint8Array
@@ -138,12 +141,9 @@ export const MonoGroup = web('mono-group', view(
     fx(async function createMonoNode({ audio }) {
       const monoNode = $.monoNode = await audio.monoNodePool.acquire()
 
-      // app.addNode(monoId, monoNode)
-
       return () => {
         monoNode.suspend()
         monoNode.disconnect()
-        // app.removeNode(monoId)
         audio.monoNodePool.release(monoNode)
       }
     })
@@ -151,31 +151,32 @@ export const MonoGroup = web('mono-group', view(
     fx(async function createSchedulerEventGroupNode({ audio }) {
       const groupNode = $.groupNode = await audio.groupNodePool.acquire()
 
-      // app.addNode(schedulerId, groupNode)
-
       return () => {
-        // app.removeNode(schedulerId)
         audio.groupNodePool.release(groupNode)
       }
     })
 
-    // fx(({ monoNode, gainNode }) => {
-    //   monoNode.connect(gainNode)
-    //   return () => {
-    //     monoNode.disconnect(gainNode)
-    //   }
-    // })
+    fx(async function createSchedulerEventGroupNode({ audio }) {
+      const keysNode = $.keysNode = await audio.groupNodePool.acquire()
+
+      return () => {
+        audio.groupNodePool.release(keysNode)
+      }
+    })
+
+    fx(({ monoNode, keysNode }) => {
+      keysNode.connect(monoNode)
+      return () => {
+        keysNode.disconnect(monoNode)
+      }
+    })
 
     fx(async function createGainNode({ audio }) {
       const gainNode = $.gainNode = await audio.gainNodePool.acquire()
-      //  new GainNode(audio.audioContext, { channelCount: 1, gain: 0 })
 
       gainNode.connect(audio.audioContext.destination)
 
-      // app.addGainNode(monoId, gainNode)
-
       return () => {
-        // app.removeGainNode(monoId)
         gainNode.disconnect(audio.audioContext.destination)
         audio.gainNodePool.release(gainNode)
       }
@@ -184,22 +185,21 @@ export const MonoGroup = web('mono-group', view(
     fx(async function createAnalyserNode({ audio }) {
       const analyserNode = $.analyserNode = await audio.analyserNodePool.acquire()
 
-      // app.addAnalyserNode(monoId, analyserNode)
-
       return () => {
-        // app.removeAnalyserNode(monoId)
         audio.analyserNodePool.release(analyserNode)
       }
     })
 
     fx(function updateRunningState({ mono: { state } }) {
-      $.running = $.running && state === 'init' ? $.running : state === 'running'
+      $.state = $.state === 'running' && state === 'init' ? $.state : state
     })
 
-    fx(function connectNodes({ audio, running, monoNode, groupNode, gainNode, analyserNode }) {
-      if (running) {
+    fx(function connectNodes({ audio, state, monoNode, groupNode, gainNode, analyserNode }) {
+      if (state === 'running' || state === 'preview') {
         audio.setParam(gainNode.gain, $.mono.gainValue)
-        groupNode.connect(monoNode)
+        if (state === 'running') {
+          groupNode.connect(monoNode)
+        }
 
         monoNode.resume()
         monoNode.connect(gainNode)
@@ -221,8 +221,8 @@ export const MonoGroup = web('mono-group', view(
       }
     })
 
-    fx(function startOrStopAnalyser({ running }) {
-      if (running) {
+    fx(function startOrStopAnalyser({ state }) {
+      if (state === 'running' || state === 'preview') {
         $.analyseStart()
       } else {
         $.analyseStop()
@@ -278,6 +278,26 @@ export const MonoGroup = web('mono-group', view(
           id={mono.id}
           align={app.align}
           size={mono.size ?? SIZES[mono.kind]}
+        />
+
+        <PianoKeys
+          invertColors
+          halfOctaves={6}
+          startOctave={2}
+          audioContext={monoAudio.audioContext}
+          onmidimessage={e => {
+            if (mono.state !== 'running') {
+              mono.methods.preview()
+            }
+            (monoAudio.audioNode as MonoNode).processMidiEvent(e)
+          }}
+          style="pointer-events: all"
+        />
+        <Vertical
+          app={app}
+          id={`${mono.id}_keys`}
+          align={app.align}
+          size={100}
         />
       </>
     })

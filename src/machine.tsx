@@ -11,7 +11,7 @@ import { Audio } from './audio'
 
 export type MachineKind = 'app' | 'mono' | 'scheduler'
 
-export type MachineState = 'init' | 'idle' | 'ready' | 'running' | 'suspended'
+export type MachineState = 'init' | 'idle' | 'ready' | 'running' | 'suspended' | 'preview'
 
 export type MachineCompileState = 'init' | 'compiling' | 'compiled' | 'errored'
 
