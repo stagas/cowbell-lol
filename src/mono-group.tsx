@@ -213,10 +213,14 @@ export const MonoGroup = web('mono-group', view(
           monoNode.suspend()
           try {
             monoNode.disconnect(gainNode)
-          } catch (error) { console.warn(error) }
+          } catch (error) {
+            // console.warn(error)
+          }
           try {
             monoNode.disconnect(analyserNode)
-          } catch (error) { console.warn(error) }
+          } catch (error) {
+            // console.warn(error)
+          }
         }, 50)
       }
     })

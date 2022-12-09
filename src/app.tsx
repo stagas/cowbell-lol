@@ -28,6 +28,7 @@ import { MonoNode } from 'mono-worklet'
 import { Spacer } from './spacer'
 import { MixerView } from './mixer'
 import { animRemoveSchedule, animSchedule } from './anim'
+import { NumberInput } from './number-input'
 
 const { clamp } = Scalar
 
@@ -104,7 +105,7 @@ export class AppMachine extends Machine<AppPresets>  {
   declare methods: AppContext
   declare audio?: Audio
 
-  gainValue = 0.7
+  gainValue = +localStorage.gainValue || 0.7
 
   constructor(data: Partial<AppMachine> = {}) {
     super(data)
@@ -172,9 +173,10 @@ export const AppView = web('app', view(
     fftSize = 32
     audio?: Audio
 
+    bpm = +localStorage.bpm || 120
     appAudio?: Audio
     gainNode?: GainNode
-    gainValue?: number
+    gainValue = +localStorage.gainValue || 0.7
     analyserNode?: AnalyserNode
     bytes?: Uint8Array
     freqs?: Uint8Array
@@ -229,7 +231,7 @@ export const AppView = web('app', view(
 
       if (!isFromUrl) {
         if (serializedSave) {
-          url.hash = `s=${name},${compressUrlSafe(
+          url.hash = `s=${name},${$.bpm},${compressUrlSafe(
             serializedSave, { mode: 9, enableEndMark: false }
           )}`
           console.log('url length:', url.toString().length)
@@ -302,9 +304,14 @@ export const AppView = web('app', view(
             const hash = decodeURIComponent(url.hash).split('#s=')[1] ?? ''
             if (!hash.length) return false
 
-            const [, compressed] = hash.split(',')
+            let [, bpm, compressed] = hash.split(',')
+            if (bpm.length > 10) {
+              compressed = bpm
+              bpm = ''
+            }
             const serializedSave = decompressUrlSafe(compressed)
             this.load(void 0, serializedSave)
+            $.bpm = +bpm || $.bpm
             return true
           } else {
             return false
@@ -766,7 +773,7 @@ export const AppView = web('app', view(
     })
   },
 
-  function effects({ $, fx, refs }) {
+  function effects({ $, fx, refs, deps }) {
     $.css = /*css*/`
     & {
       display: flex;
@@ -1108,7 +1115,7 @@ export const AppView = web('app', view(
     fx(function updateAppProps({ app, appAudio }) {
       app.methods = $
       app.audio = appAudio
-      $.gainValue = app.gainValue
+      $.gainValue = localStorage.gainValue = app.gainValue
 
       $.size = app.size
 
@@ -1133,7 +1140,8 @@ export const AppView = web('app', view(
         $.preset = new Preset({
           detail: new AppDetail({
             sources,
-            details: []
+            details: [],
+            extra: { bpm: 120 }
           })
         })
       }
@@ -1163,6 +1171,7 @@ export const AppView = web('app', view(
     fx(async function createAndStartScheduler({ audioContext }) {
       $.schedulerNode = await SchedulerNode.create(audioContext)
       $.startTime = await $.schedulerNode.start()
+      $.schedulerNode.setBpm($.bpm)
       // monoNode?.worklet.setTimeToSuspend(Infinity)
     })
 
@@ -1354,6 +1363,11 @@ export const AppView = web('app', view(
       }
     })
 
+    fx(({ audio, bpm }) => {
+      audio.schedulerNode.setBpm(bpm)
+      localStorage.bpm = bpm
+    })
+
     fx(function drawSaves({ saves, remoteSaves, nextSaveEmoji, lastSave, isAutoSave }) {
       const lastSaveId = lastSave && getSaveId(lastSave)
       $.savesView = <div part="saves" onwheel={event.stop.not.passive()}>
@@ -1367,7 +1381,10 @@ export const AppView = web('app', view(
             onClick={() => { }}>
             👻
           </Button>
+
         </div>
+
+        <NumberInput min={1} max={666} value={deps.bpm} step={1} align="x" />
 
         <div
           ref={refs.saveEl}

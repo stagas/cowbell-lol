@@ -671,7 +671,7 @@ export const Mono = web('mono', view(
         && preset
         && preset.detail?.data.editorValue
       ) {
-        console.log('mono: INITIAL')
+        // console.log('mono: INITIAL')
 
         // monoNode.suspend()
 

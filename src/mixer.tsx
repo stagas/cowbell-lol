@@ -20,7 +20,8 @@ export const MixerView = web('mixer-view', view(class props {
   machines!: List<Machine | AudioMachine | MonoMachine>
 }, class local {
   host = element
-}, function actions() { return ({}) }, function effects({ $, fx }) {
+  bpm = 120
+}, function actions() { return ({}) }, function effects({ $, fx, deps }) {
   $.css = /*css*/`
   & {
     display: flex;
@@ -58,8 +59,11 @@ export const MixerView = web('mixer-view', view(class props {
   fx(({ app, machines, workerBytes, workerFreqs }) => {
     $.view = <>
       <Wavetracer part="waveform" app={app} id="app-scroller" kind="scroller" running={app.state === 'running'} workerBytes={workerBytes} workerFreqs={workerFreqs} />
+
       <MixerTrackView part="track" app={app} machine={app.app} />
+
       <div part="vertical-ruler"></div>
+
       {(machines.items.filter((machine) => machine.kind === 'mono') as MonoMachine[]).map((machine) =>
         <MixerTrackView part="track" app={app} machine={machine} />
       )}
