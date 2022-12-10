@@ -20,8 +20,7 @@ export const MixerView = web('mixer-view', view(class props {
   machines!: List<Machine | AudioMachine | MonoMachine>
 }, class local {
   host = element
-  bpm = 120
-}, function actions() { return ({}) }, function effects({ $, fx, deps }) {
+}, function actions() { return ({}) }, function effects({ $, fx }) {
   $.css = /*css*/`
   & {
     display: flex;
