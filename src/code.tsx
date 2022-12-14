@@ -2,7 +2,7 @@
 
 import { Dep, element, view, web } from 'minimal-view'
 
-import { Canvy, CanvyElement, EditorScene } from 'canvy'
+import { Canvy, CanvyElement, EditorScene, Marker } from 'canvy'
 
 export interface EditorDetailData {
   editorValue: string
@@ -10,13 +10,15 @@ export interface EditorDetailData {
 
 export const Code = web('code', view(
   class props {
-    distRoot!: string
-    editorScene!: EditorScene
+    font!: string
+    fontSize!: number
+    scene!: EditorScene
     value!: Dep<string>
-    editor?: Dep<CanvyElement>
+    editor!: Dep<CanvyElement>
+    singleComment!: string
     onWheel?: (ev: WheelEvent) => void = () => { }
-    onEnterMarker?: (ev: { detail: { marker: unknown, markerIndex: number } }) => void = () => { }
-    onLeaveMarker?: (ev: { detail: { marker: unknown, markerIndex: number } }) => void = () => { }
+    onEnterMarker?: (ev: { detail: { marker: Marker, markerIndex: number } }) => void = () => { }
+    onLeaveMarker?: (ev: { detail: { marker: Marker, markerIndex: number } }) => void = () => { }
   },
 
   class local {
@@ -60,19 +62,20 @@ export const Code = web('code', view(
       })
     })
 
-    fx(function drawCode({ distRoot, editorScene, onEnterMarker, onLeaveMarker }) {
+    fx(function drawCode({ value, font, fontSize, scene, onEnterMarker, onLeaveMarker }) {
       $.view = <Canvy
         key="text"
         ref={refs.waitingEditor}
         part="canvy"
-        scene={editorScene}
-        font={`${distRoot}/CascadiaMono.woff2`}
-        fontSize={17}
+        scene={scene}
+        font={font}
+        fontSize={fontSize}
         onevent={$.onEvent}
         onentermarker={onEnterMarker}
         onleavemarker={onLeaveMarker}
         onchange={$.onCodeChange}
         onedit={$.onCodeChange}
+        initialValue={value.value as string}
       />
     })
   }))

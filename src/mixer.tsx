@@ -1,6 +1,6 @@
 /** @jsxImportSource minimal-view */
 
-import { element, view, web } from 'minimal-view'
+import { element, view, web, Dep, effect } from 'minimal-view'
 
 import { IconSvg } from 'icon-svg'
 import { List } from '@stagas/immutable-list'
@@ -8,18 +8,20 @@ import { List } from '@stagas/immutable-list'
 import { Button } from './button'
 import { AudioMachine, Machine } from './machine'
 import { MonoMachine } from './mono'
-import { SliderView } from './slider'
+import { SliderView } from './slider-view'
 import { checksum } from './util/checksum'
 import { AppContext, AppMachine } from './app'
 import { Wavetracer } from './wavetracer'
 
 export const MixerView = web('mixer-view', view(class props {
   app!: AppContext
+  focusedTrack!: Dep<string>
   workerBytes!: Uint8Array
   workerFreqs!: Uint8Array
   machines!: List<Machine | AudioMachine | MonoMachine>
 }, class local {
   host = element
+  focusedTrackView = ''
 }, function actions() { return ({}) }, function effects({ $, fx }) {
   $.css = /*css*/`
   & {
@@ -35,6 +37,16 @@ export const MixerView = web('mixer-view', view(class props {
     box-sizing: border-box;
     width: 100%;
     max-width: 80px;
+    gap: 10px;
+
+  }
+
+  [part=track-view] {
+    display: flex;
+    flex-flow: column nowrap;
+    position: relative;
+    box-sizing: border-box;
+    width: 100%;
     height: 100%;
   }
 
@@ -55,7 +67,13 @@ export const MixerView = web('mixer-view', view(class props {
   }
   `
 
-  fx(({ app, machines, workerBytes, workerFreqs }) => {
+  fx(({ focusedTrack }) =>
+    effect({ focusedTrack }, ({ focusedTrack }) => {
+      $.focusedTrackView = focusedTrack
+    })
+  )
+
+  fx(({ app, machines, focusedTrack, focusedTrackView, workerBytes, workerFreqs }) => {
     $.view = <>
       <Wavetracer part="waveform" app={app} id="app-scroller" kind="scroller" running={app.state === 'running'} workerBytes={workerBytes} workerFreqs={workerFreqs} />
 
@@ -64,7 +82,17 @@ export const MixerView = web('mixer-view', view(class props {
       <div part="vertical-ruler"></div>
 
       {(machines.items.filter((machine) => machine.kind === 'mono') as MonoMachine[]).map((machine) =>
-        <MixerTrackView part="track" app={app} machine={machine} />
+        <div part="track">
+          {/* <button
+            onclick={() => {
+              focusedTrack.value = machine.groupId
+            }}
+            class={classes({
+              focused: focusedTrackView === machine.groupId
+            })}>{machine.name}
+          </button> */}
+          <MixerTrackView part="track-view" app={app} machine={machine} />
+        </div>
       )}
     </>
   })

@@ -5,7 +5,7 @@ import { Point, Rect } from 'geometrik'
 import { element, view, web } from 'minimal-view'
 
 import { MonoMachine } from './mono'
-import { SliderView, Slider } from './slider'
+import { SliderView, Slider } from './slider-view'
 import { observe } from './util/observe'
 
 export type Sliders = Map<string, Slider>
@@ -42,12 +42,11 @@ export const Sliders = web('sliders', view(
 
     & {
       display: flex;
-      position: absolute;
       box-sizing: border-box;
       width: 100%;
       height: 100%;
-      padding: 12.5px 0;
-      padding-top: 100px;
+      padding: 12.5px 12.5px;
+      /* padding-top: 100px; */
       align-items: stretch;
       justify-content: flex-start;
       flex-wrap: nowrap;
@@ -98,7 +97,7 @@ export const Sliders = web('sliders', view(
     fx(function drawSliders({ scene, machine, sliders, running }) {
       const vertical = false
       $.view = <>
-        <div part="padding-left" />
+        {/* <div part="padding-left" /> */}
         {[...sliders.values()].map((slider) =>
           <SliderView
             // TODO: something is going on with this type
@@ -111,7 +110,7 @@ export const Sliders = web('sliders', view(
             showBg={false}
           />
         )}
-        <div part="padding-right" />
+        {/* <div part="padding-right" /> */}
       </>
     })
   }))

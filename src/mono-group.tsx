@@ -3,15 +3,16 @@
 import { element, view, web } from 'minimal-view'
 import { MonoNode } from 'mono-worklet'
 import { SchedulerEventGroupNode } from 'scheduler-node'
-import { PianoKeys } from 'x-pianokeys'
+// import { PianoKeys } from 'x-pianokeys'
 import { animRemoveSchedule, animSchedule } from './anim'
 
-import { AppContext, SIZES } from './app'
+import { AppContext } from './app'
 import { Audio } from './audio'
 import { MachineState, MachineView } from './machine'
 import { MonoMachine } from './mono'
 import { SchedulerMachine } from './scheduler'
-import { Vertical } from './vertical'
+import { Spacer } from './spacer'
+// import { Vertical } from './vertical'
 
 // TODO: make this a machine kind and pass the group's state context to Mono
 // so it can fill in the start/stop ?
@@ -22,7 +23,9 @@ export const MonoGroup = web('mono-group', view(
     app!: AppContext
     audio!: Audio
     mono!: MonoMachine
+    presets!: AppContext['presets']
     scheduler!: SchedulerMachine
+    focused!: boolean
   },
 
   class local {
@@ -79,37 +82,16 @@ export const MonoGroup = web('mono-group', view(
   },
 
   function effects({ $, fx }) {
-    // fx(({ align }) => {
-    //   const [dim, flow, oppFlow, ctrlJustify, ctrlAlign, pad] = [
-    //     ['height', 'column', 'row', 'flex-start', 'center', '0 '] as const,
-    //     ['width', 'row', 'column', 'center', 'flex-start', ''] as const,
-    //   ][+(align === 'y')]
-    //   $.css = /*css*/`
-    //   & {
-    //     display: flex;
-    //     flex-flow: ${oppFlow} nowrap;
-    //     /* height: 100%; */
-    //     /* background: red; */
-    //     border-bottom: 1px solid #aaf3;
-    //     box-sizing: border-box;
-    //     position: relative;
-    //   }
-
-    //   [part=machines] {
-    //     display: flex;
-    //     flex-flow: ${oppFlow} nowrap;
-    //     ${dim}: calc(100% - 100px);
-    //     /* flex: 1; */
-    //   }
-
-    //   [part=machines-outer] {
-    //     display: flex;
-    //     flex-flow: ${flow} nowrap;
-    //     min-width: 100%;
-    //     /* height: 100%; */
-    //   }
-    //   `
-    // })
+    $.css = /*css*/`
+    & {
+      display: flex;
+      height: 100%;
+      width: 100%;
+    }
+    &(:not([focused])) {
+      display: none;
+    }
+    `
 
     fx(function updateAlign({ app }) {
       $.align = app.align
@@ -117,10 +99,6 @@ export const MonoGroup = web('mono-group', view(
 
     fx(function updateMonoId({ mono }) {
       $.monoId = mono.id
-      // $.monoNode = null
-      // $.monoAudio = null
-      // $.gainNode = null
-      // $.analyserNode = null
     })
 
     fx(function updateSchedulerId({ scheduler }) {
@@ -194,6 +172,14 @@ export const MonoGroup = web('mono-group', view(
       $.state = $.state === 'running' && state === 'init' ? $.state : state
     })
 
+    fx.raf(function updateAttrState({ host, state }) {
+      host.setAttribute('state', state)
+    })
+
+    fx.raf(function updateAttrVisibility({ host, focused }) {
+      host.toggleAttribute('focused', focused)
+    })
+
     fx(function connectNodes({ audio, state, monoNode, groupNode, gainNode, analyserNode }) {
       if (state === 'running' || state === 'preview') {
         audio.setParam(gainNode.gain, $.mono.gainValue)
@@ -225,7 +211,7 @@ export const MonoGroup = web('mono-group', view(
       }
     })
 
-    fx(function startOrStopAnalyser({ state }) {
+    fx(function startOrStopAnalyser({ state, focused }) {
       if (state === 'running' || state === 'preview') {
         $.analyseStart()
       } else {
@@ -253,60 +239,22 @@ export const MonoGroup = web('mono-group', view(
       })
     })
 
-    fx(function drawSchedulerView({ app, schedulerAudio, scheduler }) {
-      $.schedulerView = <>
-        <MachineView
-          app={app}
-          audio={schedulerAudio}
-          machine={scheduler}
-        />
-        <Vertical
-          app={app}
-          id={scheduler.id}
-          align={app.align}
-          size={scheduler.size ?? SIZES[scheduler.kind]}
-        />
-      </>
-    })
-
-    // TODO: possible optimization: monoChecksum for mono: id
-    fx(function drawMonoView({ app, monoAudio, mono }) {
-      $.monoView = <>
+    fx(function drawMonoGroup({ host, app, presets, mono, monoAudio, scheduler, schedulerAudio }) {
+      $.view = <Spacer part="spacer" align="x" setSpacer={() => { }} id="items-spacer" layout={host} initial={[0, 0.5]}
+      >
         <MachineView
           app={app}
           audio={monoAudio}
           machine={mono}
-        />
-        <Vertical
-          app={app}
-          id={mono.id}
-          align={app.align}
-          size={mono.size ?? SIZES[mono.kind]}
+          presets={presets.mono}
         />
 
-        <PianoKeys
-          invertColors
-          halfOctaves={6}
-          startOctave={2}
-          audioContext={monoAudio.audioContext}
-          onmidimessage={e => {
-            if (mono.state !== 'running') {
-              mono.methods.preview()
-            }
-            (monoAudio.audioNode as MonoNode).processMidiEvent(e)
-          }}
-          style="pointer-events: all"
-        />
-        <Vertical
+        <MachineView
           app={app}
-          id={`${mono.id}_keys`}
-          align={app.align}
-          size={100}
+          audio={schedulerAudio}
+          machine={scheduler}
+          presets={presets.scheduler}
         />
-      </>
-    })
-
-    fx(function drawMonoGroup({ monoView, schedulerView }) {
-      $.view = [monoView, schedulerView]
+      </Spacer>
     })
   }))

@@ -8,7 +8,7 @@ import { AppDetail, AppMachine, AppPresets } from '../app'
 import { MonoDetail, MonoMachine, MonoPresets } from '../mono'
 import { Preset } from '../presets'
 import { SchedulerDetail, SchedulerMachine, SchedulerPresets } from '../scheduler'
-import { Slider } from '../slider'
+import { Slider } from '../slider-view'
 
 const refs = new Map<object, Ptr>()
 const { replacer, reviver } = createContext([], {

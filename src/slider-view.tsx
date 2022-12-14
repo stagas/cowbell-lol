@@ -1,88 +1,34 @@
 /** @jsxImportSource minimal-view */
 
-import { defineProperty } from 'everyday-utils'
 import { Point, Rect, Scalar } from 'geometrik'
 import { chain, element, on, queue, view, web } from 'minimal-view'
-import { AppMachine } from './app'
+import { Slider } from './slider'
 
-import { MonoMachine } from './mono'
-import { SliderScene } from './sliders'
 import { observe } from './util/observe'
 
 const { clamp } = Scalar
 
 let downSlider = false
 
-export class Slider {
-  id!: string
-  name!: string
-  value!: number
-  min!: number
-  max!: number
-  hue!: number
-  sourceIndex?: number
-  source?: {
-    arg: string
-    id: string
-    range: string
-    default: string
-  }
-
-  declare readonly normal?: number
-
-  constructor(data: Partial<Slider>) {
-    // if (Array.isArray(data)) {
-    //   if (Array.isArray(data)) {
-    //     Object.assign(this,
-    //       Object.fromEntries(
-    //         Object.keys(this).map((key, i) =>
-    //           [key, data[i]])
-    //       ))
-    //   }
-    // } else {
-    Object.assign(this, data)
-    // }
-
-    defineProperty
-      .not.enumerable
-      .get(() =>
-        clamp(0, 1,
-          (this.value - this.min) / (this.max - this.min)
-        )
-      )
-      (this, 'normal')
-  }
-
-  toJSON?() {
-    return {
-      ...this,
-      source: !this.source ? void 0 : {
-        ...this.source
-      }
-    }
-  }
-
-  // toJSON?() {
-  //   return {
-  //     ...this,
-  //     source: !this.source ? void 0 : {
-  //       ...this.source
-  //     }
-  //   }
-  // }
-}
+export { Slider }
 
 export const SliderView = web('slider', view(
-  class props extends Slider {
-    scene!: SliderScene
-    machine!: AppMachine | MonoMachine
+  class props {
+    ownerId!: string
+    id!: string
+    slider!: Slider
+
+    onValue!: (value: number, ownerId: string, sliderId: string) => void
+    onWheel!: (e: WheelEvent, ownerId: string, sliderId: string) => number
+
     running!: boolean
     vertical!: boolean
     showBg!: boolean
+
     children?: JSX.Element
   },
 
-  class local {
+  class local extends Slider {
     host = element
     rect?: Rect
     fill?: HTMLDivElement
@@ -117,12 +63,12 @@ export const SliderView = web('slider', view(
           fill.style[oppMax] = '100%'
       })
 
-      setSliderNormal =
-        fn(({ id }) =>
-          (value: number) =>
-            $.machine.methods.setSliderNormal(id, value))
+      // setSliderNormal =
+      //   fn(({ ownerId, id }) =>
+      //     (value: number) =>
+      //       $.machine.methods.setSliderNormal(id, value))
 
-      handleDown = fn(({ host, vertical }) => (e: PointerEvent) => {
+      handleDown = fn(({ host, ownerId, id, onValue, vertical }) => (e: PointerEvent) => {
         if (handling || !(e.buttons & 1)) return
 
         if (e.type === 'pointerdown') {
@@ -161,7 +107,7 @@ export const SliderView = web('slider', view(
           const size = Math.max(0, Math.min(ownRect[dim], newSize))
           const normal = size / ownRect[dim]
           this.updateNormal(normal)
-          this.setSliderNormal(normal)
+          onValue(normal, ownerId, id)
         }
 
         moveTo(getPointerPos(e))
@@ -182,9 +128,10 @@ export const SliderView = web('slider', view(
       })
 
       handleWheel =
-        fn(({ id }) =>
-          (ev: WheelEvent) => {
-            $.machine.methods.onWheel(ev, id)
+        fn(({ ownerId, id, onWheel }) =>
+          (e: WheelEvent) => {
+            onWheel(e, ownerId, id)
+            // update normal here?
           })
 
       resize = fn(({ host }) => queue.raf(() => {
@@ -213,7 +160,7 @@ export const SliderView = web('slider', view(
         position: relative;
         box-sizing: border-box;
         width: 100%;
-        max-width: 80px;
+        /* max-width: 80px; */
         height: 100%;
         /* margin: 0 -17.5px 0 0; */
         pointer-events: none;
@@ -332,6 +279,10 @@ export const SliderView = web('slider', view(
       host.toggleAttribute('running', running)
     })
 
+    fx(({ slider }) => {
+      Object.assign($, slider)
+    })
+
     fx.raf(function onValueChange({ fill: _, value, min, max }) {
       const normal = clamp(0, 1, (value - min) / (max - min))
       $.updateNormal(normal)
@@ -354,9 +305,9 @@ export const SliderView = web('slider', view(
     })
 
 
-    fx(function registerSliderUpdateNormal({ id, scene }) {
-      scene.updateNormalMap.set($.machine.id, id, $.updateNormal)
-    })
+    // fx(function registerSliderUpdateNormal({ id, scene }) {
+    //   scene.updateNormalMap.set($.machine.id, id, $.updateNormal)
+    // })
 
     fx(function listenPointerEvents({ host }) {
       return chain(

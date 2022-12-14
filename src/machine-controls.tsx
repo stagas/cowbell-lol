@@ -7,7 +7,7 @@ import { AppContext } from './app'
 import { Button } from './button'
 import { Machine } from './machine'
 import { MonoMachine } from './mono'
-import { SliderView } from './slider'
+import { SliderView } from './slider-view'
 
 export const MachineControls = web('machine-controls', view(
   class props {

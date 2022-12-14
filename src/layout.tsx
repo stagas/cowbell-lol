@@ -3,8 +3,8 @@
 import { Rect } from 'geometrik'
 import { element, view, web } from 'minimal-view'
 
-import { Button } from './button'
 import { observe } from './util/observe'
+import { WaveplotButton } from './waveplot-button'
 
 export const Layout = web('layout', view(
   class props {
@@ -42,114 +42,57 @@ export const Layout = web('layout', view(
   },
 
   function effects({ $, fx }) {
-    fx(function layoutCss({ align }) {
-      const [dim, wrap] = [
-        ['width', 'row'] as const,
-        ['height', 'column'] as const
-      ][+(align === 'y')]
+    // fx(function layoutCss({ align }) {
+    // const [dim, wrap] = [
+    //   ['width', 'row'] as const,
+    //   ['height', 'column'] as const
+    // ][+(align === 'y')]
 
-      $.css = /*css*/`
+    $.css = /*css*/`
+    & {
+      position: relative;
+      display: flex;
+    }
 
-      & {
-        /* width: 100%; */
-        /* height: 100%; */
+    > * {
+      width: 100%;
+      height: 100%;
+    }
+
+    [part=track] {
+      position: relative;
+      display: flex;
+      flex: 1;
+      flex-flow: column nowrap;
+      gap: 20px;
+
+      [part=sliders] {
+        display: flex;
+        flex: 1;
+        height: 200px;
+        padding: 0 15px;
         position: relative;
-        display: flex;
-        /* transition:
-          ${dim} 3.5ms linear,
-          min-${dim} 3.5ms linear,
-          max-${dim} 3.5ms linear
-          ; */
+        flex-flow: row nowrap;
       }
 
-      > *,
-      [part=overlay] > * {
-        width: 100%;
-        height: 100%;
+      ${WaveplotButton} {
+        height: 50px;
+        background-repeat: no-repeat;
+        background-size: 100% 100%;
+        background-position: center;
       }
 
-      [part=waveform] {
-        z-index: 1;
-        pointer-events: all;
-        min-height: 88px; /* 90px-2px border */
-      }
+      &.active {
+        background: #fff3;
 
-      [part=midi] {
-        pointer-events: none;
-        z-index: 2;
-      }
-
-      [part=editor] {
-        pointer-events: none;
-        z-index: 2;
-      }
-
-      [part=presets] {
-        z-index: 3;
-        pointer-events: all;
-      }
-
-      [part=side] {
-        /* ${dim}: calc(100% - 2px); */
-        pointer-events: all;
-      }
-
-      [part=app-side] {
-        position: sticky;
-        left: 0;
-        top: 45px;
-        height: calc(100vh - 45px);
-        /* bottom: 0; */
-        padding-right: 17.5px;
-        z-index: 99999;
-        background: #001d;
-      }
-
-      [part=app-side-spacer] {
-        /* height: 100px; */
-        /* position: absolute; */
-        /* top: 0; */
-      }
-      [part=items] {
-        padding-left: 17.5px;
-      }
-      [part=app-presets] {
-        /* height: 100px; */
-        /* position: absolute; */
-        /* top: 0; */
-      }
-
-      [part=add-button] {
-        margin: 7px;
-        display: flex;
-        justify-content: center;
-        ${Button} {
-          cursor: pointer;
-          opacity: 0.35;
-          color: #667;
-          &:hover {
-            opacity: 1;
-          }
+        ${WaveplotButton}::part(canvas) {
+          background-color: #fff3;
         }
       }
+    }
 
-      [part=items] {
-      }
-
-      .column {
-        display: flex;
-        flex-flow: ${wrap} nowrap;
-        ${dim}: 100%;
-      }
-
-      &([state=running]) [part=controls] ${Button} {
-        opacity: 1;
-        &:hover {
-          color: #fff !important;
-        }
-      }
-      `
-    })
+    `
+    // })
 
     fx(function listenLayoutResize({ layout }) {
       return observe.resize.initial(layout, $.resize)

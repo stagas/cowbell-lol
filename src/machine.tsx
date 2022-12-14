@@ -24,32 +24,24 @@ export type AudioMachinePresets = MonoPresets | SchedulerPresets
 export abstract class Machine<T extends MachinePresets = any> {
   abstract id: string
   abstract kind: MachineKind
-  abstract size: number
-  abstract presets: T
 
   state: MachineState = 'init'
 
   toJSON(): unknown {
     return pick(this, [
       'id',
-      'size',
-      'presets',
+      // 'size',
+      // 'presets',
     ])
   }
 
   equals(other?: this) {
     if (this === other) return true
 
-    return !other
-      || (this.id === other.id
-        && this.state === other.state
-        && this.size === other.size
-        &&
-        (this.presets === other.presets
-          || (
-            this.presets.constructor === other.presets.constructor
-            && this.presets.equals(other.presets as any)
-          )))
+    return other != null
+      && this.id === other.id
+      && this.state === other.state
+
   }
 
   copy(): this {
@@ -65,9 +57,11 @@ export abstract class Machine<T extends MachinePresets = any> {
 export abstract class AudioMachine<T extends AudioMachinePresets = AudioMachinePresets> extends Machine<T> {
   id = cheapRandomId()
   groupId!: string
-  abstract spacer?: number[]
+
+  abstract selectedPreset: T['selectedPreset']
 
   declare audio?: Audio
+
   outputs: string[] = []
 
   constructor(data: Partial<AudioMachine<T>> = {}) {
@@ -78,22 +72,22 @@ export abstract class AudioMachine<T extends AudioMachinePresets = AudioMachineP
   equals(other?: this) {
     if (this === other) return true
 
-    return !other
-      || (this.id === other.id
-        && isEqual(this.spacer, other.spacer)
-        && isEqual(this.outputs, other.outputs)
-        && super.equals(other)
-      )
+    return other != null
+      && this.id === other.id
+      && isEqual(this.outputs, other.outputs)
+      && this.selectedPreset
+      && other.selectedPreset
+      && this.selectedPreset.equals(other.selectedPreset)
+      && super.equals(other)
   }
 
   toJSON(): unknown {
     return pick(this, [
       'id',
-      'size',
       'groupId',
       'outputs',
       'audio',
-      'spacer',
+      'selectedPreset',
     ])
   }
 }
@@ -103,6 +97,7 @@ export const MachineView = web('machine', view(
     app!: AppContext
     audio!: Audio
     machine!: Machine
+    presets!: MonoPresets | SchedulerPresets
   },
 
   class local {
@@ -167,7 +162,7 @@ export const MachineView = web('machine', view(
     //   return on(window, 'resize')(resize)
     // })
 
-    fx(function drawMachine({ app, audio, machine }) {
+    fx(function drawMachine({ app, audio, machine, presets }) {
       const Kind = app.Machines[machine.kind] as any
 
       $.view = <Kind
@@ -175,6 +170,7 @@ export const MachineView = web('machine', view(
         app={app}
         audio={audio}
         machine={machine}
+        presets={presets}
       />
     })
   }))

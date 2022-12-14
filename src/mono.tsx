@@ -1,6 +1,6 @@
 /** @jsxImportSource minimal-view */
 
-import { element, queue, view, web } from 'minimal-view'
+import { effect, element, queue, view, web } from 'minimal-view'
 
 import { AbstractDetail, BasePresets } from 'abstract-presets'
 import { CanvyElement } from 'canvy'
@@ -12,17 +12,47 @@ import { AppContext, SIZES, SPACERS } from './app'
 import { Audio } from './audio'
 import { Code, EditorDetailData } from './code'
 import { AudioMachine, MachineCompileState, MachineKind, MachineState } from './machine'
-import { MachineControls } from './machine-controls'
-import { Preset, PresetsView } from './presets'
-import { Slider } from './slider'
+// import { MachineControls } from './machine-controls'
+import { Preset } from './presets'
+import { Slider } from './slider-view'
 import { Sliders } from './sliders'
-import { Spacer } from './spacer'
+// import { Spacer } from './spacer'
 import { areSlidersCompatible, copySliders, parseArgsRegExp, parseFuncsRegExp, parseRangeRegExp } from './util/args'
-import { checksum } from './util/checksum'
+import { checksum } from 'everyday-utils'
 import { markerForSlider } from './util/marker'
 import { Wavetracer } from './wavetracer'
+import { classes } from './util/classes'
 
 const { clamp } = Scalar
+
+export const monoDefaultEditorValue = `\\\\\\ bass \\\\\\
+#:2,3;
+write_note(x,y)=(
+  #=(t,note_to_hz(x),y/127);
+  0
+);
+midi_in(op=0,x=0,y=0)=(
+  op==144 && write_note(x,y)
+);
+play(nt,x,y)=(
+  saw(x/4)*env(nt, 100, 30)*y
+);
+synth(
+  'cut[50f..5k]=500,
+  'q[.1..0.95]=0.125
+)=(
+  x=tanh(
+    lpf(
+      #::play:sum*5,
+      cut+300*sine(.125),
+      q
+    )*3
+  );
+  x=x+daverb(x)*0.4;
+  x
+);
+f()=synth();
+`
 
 export type MonoDetailData = EditorDetailData
 
@@ -66,9 +96,10 @@ export class MonoPresets extends BasePresets<MonoDetail, Preset<MonoDetail>> {
 
 export class MonoMachine extends AudioMachine<MonoPresets> {
   kind: MachineKind = 'mono'
-  size = SIZES.mono
-  spacer = SPACERS.mono
-  presets = new MonoPresets()
+
+  selectedPreset: NonNullable<MonoPresets['selectedPreset']> = new Preset({
+    detail: new MonoDetail({ editorValue: monoDefaultEditorValue })
+  })
 
   gainValue = 0.7
 
@@ -82,7 +113,7 @@ export class MonoMachine extends AudioMachine<MonoPresets> {
   }
 
   get name() {
-    const code = this.presets.selectedPreset?.detail.data.editorValue
+    const code = this.selectedPreset.detail.data.editorValue
     if (code) {
       const name = code.slice(4, code.indexOf(' \\'))
       return name
@@ -92,11 +123,13 @@ export class MonoMachine extends AudioMachine<MonoPresets> {
   }
 
   equals(other?: this) {
-    return !other
-      || (this.id === other.id
-        && this.gainValue === other.gainValue
-        && this.compileState === other.compileState
-        && super.equals(other))
+    if (this === other) return true
+
+    return other != null
+      && this.id === other.id
+      && this.gainValue === other.gainValue
+      && this.compileState === other.compileState
+      && super.equals(other)
   }
 
   toJSON() {
@@ -104,43 +137,12 @@ export class MonoMachine extends AudioMachine<MonoPresets> {
       'id',
       'groupId',
       'kind',
-      'size',
-      'spacer',
-      'presets',
+      'selectedPreset',
       'outputs',
       'gainValue',
     ])
   }
 }
-
-const monoDefaultEditorValue = `\\\\\\ a track \\\\\\
-#:6,3;
-write_note(x,y)=(
-  #=(t,note_to_hz(x),y/127);
-  0
-);
-midi_in(op=0,x=0,y=0)=(
-  op==144 && write_note(x,y)
-);
-play(nt,x,y)=(
-  saw(x/4)*env(nt, 100, 30)*y
-);
-synth(
-  'cut[50f..5k]=500,
-  'q[.1..0.95]=0.125
-)=(
-  x=tanh(
-    lpf(
-      #::play:sum*5,
-      cut+300*sine(.125),
-      q
-    )*3
-  );
-  x=x+daverb(x)*0.4;
-  x
-);
-f()=synth();
-`
 
 export const Mono = web('mono', view(
   class props {
@@ -148,10 +150,13 @@ export const Mono = web('mono', view(
     app!: AppContext
     audio!: Audio
     machine!: MonoMachine
+    presets!: MonoPresets
   },
 
   class local {
     instanceId = cheapRandomId()
+
+    focused?: boolean
 
     host = element
 
@@ -166,8 +171,8 @@ export const Mono = web('mono', view(
     gainNode?: GainNode
     gainValue?: number
 
-    preset: Preset<MonoDetail> | null = null
-    presets?: MonoPresets
+    preset: Preset<MonoDetail> | false = false
+    // presets?: MonoPresets
 
     editor?: CanvyElement
     errorMarkers?: any[] = []
@@ -175,6 +180,8 @@ export const Mono = web('mono', view(
     spacer?: number[]
 
     monoCode!: string
+
+    waveformView?: JSX.Element
 
     showDeleteButton = false
     // presetsChecksum?: string
@@ -288,7 +295,7 @@ export const Mono = web('mono', view(
         return false
       }
 
-      reconcilePresets = fn(({ app, id, editor, monoNode, audio: { setParam } }) => (
+      reconcilePresets = fn(({ editor }) => (
         next: Preset<MonoDetail> | null,
         prev: Preset<MonoDetail> | null,
         nextDetail?: MonoDetail | null,
@@ -296,6 +303,8 @@ export const Mono = web('mono', view(
         byClick?: boolean,
         byGroup?: boolean
       ) => {
+        if (!$.focused) return
+
         if ($.compileState === 'compiled' && next && prev && nextDetail && prevDetail) {
           const sameCode =
             next.detail.data.editorValue === prev.detail.data.editorValue
@@ -496,7 +505,7 @@ export const Mono = web('mono', view(
           this.updateEditorValueArgs(editor.value, newSliders)
 
         if (newDetail && !newDetail.equals(preset.detail)) {
-          $.preset = app.setPresetDetailData(id, newDetail.data)
+          $.preset = app.setPresetDetailData(id, newDetail.data) as Preset<MonoDetail>
         }
 
         return newNormal
@@ -584,88 +593,53 @@ export const Mono = web('mono', view(
       host.setAttribute('state', state)
     })
 
-    // fx(function calcPresetsChecksum({ presets }) {
-    //   $.presetsChecksum = presets.selectedPresetId + presets.items.map(
-    //     ({ id, isRemoved, isDraft, hue, name }) =>
-    //       `${id}${hue}${name}${isRemoved ? 1 : 0}${isDraft ? 1 : 0}`
-    //   ).join()
-    // })
+    fx(({ app, groupId }) =>
+      effect({ focusedTrack: app.deps.focusedTrack }, ({ focusedTrack }) => {
+        $.focused = focusedTrack === groupId
+      })
+    )
 
     fx(function updateNodes({ audio: { audioNode, gainNode } }) {
       $.monoNode = audioNode as MonoNode
       $.gainNode = gainNode
     })
 
-    // fx(function updateAudio({ audio }) {
-    //   $.audioContext = audio.audioContext
-    // })
-
-    // fx(function createGainNode({ audioContext }) {
-    //   console.log('connectNodes CREATE GAIN??')
-    //   const gainNode = $.gainNode = new GainNode(audioContext, { channelCount: 1, gain: 0 })
-
-    //   gainNode.connect(audioContext.destination)
-
-    //   return () => {
-    //     console.log('connectNodes DISCONNECT')
-    //     // try {
-    //     //   gainNode.disconnect(audioContext.destination)
-    //     // } catch { }
-    //   }
-    // })
-
-    // fx(function connectNodes({ monoNode, gainNode, audio }) {
-    //   monoNode.connect(gainNode)
-    //   monoNode.connect(audio.analyserNode)
-    //   // gainNode.connect(audio.audioContext.destination)
-
-    //   // gainNode.connect(audio.audioContext.destination)
-
-    //   return () => {
-    //     // try {
-    //     //   monoNode.disconnect(gainNode)
-    //     // } catch { }
-    //     // audio.setParam(gainNode.gain, 0)
-    //     // setTimeout(() => {
-    //     // try {
-    //     //   gainNode.disconnect(audio.audioContext.destination)
-    //     // } catch { }
-    //     // }, 50)
-    //   }
-    // })
-
     fx(function updateMachineProps({ machine }) {
       machine.methods = $
 
-      machine.presets.on('select', $.reconcilePresets)
-
-      $.presets = machine.presets
-      $.spacer = machine.spacer
       $.groupId = machine.groupId
       $.gainValue = machine.gainValue
-
-      // console.log('STATES', machine.state, $.state)
+      // $.preset = machine.selectedPreset || $.preset
 
       if (machine.state === 'init' && $.state === 'running') {
-        //   //   // app.setMachineState(machine.id, 'running')
-        //   queueMicrotask(() => {
         machine.methods.start()
-        //   })
       } else {
-        //   //   if ($.state !== 'running' && machine.state === 'running') {
-        //   //     // the microtask so that gainValue and others have time to update
-        //   //     queueMicrotask(() => {
-        //   //       machine.methods.start()
-        //   //     })
-        //   //   }
-
         $.state = machine.state
       }
 
       $.compileState = machine.compileState
     })
 
-    fx(function onInitialPreset({ editor, preset, gainNode, audio }) {
+    fx(function listenOnPresetsChange({ presets }) {
+      presets.on('select', $.reconcilePresets)
+    })
+
+    fx(function updatePreset({ app, id, editor: _, machine }) {
+      const preset = machine.selectedPreset
+
+      if (preset) {
+        $.preset = preset
+      } else {
+        if (!$.preset) {
+          app.setPresetDetailData(id, {
+            editorValue: localStorage.monoCode || monoDefaultEditorValue,
+          })
+        }
+      }
+    })
+
+    fx(function onInitialPreset({ editor, preset, gainNode, audio }, prev) {
+      console.log('PREV PRESET', prev.preset, 'NEXT PRESET', preset)
       if (
         ($.state === 'init' || !editor.value)
         && preset
@@ -681,28 +655,10 @@ export const Mono = web('mono', view(
       }
       else {
         // when we load another project we should end up here
-        if (preset.detail.data.editorValue !== editor.value) {
+        if (preset && preset.detail.data.editorValue !== editor.value) {
           audio.setParam(gainNode.gain, $.gainValue!)
           editor.setValue(preset.detail.data.editorValue)
           $.compile(preset)
-        }
-      }
-    })
-
-    // fx(() => () => {
-    //   $.state = 'init'
-    // })
-
-    fx(function updatePreset({ app, id, editor: _, presets }) {
-      const preset = presets.selectedPreset
-
-      if (preset) {
-        $.preset = preset
-      } else {
-        if (!$.preset) {
-          app.setPresetDetailData(id, {
-            editorValue: localStorage.monoCode || monoDefaultEditorValue,
-          })
         }
       }
     })
@@ -715,121 +671,86 @@ export const Mono = web('mono', view(
       }
     })
 
-    // fx(({ preset: { detail } }) => {
-    //   if (!detail) {
-    //     $.slidersChecksum = 'invalid'
-    //     return
-    //   }
-    //   const { data: { sliders } } = detail
-    //   $.slidersChecksum = [...(sliders ?? []).values()].map((slider) => slider.id).join()
-    // })
-
-    fx(function updateShowDeleteButton({ app, machine, state }) {
-      $.showDeleteButton = app.getMachinesInGroup(machine.groupId)
-        .flatMap((machine) =>
-          machine.presets.items
-        ).length === 0
-        && state === 'suspended'
-    })
-
     fx(function updatePresetSliders({ preset }) {
-      $.presetSliders = $.getSliders(preset.detail)
+      if (preset) {
+        $.presetSliders = $.getSliders(preset.detail)
+      }
     })
 
-    fx(function updateMarkers({ presetSliders }) {
+    fx(function updateMarkers({ editor: _, presetSliders }) {
       $.updateMarkers(presetSliders)
     })
 
-    fx(function drawMono({
-      host,
-      app,
-      id,
+    fx(function drawWaveform({
       instanceId,
-      groupId,
-      machine,
+      app,
       state,
-      compileState,
-      spacer,
-      presets,
-      presetSliders,
-      showDeleteButton,
-      audio: {
-        audioContext,
-        workerBytes,
-        workerFreqs
-      },
+      audio: { workerBytes, workerFreqs },
     }) {
-      console.log('mono state:', state)
-      $.view = <>
-        <Spacer part="spacer" align={app.align === 'x' ? 'y' : 'x'} setSpacer={app.setSpacer} id={id} layout={host} initial={spacer ?? [0, 0.2, 0.55]}
-          minHandlePos={2}
-        >
+      // app.waveformViews = app.waveformViews.set(groupId,
+      $.waveformView = <Wavetracer
+        key={`${instanceId}-scroller`}
+        id={`${instanceId}-scroller`}
+        style="position: absolute; left: 0; top: 0; z-index: -1;"
+        part="waveform"
+        kind="scroller"
+        app={app}
+        workerBytes={workerBytes}
+        workerFreqs={workerFreqs}
+        width={100}
+        height={50}
+        running={state !== 'suspended'}
+      />
+      // )
+    })
 
-          <Code
-            part="editor"
-            distRoot={app.distRoot}
-            editorScene={app.editorScene}
-            onWheel={$.onWheel}
-            onEnterMarker={$.onEnterMarker}
-            onLeaveMarker={$.onLeaveMarker}
-            editor={deps.editor}
-            value={deps.monoCode}
-          />
+    fx(function drawSliders({ app, machine, groupId, waveformView, presetSliders, state, focused }) {
 
+      // TODO: drawTabButton
 
-          <div part="side">
-            <Sliders
-              ref={refs.sliders}
-              part="sliders"
-              scene={app.sliderScene}
-              machine={$.machine}
-              sliders={presetSliders}
-              running={state !== 'suspended'}
-            />
+      app.sliderViews = app.sliderViews.set(groupId,
+        <div
+          part="track"
+          style="display:flex; flex-flow: column nowrap;">
 
-            {/* <Waveform
-            part="waveform"
-            // id={`${id}-scroller`}
-            // kind="scroller"
-            // audioContext={audioContext}
-            analyserNode={analyserNode}
-            width={100}
-            height={50}
+          {waveformView}
+
+          <Sliders
+            ref={refs.sliders}
+            part="sliders"
+            scene={app.sliderScene}
+            machine={$.machine}
+            sliders={presetSliders}
             running={state !== 'suspended'}
-          /> */}
-            <Wavetracer
-              key={`${instanceId}-scroller`}
-              id={`${instanceId}-scroller`}
-              part="waveform"
-              kind="scroller"
-              app={app}
-              workerBytes={workerBytes}
-              workerFreqs={workerFreqs}
-              width={100}
-              height={50}
-              running={state !== 'suspended'}
-            />
-
-            <MachineControls
-              app={app}
-              machine={machine}
-              groupId={groupId}
-              state={state}
-              compileState={compileState}
-              methods={$}
-              showDeleteButton={showDeleteButton}
-            />
-
-          </div>
-
-          <PresetsView
-            part="presets"
-            app={app}
-            id={id}
-            presets={presets as any}
           />
 
-        </Spacer>
-      </>
+          <button
+            onclick={() => {
+              app.deps.focusedTrack.value = groupId
+            }}
+            class={classes({ focused })}
+          >
+            {machine.name}
+          </button>
+        </div>
+      )
+    })
+
+    fx(function drawMono({ app, id }) {
+      console.log(`mono ${id} ${$.state}`)
+
+      // TODO: ImmMap should return identity if the result is ===
+      app.codeViews = app.codeViews.set(id,
+        <Code
+          part="editor"
+          font={app.distRoot}
+          scene={app.editorScene}
+          onWheel={$.onWheel}
+          onEnterMarker={$.onEnterMarker}
+          onLeaveMarker={$.onLeaveMarker}
+          editor={deps.editor}
+          value={deps.monoCode}
+        />
+      )
     })
   }))

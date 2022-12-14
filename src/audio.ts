@@ -1,11 +1,21 @@
 import type { SchedulerEventGroupNode, SchedulerNode } from 'scheduler-node'
 import type { MonoNode } from 'mono-worklet'
 import { ObjectPool } from './util/pool'
+import { getSliders } from './util/args'
+
+function attempt(x: () => void) {
+  try {
+    x()
+  } catch (error) {
+    console.warn(error)
+  }
+}
 
 export type AppAudioNode = MonoNode | SchedulerNode | SchedulerEventGroupNode
 
 export class Audio {
   audioContext!: AudioContext
+  offlineAudioContext!: OfflineAudioContext
   audioNode!: AppAudioNode
   gainNode!: GainNode
   analyserNode!: AnalyserNode
@@ -16,6 +26,7 @@ export class Audio {
 
   gainNodePool!: ObjectPool<GainNode>
   monoNodePool!: ObjectPool<MonoNode>
+  testNodePool!: ObjectPool<MonoNode>
   groupNodePool!: ObjectPool<SchedulerEventGroupNode>
   analyserNodePool!: ObjectPool<AnalyserNode>
 
@@ -23,12 +34,21 @@ export class Audio {
     Object.assign(this, data)
   }
 
+  getSliders = (code: string) => getSliders(code, {
+    sampleRate: this.audioContext.sampleRate,
+    beatSamples: this.audioContext.sampleRate,
+    numberOfBars: 1
+  })
+
   setParam = (param: AudioParam, targetValue: number, slope = 0.015) => {
-    try {
+    attempt(() => {
       param.setTargetAtTime(targetValue, this.audioContext.currentTime, slope)
-    } catch (error) {
-      console.warn(error)
-    }
+    })
+  }
+
+  disconnect = (sourceNode: AudioNode, targetNode: AudioNode) => {
+    attempt(() => {
+      sourceNode.disconnect(targetNode)
+    })
   }
 }
-

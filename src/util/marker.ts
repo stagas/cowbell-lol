@@ -1,13 +1,15 @@
-import { Slider } from '../slider'
-import { checksum } from './checksum'
+import type { Marker } from 'canvy'
 
-export function markerForSlider(slider: Slider) {
+import { Slider } from '../slider-view'
+
+export function markerForSlider(slider: Slider): Marker {
   return ({
     key: slider.id,
     index: slider.sourceIndex!,
     size: slider.source!.arg.length,
     kind: 'param',
-    color: `hsl(${checksum(slider.id) % 360}, 55%, 25%)`,
-    hoverColor: `hsl(${checksum(slider.id) % 360}, 55%, 35%)`,
+    color: `hsl(${slider.hue}, 60%, 18%)`,
+    hoverColor: `hsl(${slider.hue}, 60%, 26%)`,
+    message: slider.name,
   })
 }

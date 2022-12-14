@@ -1,6 +1,6 @@
 /** @jsxImportSource minimal-view */
 
-import { element, on, view, web } from 'minimal-view'
+import { effect, element, on, view, web } from 'minimal-view'
 
 import { AbstractDetail, BasePresets } from 'abstract-presets'
 import { CanvyElement } from 'canvy'
@@ -8,18 +8,18 @@ import { cheapRandomId, pick } from 'everyday-utils'
 import { SchedulerEventGroupNode } from 'scheduler-node'
 import defineFunction from 'define-function'
 
-import { AppContext, SIZES, SPACERS } from './app'
+import { AppContext } from './app'
 import { Audio } from './audio'
 import { Code, EditorDetailData } from './code'
 import { AudioMachine, MachineKind, MachineState } from './machine'
 import { Midi } from './midi'
-import { Preset, PresetsView } from './presets'
-import { Spacer } from './spacer'
+import { Preset } from './presets'
 import { Wavetracer } from './wavetracer'
 
 export type NoteEvent = [number, number, number, number]
 
 const schedulerDefaultEditorValue = `\
+// bassline
 bars=2
 seed=391434
 on(1/4,delay(
@@ -75,9 +75,12 @@ export class SchedulerPresets extends BasePresets<SchedulerDetail, Preset<Schedu
 export class SchedulerMachine extends AudioMachine<SchedulerPresets> {
   kind: MachineKind = 'scheduler'
   name = 'scheduler'
-  size = SIZES['scheduler']
-  spacer = SPACERS.scheduler
-  presets = new SchedulerPresets()
+
+  selectedPreset: NonNullable<SchedulerPresets['selectedPreset']> = new Preset({
+    detail: new SchedulerDetail({
+      editorValue: schedulerDefaultEditorValue
+    })
+  })
 
   constructor(data: Partial<SchedulerMachine>) {
     super(data)
@@ -89,9 +92,7 @@ export class SchedulerMachine extends AudioMachine<SchedulerPresets> {
       'id',
       'groupId',
       'kind',
-      'size',
-      'spacer',
-      'presets',
+      'selectedPreset',
       'outputs',
     ])
   }
@@ -103,23 +104,22 @@ export const Scheduler = web('scheduler', view(
     app!: AppContext
     audio!: Audio
     machine!: SchedulerMachine
+    presets!: SchedulerPresets
   },
 
   class local {
+    host = element
     instanceId = cheapRandomId()
 
-    host = element
+    groupId?: string
+    focused?: boolean
     state?: MachineState
-    spacer?: number[]
     outputs?: SchedulerMachine['outputs']
-
+    preset: Preset<SchedulerDetail> | false = false
     groupNode?: SchedulerEventGroupNode
 
     editor!: CanvyElement
     errorMarkers?: any[] = []
-
-    preset: Preset<SchedulerDetail> | null = null
-    presets?: SchedulerPresets
 
     sandbox?: any
     schedulerCode!: string
@@ -150,15 +150,26 @@ export const Scheduler = web('scheduler', view(
     }
     `
 
+    fx(({ app, groupId }) =>
+      effect({
+        focusedTrack: app.deps.focusedTrack
+      }, ({ focusedTrack }) => {
+        $.focused = focusedTrack === groupId
+      })
+    )
+
     fx(function updateMachineProps({ machine }) {
-      $.state = $.state === 'running' && machine.state === 'init' ? $.state : machine.state
-      $.presets = machine.presets
-      $.spacer = machine.spacer
+      $.state = $.state === 'running' && machine.state === 'init'
+        ? $.state
+        : machine.state
+
+      $.preset = machine.selectedPreset || $.preset
       $.outputs = machine.outputs
+      $.groupId = machine.groupId
     })
 
-    fx(function updatePreset({ app, id, editor, presets }) {
-      const preset = presets.selectedPreset
+    fx(function updatePreset({ app, id, editor, preset }) {
+      // const preset = presets.selectedPreset
       if (preset) {
         $.preset = preset
         if (preset.detail?.data) {
@@ -416,72 +427,52 @@ export const Scheduler = web('scheduler', view(
       }
     })
 
-    fx(function drawScheduler({
-      app,
-      id,
+    fx(function drawSequencer({
       instanceId,
-      host,
+      groupId,
+      app,
       state,
+      focused,
       midiEvents,
       numberOfBars,
-      groupNode,
-      presets,
-      spacer,
-      audio: {
-        audioContext,
-        workerBytes,
-        workerFreqs,
-      },
+      audio: { workerBytes, workerFreqs },
     }) {
-      $.view = <>
-        <Spacer
-          part="spacer"
-          id={id}
-          align={app.align === 'x' ? 'y' : 'x'}
-          setSpacer={app.setSpacer}
-          layout={host}
-          initial={spacer}
-        >
+      app.sequencerViews.set(groupId, <div>
+        <Wavetracer
+          key={`${instanceId}-tracer`}
+          id={`${instanceId}-tracer`}
+          part="waveform"
+          kind="tracer"
+          style="position:absolute;bottom:0"
+          app={app}
+          workerBytes={workerBytes}
+          workerFreqs={workerFreqs}
+          running={focused && state === 'running'}
+          loopTime={numberOfBars}
+        />
+        <Midi
+          part="midi"
+          style="position:absolute; bottom:0"
+          state={state as any}
+          app={app}
+          midiEvents={midiEvents}
+          numberOfBars={numberOfBars}
+        />
 
-          <Code
-            distRoot={app.distRoot}
-            editorScene={app.editorScene}
-            editor={deps.editor}
-            value={deps.schedulerCode}
-          />
+      </div>)
+    })
 
-          <div part="overlay">
-            <Wavetracer
-              key={`${instanceId}-tracer`}
-              id={`${instanceId}-tracer`}
-              part="waveform"
-              kind="tracer"
-              style="position:absolute;bottom:0"
-              app={app}
-              workerBytes={workerBytes}
-              workerFreqs={workerFreqs}
-              running={state === 'running'}
-              loopTime={numberOfBars}
-            />
-            <Midi
-              part="midi"
-              style="position:absolute; bottom:0"
-              state={state as any}
-              app={app}
-              midiEvents={midiEvents}
-              numberOfBars={numberOfBars}
-            />
-          </div>
+    fx(function drawScheduler({ app, id }) {
+      console.log(`scheduler ${id} ${$.numConnectedTargets}`)
 
-          <PresetsView
-            app={app}
-            id={id}
-            presets={presets as any}
-            style="pointer-events: all"
-          />
-
-        </Spacer>
-      </>
+      app.codeViews = app.codeViews.set(id,
+        <Code
+          font={app.distRoot}
+          scene={app.editorScene}
+          editor={deps.editor}
+          value={deps.schedulerCode}
+        />
+      )
     })
   })
 )

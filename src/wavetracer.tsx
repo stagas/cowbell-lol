@@ -4,11 +4,23 @@ import { element, view, web } from 'minimal-view'
 
 import type { WavetracerWorkerBytes, WavetracerWorkerCurrentTime, WavetracerWorkerInit, WavetracerWorkerLoopTime, WavetracerWorkerResize, WavetracerWorkerStart, WavetracerWorkerStop } from './wavetracer-worker'
 
-import { getWavetracerPort } from './wavetracer-get-port'
 import { AppContext } from './app'
 
 function post<T>(target: MessagePort | Worker, message: T, transfer?: StructuredSerializeOptions) {
   return target.postMessage(message, transfer)
+}
+
+let worker
+const getWavetracerPort = () => {
+  worker ??= new Worker(
+    // @ts-ignore
+    new URL('./wavetracer-worker.js', import.meta.url),
+    {
+      type: 'module',
+    }
+  )
+
+  return worker
 }
 
 export const Wavetracer = web('wavetracer', view(

@@ -1,11 +1,11 @@
 /** @jsxImportSource minimal-view */
 
 import { Scalar, Matrix, Point, Rect } from 'geometrik'
-import { chain, element, event, Off, on, queue, view, web } from 'minimal-view'
+import { chain, Dep, effect, element, event, Off, on, queue, view, web } from 'minimal-view'
 
 import { BasePresets, PresetsGroupDetail } from 'abstract-presets'
 import { EditorScene } from 'canvy'
-import { cheapRandomId, MapMap, pick } from 'everyday-utils'
+import { cheapRandomId, filterMap, MapMap, pick } from 'everyday-utils'
 import { IconSvg } from 'icon-svg'
 import { List } from '@stagas/immutable-list'
 import { SchedulerEventGroupNode, SchedulerNode } from 'scheduler-node'
@@ -13,11 +13,11 @@ import { compressUrlSafe, decompressUrlSafe } from 'urlsafe-lzma'
 
 import { AppAudioNode, Audio } from './audio'
 import { Button } from './button'
-import { AudioMachine, Machine, MachineCompileState, MachineDetail, MachineKind, MachineState } from './machine'
-import { Mono, MonoMachine } from './mono'
+import { AudioMachine, Machine, MachineCompileState, MachineDetail, MachineKind, MachinePresets, MachineState } from './machine'
+import { Mono, MonoDetail, MonoMachine } from './mono'
 import { MonoGroup } from './mono-group'
 import { Preset, PresetsView } from './presets'
-import { Scheduler, SchedulerMachine } from './scheduler'
+import { Scheduler, SchedulerDetail, SchedulerMachine, SchedulerPresets } from './scheduler'
 import { ancient, emoji, randomName } from './util/random-name'
 import { deserialize, serialize } from './util/serialize'
 import { SliderScene } from './sliders'
@@ -29,6 +29,8 @@ import { Spacer } from './spacer'
 import { MixerView } from './mixer'
 import { animRemoveSchedule, animSchedule } from './anim'
 import { NumberInput } from './number-input'
+import { ImmMap } from 'immutable-map-set'
+import { MonoPresets } from './mono'
 
 const { clamp } = Scalar
 
@@ -36,6 +38,7 @@ export interface Save {
   name: string
   date: string
   machines: AppContext['machines']
+  presets: AppContext['presets']
   isAutoSave?: boolean
 }
 
@@ -73,16 +76,12 @@ const defaultMachines: Record<'mono' | 'scheduler', MonoMachine | SchedulerMachi
     kind: 'mono',
     groupId: 'A',
     state: 'init',
-    spacer: SPACERS.mono,
-    size: SIZES.mono,
   }),
   scheduler: new SchedulerMachine({
     id: cheapRandomId(),
     kind: 'scheduler',
     groupId: 'A',
     state: 'init',
-    spacer: SPACERS.scheduler,
-    size: SIZES.scheduler,
     outputs: [aId],
   })
 }
@@ -98,9 +97,6 @@ export class AppMachine extends Machine<AppPresets>  {
   name = 'main'
   kind: MachineKind = 'app'
   hue = 230
-  size = SIZES['app']
-  align: 'x' | 'y' = 'y'
-  presets = new AppPresets()
 
   declare methods: AppContext
   declare audio?: Audio
@@ -116,9 +112,6 @@ export class AppMachine extends Machine<AppPresets>  {
     return pick(this, [
       'id',
       'kind',
-      'size',
-      'align',
-      'presets',
     ])
   }
 
@@ -138,6 +131,8 @@ export const AppView = web('app', view(
   },
 
   class local {
+    version = 1
+
     host = element
     rect = new Rect()
     items: any[] = []
@@ -145,11 +140,13 @@ export const AppView = web('app', view(
 
     app = new AppMachine()
     state!: AppMachine['state']
-    presets!: AppMachine['presets']
-    size!: AppMachine['size']
-    align: AppMachine['align'] = 'y'
+
+    // TODO: get rid
+    align: 'x' | 'y' = 'y'
 
     preset: Preset<AppDetail> | false = false
+
+    focusedTrack?: string
 
     // saves
     saves: string[] = []
@@ -165,6 +162,18 @@ export const AppView = web('app', view(
       mono: Mono,
       scheduler: Scheduler,
     }
+
+    presets = {
+      app: new AppPresets(),
+      mono: new MonoPresets(),
+      scheduler: new SchedulerPresets(),
+    } as const
+
+    sliderViews = new ImmMap<string, JSX.Element>()
+    // waveformViews = new ImmMap<string, JSX.Element>()
+    presetViews = new ImmMap<string, JSX.Element>()
+    sequencerViews = new ImmMap<string, JSX.Element>()
+    codeViews = new ImmMap<string, JSX.Element>()
 
     // audio
     audioContext = new AudioContext({ sampleRate: 44100, latencyHint: 0.04 })
@@ -231,7 +240,7 @@ export const AppView = web('app', view(
 
       if (!isFromUrl) {
         if (serializedSave) {
-          url.hash = `s=${name},${$.bpm},${compressUrlSafe(
+          url.hash = `s=${name},${$.bpm},${$.version},${compressUrlSafe(
             serializedSave, { mode: 9, enableEndMark: false }
           )}`
           console.log('url length:', url.toString().length)
@@ -250,7 +259,8 @@ export const AppView = web('app', view(
     return fns(new class actions {
       load = (
         saveId = 'lastSave',
-        serializedSave?: string
+        serializedSave?: string,
+        version?: string
       ) => {
         let machines: AppContext['machines'] = new List();
 
@@ -263,6 +273,14 @@ export const AppView = web('app', view(
 
           console.log('load:', saveId, obj)
 
+          if (!version) {
+            machines.items.forEach((machine) => {
+
+            })
+            console.log(obj)
+            throw new Error('Version not provided for save')
+          }
+
           if (Array.isArray(obj.machines)) {
             obj.machines = new List({ items: obj.machines })
           }
@@ -272,6 +290,7 @@ export const AppView = web('app', view(
 
           updateTitle(obj, serializedSave, isFromUrl)
           machines = obj.machines
+          $.presets = obj.presets
         } catch (error) {
           console.warn(error)
         }
@@ -292,6 +311,9 @@ export const AppView = web('app', view(
         }
 
         $.machines = machines
+
+        $.focusedTrack = (machines.items.find((machine) => 'groupId' in machine) as MonoMachine).groupId
+
         $.app = machines.getById('app')
         this.setMachineState('app', 'ready')
       }
@@ -304,13 +326,19 @@ export const AppView = web('app', view(
             const hash = decodeURIComponent(url.hash).split('#s=')[1] ?? ''
             if (!hash.length) return false
 
-            let [, bpm, compressed] = hash.split(',')
+            let [, bpm, version, compressed] = hash.split(',')
+            if (version.length > 10) {
+              compressed = version
+              version = ''
+            }
             if (bpm.length > 10) {
               compressed = bpm
+              version = ''
               bpm = ''
             }
+
             const serializedSave = decompressUrlSafe(compressed)
-            this.load(void 0, serializedSave)
+            this.load(void 0, serializedSave, version)
             $.bpm = +bpm || $.bpm
             return true
           } else {
@@ -337,7 +365,8 @@ export const AppView = web('app', view(
         const obj: Save = {
           name,
           date: date.toISOString(),
-          machines: $.machines
+          machines: $.machines,
+          presets: $.presets
         }
 
         if (isAutoSave) obj.isAutoSave = true
@@ -345,12 +374,19 @@ export const AppView = web('app', view(
         const json = serialize(obj)
 
         if ($.lastSave && (isAutoSave || !$.lastSave.isAutoSave)) {
-          const machinesCopy =
-            (deserialize(json) as Save).machines
+          const {
+            machines: machinesCopy,
+            presets: presetsCopy,
+          } = (deserialize(json) as Save)
 
           console.log($.lastSave, machinesCopy)
 
-          if ($.lastSave.machines.equals(machinesCopy)) {
+          if (
+            $.lastSave.machines.equals(machinesCopy)
+            && $.lastSave.presets.app.equals(presetsCopy.app)
+            && $.lastSave.presets.mono.equals(presetsCopy.mono)
+            && $.lastSave.presets.scheduler.equals(presetsCopy.scheduler)
+          ) {
             console.log('there were no changes so nothing was saved')
             return false
           }
@@ -479,21 +515,6 @@ export const AppView = web('app', view(
         }
       }
 
-      // disconnectNode = (
-      //   sourceNode: AppAudioNode,
-      //   targetId: string
-      // ) => {
-      //   const targetNode = $.audioNodes.get(targetId)
-      //   if (!targetNode) {
-      //     throw new Error('No target audio node found with id: ' + targetId)
-      //   }
-      //   try {
-      //     sourceNode.disconnect(targetNode as any)
-      //   } catch (error) {
-      //     console.warn(error)
-      //   }
-      // }
-
       start = () => {
         $.machines.items
           .filter((machine) =>
@@ -554,7 +575,7 @@ export const AppView = web('app', view(
         id: string,
         detail: MachineDetail
       ) => {
-        return $.machines.getById(id).presets.getByDetail(detail)
+        $.presets[$.machines.getById(id).kind].getByDetail(detail as any)
       }
 
       updatePresetById = (
@@ -562,11 +583,22 @@ export const AppView = web('app', view(
         presetId: string,
         data: Partial<Preset>
       ) => {
-        let presets = $.machines.getById(id).presets
+        const kind = $.machines.getById(id).kind
+        let presets = $.presets[kind] as BasePresets
+        // let presets = $.machines.getById(id).presets
+
         presets = presets.updateById(presetId, data)
-        $.machines = $.machines.updateById(id, {
-          presets
-        })
+
+
+        // $.machines = $.machines.updateById(id, {
+        //   presets
+        // })
+
+        $.presets = {
+          ...$.presets,
+          [kind]: presets
+        }
+
         return presets.getById(presetId)
       }
 
@@ -585,10 +617,16 @@ export const AppView = web('app', view(
         id: string,
         presetId: string
       ) => {
-        $.machines = $.machines.updateById(id, {
-          presets: $.machines.getById(id)
-            .presets.savePreset(presetId)
-        })
+        const kind = $.machines.getById(id).kind
+        const presets = $.presets[kind] as BasePresets
+        $.presets = {
+          ...$.presets,
+          [kind]: presets.savePreset(presetId)
+        }
+        // $.machines = $.machines.updateById(id, {
+        //   presets: $.machines.getById(id)
+        //     .presets.savePreset(presetId)
+        // })
       }
 
       removePresetById = (
@@ -596,12 +634,20 @@ export const AppView = web('app', view(
         presetId: string,
         fallbackPresetId?: string
       ) => {
-        const machine = $.machines.getById(id)
+        const kind = $.machines.getById(id).kind
+        const presets = $.presets[kind] as BasePresets
+
+        // const machine = $.machines.getById(id)
 
         try {
-          $.machines = $.machines.updateById(id, {
-            presets: machine.presets.removeById(presetId, fallbackPresetId)
-          })
+          $.presets = {
+            ...$.presets,
+            [kind]: presets.removeById(presetId, fallbackPresetId)
+          }
+
+          // $.machines = $.machines.updateById(id, {
+          //   presets: machine.presets.removeById(presetId, fallbackPresetId)
+          // })
         } catch (error) {
           console.warn(error)
         }
@@ -613,15 +659,23 @@ export const AppView = web('app', view(
         newDetail: MachineDetail,
         isIntent = false
       ) => {
-        const machine = $.machines.getById(id)
+        const kind = $.machines.getById(id).kind
+        const presets = $.presets[kind] as BasePresets
 
-        const newPreset = machine.presets.createWithDetail(newDetail, { isIntent })
+        const newPreset = presets.createWithDetail(newDetail, { isIntent })
 
-        $.machines = $.machines.updateById(id, {
-          presets: machine.presets
+        $.presets = {
+          ...$.presets,
+          [kind]: presets
             .insertAfterIndex(index, newPreset)
             .selectPreset(newPreset.id)
-        })
+        }
+
+        // $.machines = $.machines.updateById(id, {
+        //   presets: machine.presets
+        //     .insertAfterIndex(index, newPreset)
+        //     .selectPreset(newPreset.id)
+        // })
       }
 
       selectPreset = (
@@ -630,10 +684,21 @@ export const AppView = web('app', view(
         byClick?: boolean,
         newDetail?: MachineDetail
       ) => {
-        const machine = $.machines.getById(id)
-        $.machines = $.machines.updateById(id, {
-          presets: machine.presets.selectPreset(presetId, byClick, newDetail)
-        })
+        const kind = $.machines.getById(id).kind
+        let presets = $.presets[kind] as BasePresets
+
+        // const machine = $.machines.getById(id)
+
+        presets = presets.selectPreset(presetId, byClick, newDetail)
+
+        $.presets = {
+          ...$.presets,
+          [kind]: presets
+        }
+
+        // $.machines = $.machines.updateById(id, {
+        //   selectedPreset: presets.getById(presetId) as any
+        // })
       }
 
       setPresetDetailData = <T extends MachineDetail>(
@@ -642,31 +707,40 @@ export const AppView = web('app', view(
         bySelect?: boolean,
         byIntent?: boolean
       ) => {
-        const machine = $.machines.getById(id)
+        const kind = $.machines.getById(id).kind
+        let presets = $.presets[kind] as BasePresets
 
-        const presets = machine.presets
+        // const machine = $.machines.getById(id)
+
+        presets = presets
           .setDetailData(newDetailData, bySelect, byIntent)
 
-        $.machines = $.machines.updateById(id, {
-          presets
-        })
+
+        $.presets = {
+          ...$.presets,
+          [kind]: presets //.selectPreset(presetId, byClick, newDetail)
+        }
+
+        // $.machines = $.machines.updateById(id, {
+        //   presets
+        // })
 
         return presets.selectedPreset!
       }
 
-      setSpacer = (
-        id: string,
-        spacer: number[]
-      ) => {
-        $.machines = $.machines.updateById(id, { spacer })
-      }
+      // setSpacer = (
+      //   id: string,
+      //   spacer: number[]
+      // ) => {
+      //   $.machines = $.machines.updateById(id, { spacer })
+      // }
 
-      setSize = (
-        id: string,
-        size: number
-      ) => {
-        $.machines = $.machines.updateById(id, { size })
-      }
+      // setSize = (
+      //   id: string,
+      //   size: number
+      // ) => {
+      //   $.machines = $.machines.updateById(id, { size })
+      // }
 
       setGainValue = (
         id: string,
@@ -675,9 +749,21 @@ export const AppView = web('app', view(
         $.machines = $.machines.updateById<MonoMachine>(id, { gainValue })
       }
 
-      getSources = (machines = $.machines) => {
-        return new Map(machines.items.filter(function filterMachinesNoApp(machine) { return machine.kind !== 'app' }).map(function mapMachinesToSources(machine) { return [machine.id, machine.presets] as const }
-        ))
+      getSelectedPresetsDetails = (machines = $.machines) => {
+        return filterMap(
+          machines.items,
+          function filterMachinesNoApp(machine) {
+            return machine.kind !== 'app'
+              // @ts-ignore
+              && machine.selectedPreset?.detail
+              && [
+                machine.id,
+                (machine as MonoMachine | SchedulerMachine).selectedPreset.detail.copy()
+              ] as const
+          }
+          // ,
+          //   function mapMachinesToSources(machine) {return [machine.id, machine.selectedPreset.detail] as const }
+        )
       }
 
       presetsOnSelect = (
@@ -688,23 +774,27 @@ export const AppView = web('app', view(
         byClick: boolean | undefined
       ) => {
         if (byClick && next) {
-          let sources = this.getSources()
+          const details = this.getSelectedPresetsDetails()
 
-          const detail = next.detail.merge({ ...next.detail.data, sources })
+          const detail = next.detail.merge({ details })
 
-          sources = detail.applyData(detail.data) as any
+          // sources = detail.applyData(detail.data) as any
 
-          if (sources && $.preset) {
-            let machines = $.machines
+          if ($.preset) {
+            const machines = $.machines
 
-            sources.forEach((presets, key) => {
-              if (machines.hasId(key)) {
-                machines = machines.updateById(key, { presets })
+            detail.data.details.forEach(([id, detail]) => {
+              if (machines.hasId(id)) {
+                this.setPresetDetailData(id, detail.data)
+                // machines = machines.updateById(id, { selectedPreset })
               }
             })
 
-            $.sources = this.getSources(machines)
-            $.preset = $.presets.createWithDetailData({ ...next.detail.data, sources: $.sources }, next)
+            // $.sources = this.getSelectedPresets(machines)
+            $.preset = $.presets.app.createWithDetailData(
+              { ...next.detail.data },
+              next
+            )
             $.machines = machines
           }
         }
@@ -1049,7 +1139,7 @@ export const AppView = web('app', view(
       [part=main-view] {
         display: flex;
         position: relative;
-        max-width: 95%;
+        max-width: 90%;
         width: 100%;
         height: 100%;
       }
@@ -1098,7 +1188,7 @@ export const AppView = web('app', view(
     })
 
     fx(function updateMachines({ machines }) {
-      $.sources = $.getSources()
+      // $.sources = $.getSources()
       const app = machines.getById('app') as AppMachine
       if ($.app.state !== 'init') {
         $.isAutoSave = true
@@ -1112,50 +1202,66 @@ export const AppView = web('app', view(
       $.save()
     })
 
+    fx(function listenPresetsOnSelect({ presets }) {
+      presets.app.on('select', $.presetsOnSelect)
+    })
+
     fx(function updateAppProps({ app, appAudio }) {
       app.methods = $
       app.audio = appAudio
+
       $.gainValue = localStorage.gainValue = app.gainValue
-
-      $.size = app.size
-
-      // $.align = app.align
-      app.align = $.align
-
       $.state = app.state
-      $.presets = app.presets
     })
 
     fx(function updatePreset({ presets }) {
-      const preset = presets.selectedPreset
+      const preset = presets.app.selectedPreset
       if (preset) {
         $.preset = preset
+        // app.selectedPreset = preset
       }
     })
 
-    fx(function updatePresetDetailData({ state, sources }) {
+    // fx(function updateMachineSelectedPresets({ preset, presets }) {
+    //   if (preset) {
+    //     let machines = $.machines
+    //     for (const [id, detail] of preset.detail.data.details) {
+    //       const machine = machines.getById(id)
+    //       const machinePresets = presets[machine.kind] as MonoPresets | SchedulerPresets
+    //       const machinePreset = machinePresets.getByDetail(detail)
+
+    //       console.log('found', id, machinePreset)
+    //       if (machinePreset) {
+    //         machines = machines.updateById(id, {
+    //           selectedPreset: machinePreset
+    //         })
+    //         // $.selectPreset(id, machinePreset.id)
+    //       } else {
+    //         // $.setPresetDetailData(id, detail.data)
+    //       }
+    //     }
+    //     $.machines = machines
+    //   }
+    // })
+
+    fx(function updatePresetDetailData({ state, machines }) {
       if (state === 'init') return
 
       if (!$.preset) {
         $.preset = new Preset({
           detail: new AppDetail({
-            sources,
             details: [],
-            extra: { bpm: 120 }
           })
         })
       }
 
-      const newDetail = $.preset.detail.collectData($.sources)
+      // const newDetail = $.preset.detail.collectData($.sources)
 
-      if ($.preset && newDetail.equals($.preset.detail)) return
+      // if ($.preset && newDetail.equals($.preset.detail)) return
       // if ($.preset && $.preset.detail.satisfies(newDetail)) return
 
-      $.preset = $.setPresetDetailData('app', newDetail.data)
-    })
-
-    fx(function listenPresetsOnSelect({ presets }) {
-      presets.on('select', $.presetsOnSelect)
+      // $.preset =
+      $.setPresetDetailData('app', { details: $.getSelectedPresetsDetails() })
     })
 
     fx(function listenOnWindowResize() {
@@ -1225,7 +1331,7 @@ export const AppView = web('app', view(
       }
     })
 
-    fx(function drawItemsView({ addButtonView, state, audio, machines }) {
+    fx(function drawItemsView({ addButtonView, state, audio, machines, presets, focusedTrack }) {
       if (state === 'init') return
 
       const itemsView: any[] = []
@@ -1247,14 +1353,17 @@ export const AppView = web('app', view(
               app={$}
               audio={audio}
               mono={mono}
+              presets={presets}
               scheduler={scheduler}
+              focused={focusedTrack === mono.groupId}
             />
           )
           mono = scheduler = void 0
         }
       }
 
-      $.itemsView = <div part="items">{itemsView}{addButtonView}</div>
+      $.itemsView = <div part="items">{itemsView}</div>
+      //{addButtonView}
     })
 
     fx(function updatePlayingState({ machines }) {
@@ -1320,13 +1429,13 @@ export const AppView = web('app', view(
               ...defaultMachines.mono,
               id: a,
               groupId
-            }))
+            } as any))
             .add(new SchedulerMachine({
               ...defaultMachines.scheduler,
               id: b,
               groupId,
               outputs: [a]
-            }))
+            } as any))
         }}>
           <IconSvg class="normal" set="feather" icon="plus-circle" />
         </Button>
@@ -1339,7 +1448,7 @@ export const AppView = web('app', view(
       </div>
     })
 
-    fx(function drawPresets({ savesView, presets, size, align }) {
+    fx(function drawPresets({ presets }) {
       $.presetsView = <PresetsView part="app-presets" app={$} id="app" presets={presets as any} />
     })
 
@@ -1464,7 +1573,7 @@ export const AppView = web('app', view(
       </div>
     })
 
-    fx(function drawApp({ host, machines, itemsView, headerView, presetsView, state, workerBytes, workerFreqs }) {
+    fx(function drawApp({ host, machines, presets, itemsView, headerView, presetsView, state, workerBytes, workerFreqs }) {
       if (state === 'init') return
 
       // {/* <div>
@@ -1481,6 +1590,8 @@ export const AppView = web('app', view(
           part="main-view"
           app={$}
           machines={machines}
+          presets={presets}
+          focusedTrack={deps.focusedTrack}
           workerBytes={workerBytes}
           workerFreqs={workerFreqs}
           presetsView={presetsView}
@@ -1492,7 +1603,10 @@ export const AppView = web('app', view(
 
 const MainView = web('main-view', view(class props {
   app!: AppContext
-  machines!: List<Machine | AudioMachine | MonoMachine>
+  machines!: AppContext['machines']
+  presets!: AppContext['presets']
+
+  focusedTrack!: Dep<string>
   workerBytes!: Uint8Array
   workerFreqs!: Uint8Array
   itemsView!: JSX.Element
@@ -1501,40 +1615,105 @@ const MainView = web('main-view', view(class props {
   host = element
 }, function actions() { return ({}) }, function effects({ $, fx }) {
 
-  fx(({ host, app, machines, itemsView, presetsView, workerBytes, workerFreqs }) => {
+  fx(({ host, app, machines, presets, itemsView, presetsView, focusedTrack, workerBytes, workerFreqs }) => {
     $.view = <Spacer align="x" initial={[0, 0.35]} layout={host} id="app-spacer" part="app-spacer">
       <SideView
         part="app-side"
         app={app}
         machines={machines}
+        presets={presets}
+        focusedTrack={focusedTrack}
         workerBytes={workerBytes}
         workerFreqs={workerFreqs}
         presetsView={presetsView}
+        itemsView={itemsView}
       />
-      {itemsView}
     </Spacer>
   })
 }))
 
 const SideView = web('side-view', view(class props {
   app!: AppContext
-  machines!: List<Machine | AudioMachine | MonoMachine>
+  machines!: AppContext['machines']
+  presets!: AppContext['presets']
+
+  focusedTrack!: Dep<string>
   workerBytes!: Uint8Array
   workerFreqs!: Uint8Array
   presetsView!: JSX.Element
+  itemsView!: JSX.Element
 }, class local {
   host = element
-}, function actions() { return ({}) }, function effects({ $, fx }) {
+  groups?: string[]
+  trackViews = new ImmMap<string, JSX.Element>()
+  codeView: JSX.Element = false
+}, function actions() { return ({}) }, function effects({ $, fx, deps }) {
+  fx(({ host, app }) => effect({
+    // presets: app.deps.presetViews,
+    focusedTrack: app.deps.focusedTrack,
+    sliders: app.deps.sliderViews,
+    codes: app.deps.codeViews,
+    presets: app.deps.presets,
+  }, ({ sliders, codes, focusedTrack, presets }) => {
+    for (const id of sliders.keys()) {
+      $.trackViews = $.trackViews.set(id, [
+        sliders.get(id)
+      ])
+    }
 
-  fx(({ host, app, machines, presetsView, workerBytes, workerFreqs }) => {
-    $.view = <Spacer align="y" initial={[0, 0.44]} layout={host} id="app-side-spacer">
-      <MixerView
+    const machines = app.getMachinesInGroup(focusedTrack)
+
+    const mono = machines.find((machine) => machine.kind === 'mono') as MonoMachine
+
+    const scheduler = machines.find((machine) => machine.kind === 'scheduler') as SchedulerMachine
+
+    $.codeView = <><Spacer key={focusedTrack} align="x" initial={[0, 0.1, 0.5, 0.9]} id="app-code-spacer" layout={host}>
+      <PresetsView
         app={app}
-        machines={machines}
-        workerBytes={workerBytes}
-        workerFreqs={workerFreqs}
+        id={mono.id}
+        presets={presets.mono as any}
       />
-      {presetsView}
+      {codes.get(mono.id)}
+      {codes.get(scheduler.id)}
+      <PresetsView
+        app={app}
+        id={scheduler.id}
+        presets={presets.scheduler as any}
+      />
     </Spacer>
+      {[...codes].filter(([id]) =>
+        ![mono.id, scheduler.id].includes(id)
+      ).map(([id, view]) => <div style="display: none">{view}</div>)}
+    </>
+  }))
+
+  fx(({ machines }) => {
+    $.groups = [...new Set(filterMap(machines.items, (machine) => 'groupId' in machine && machine.groupId))]
+  })
+
+  fx(({ host, app, machines, itemsView, codeView, focusedTrack, groups, trackViews, workerBytes, workerFreqs }) => {
+    const spacer = [0, ...groups.map((_, i) => 0.7 * (i / groups.length) + 0.2), 0.9]
+    $.view = <>
+      <Spacer align="y" initial={[0, 0.44]} layout={host} id="app-side-spacer">
+        <Spacer align="x" id="app-sliders-spacer" initial={spacer} layout={host}>
+          {
+            [<MixerView.Fn
+              app={app}
+              machines={machines}
+              focusedTrack={focusedTrack}
+              workerBytes={workerBytes}
+              workerFreqs={workerFreqs}
+            />,
+            ...groups.map((groupId) => <>
+              {trackViews.get(groupId)}
+            </>),
+            app.addButtonView
+            ]
+          }
+        </Spacer>
+        {codeView}
+      </Spacer>
+      {itemsView}
+    </>
   })
 }))
