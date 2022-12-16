@@ -3,7 +3,7 @@
 import { CanvyElement, EditorScene, Lens, Marker } from 'canvy'
 import { attempt, cheapRandomId, checksum, pick } from 'everyday-utils'
 import { Matrix, Point, Rect } from 'geometrik'
-import { dep, Dep, effect, element, on, Reactive, reactive, view, web } from 'minimal-view'
+import { Dep, effect, element, on, reactive, view, web } from 'minimal-view'
 import { MonoNode } from 'mono-worklet'
 import { SchedulerEventGroupNode, SchedulerNode } from 'scheduler-node'
 import { Code } from './code'
@@ -21,14 +21,14 @@ import { getErrorInputLine, getErrorToken, getTitle } from './util/parse'
 import { ObjectPool } from './util/pool'
 import { createWaveplot, Waveplot } from './waveplot'
 
-function add<T extends Reactive>(
-  map: Map<string, T>,
-  item: T
-) {
-  const copy = new Map(map)
-  copy.set(item.$.id, item)
-  return copy
-}
+// function add<T extends Reactive>(
+//   map: Map<string, T>,
+//   item: T
+// ) {
+//   const copy = new Map(map)
+//   copy.set(item.$.id, item)
+//   return copy
+// }
 
 // function pop<T extends Reactive>(map: Map<string, T>) {
 //   if (!map.size) return map

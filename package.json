@@ -92,7 +92,7 @@
     "icon-svg": "^3.0.6",
     "immutable-map-set": "^1.0.0",
     "json-objectify": "^1.0.1",
-    "minimal-view": "^1.2.0",
+    "minimal-view": "^1.2.1",
     "mono-worklet": "^1.1.0",
     "monolang": "^3.0.1",
     "pretty-fast-fft": "^1.0.0",

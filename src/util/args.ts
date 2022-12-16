@@ -1,6 +1,6 @@
 import { checksum, isEqual } from 'everyday-utils'
 import { Slider } from '../slider'
-import type { Sliders } from '../sliders'
+import type { Sliders } from '../types'
 
 export const parseArgsRegExp = /'(?<name>\w+)\s*?(?<range>\[.+\])\s*?=\s*(?<value>[.0-9kKbBmsf]+)/gi
 
