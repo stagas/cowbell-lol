@@ -95,7 +95,7 @@
     "minimal-view": "^1.1.0",
     "mono-worklet": "^1.0.2",
     "monolang": "^3.0.0",
-    "pretty-fast-fft": "file:../pretty-fast-fft",
+    "pretty-fast-fft": "^1.0.0",
     "rpc-mini": "^1.1.0",
     "scheduler-node": "^1.0.1",
     "serialize-whatever": "^1.1.0",
