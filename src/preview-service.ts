@@ -2,7 +2,7 @@ import { rpc } from 'rpc-mini'
 import { debugObjectMethods } from 'everyday-utils'
 import { getSharedWorkerPort } from 'monolang'
 
-import { EditorBuffer } from './types'
+import { EditorBuffer } from './app'
 import { Waveplot } from './waveplot'
 import { queue } from 'minimal-view'
 
@@ -17,10 +17,11 @@ export function getPreviewPort() {
 }
 
 export interface Preview {
-  draw(buffer: EditorBuffer): Promise<void>
+  setActiveId(id: string): void
+  draw(buffer: EditorBuffer): Promise<Error | void>
 }
 
-export function createPreview(ctx: { activeId: string }, waveplot: Waveplot, sampleRate: number): Preview {
+export function createPreview(waveplot: Waveplot, sampleRate: number): Preview {
   const worker = getPreviewPort()
   const remote = rpc(worker as unknown as MessagePort)
 
@@ -31,38 +32,40 @@ export function createPreview(ctx: { activeId: string }, waveplot: Waveplot, sam
     numberOfBars: 1
   })
 
+  let activeId: string
   return debugObjectMethods({
+    setActiveId: (id) => {
+      activeId = id
+    },
     draw: queue.atomic(async (buffer) => {
-      const isDirty = await remote(
-        'fillPreview',
-        buffer.value,
-        waveplot.targets.get(buffer.id)!.floats
-      )
+      const id = buffer.$.id!
 
-      if (!isDirty) return
+      if (!waveplot.targets.has(id)) {
+        const { canvas } = await waveplot.create(id)
+        buffer.$.canvas = canvas
+      }
 
-      waveplot.draw(buffer.id).then(() => {
-        if (ctx.activeId === buffer.id) {
-          waveplot.copy(buffer.id, 'main')
+      try {
+        const isDirty = await remote(
+          'fillPreview',
+          buffer.$.value,
+          waveplot.targets.get(id)!.floats
+        )
+
+        if (!isDirty) return
+      } catch (error) {
+        return error as Error
+      }
+
+      waveplot.draw(id).then(() => {
+        if (activeId === id) {
+          waveplot.copy(id, 'main')
         }
+        buffer.$.canvases?.forEach((key) => {
+          waveplot.copy(id, key)
+        })
       })
     }),
-    // async updateParam(buffer, paramId: string, value: number) {
-
-    // },
-    // async setCode(buffer) {
-    //   await remote('setCode', buffer.value)
-    // },
-    // async setParam(buffer: EditorBuffer, paramId, value) {
-    //   await this.setCode(buffer)
-    //   await remote('setParam', paramId, value)
-    // },
-    // async reset() {
-    //   await remote('reset')
-    // },
-    // async fill(floats, sampleRate) {
-    //   await remote('fill', floats, sampleRate)
-    // },
   }, [], {
     before: (key, args) => {
       console.log(key, args)

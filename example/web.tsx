@@ -8,7 +8,7 @@ import { render, enableDebug, effect } from 'minimal-view'
 // document.body.appendChild(window.recorder.el)
 
 // @ts-ignore
-// globalThis.DEBUG = ['app', 'mono', 'scheduler', 'mono-group', 'wavetracer']
+// globalThis.DEBUG = ['app', 'mono', 'scheduler', 'mono-group', 'abstract-presets']
 
 // @ts-ignore
 const isDebug = !!globalThis.DEBUG
@@ -17,7 +17,8 @@ const isDebug = !!globalThis.DEBUG
 
 effect.maxUpdates = 10000
 
-import { AppView } from '..'
+// import { AppView } from '..'
+import { App } from '..'
 
 // const css = /*css*/`
 // .dual {
@@ -32,9 +33,8 @@ import { AppView } from '..'
 //   overflow-y: scroll;
 // }
 // `
-render(<>
-  <AppView distRoot="/example" apiUrl="https://devito.test" />
-</>, document.body)
+render(<App />, document.body)
+  // <AppView distRoot="/example" apiUrl="https://devito.test" />
   // render(<>
   //   <style>{css}</style>
   //   <div class="dual">

@@ -2,13 +2,13 @@
 
 import { Dep, element, view, web } from 'minimal-view'
 
-import { Canvy, CanvyElement, EditorScene, Marker } from 'canvy'
+import { Canvy, CanvyElement, EditorScene, Lens, Marker } from 'canvy'
 
 export interface EditorDetailData {
   editorValue: string
 }
 
-export const Code = web('code', view(
+export const Code = web(view('code',
   class props {
     font!: string
     fontSize!: number
@@ -16,6 +16,8 @@ export const Code = web('code', view(
     value!: Dep<string>
     editor!: Dep<CanvyElement>
     singleComment!: string
+    markers!: Marker[]
+    lenses!: Lens[]
     onWheel?: (ev: WheelEvent) => void = () => { }
     onEnterMarker?: (ev: { detail: { marker: Marker, markerIndex: number } }) => void = () => { }
     onLeaveMarker?: (ev: { detail: { marker: Marker, markerIndex: number } }) => void = () => { }
@@ -24,6 +26,7 @@ export const Code = web('code', view(
   class local {
     host = element
     waitingEditor?: CanvyElement
+    canvy?: CanvyElement
   },
 
   function actions({ $, fn, fns }) {
@@ -57,9 +60,17 @@ export const Code = web('code', view(
       return waitingEditor.$.effect(({ ready }) => {
         if (ready) {
           off()
-          editor.current = waitingEditor
+          $.canvy = editor.value = waitingEditor
         }
       })
+    })
+
+    fx(function updateMarkers({ canvy, markers }) {
+      canvy.setMarkers(markers)
+    })
+
+    fx(function updateLenses({ canvy, lenses }) {
+      canvy.setLenses(lenses)
     })
 
     fx(function drawCode({ value, font, fontSize, scene, onEnterMarker, onLeaveMarker }) {

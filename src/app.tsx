@@ -1,1292 +1,117 @@
 /** @jsxImportSource minimal-view */
 
-import { Scalar, Matrix, Point, Rect } from 'geometrik'
-import { chain, Dep, effect, element, event, Off, on, queue, view, web } from 'minimal-view'
-
-import { BasePresets, PresetsGroupDetail } from 'abstract-presets'
-import { EditorScene } from 'canvy'
-import { cheapRandomId, filterMap, MapMap, pick } from 'everyday-utils'
-import { IconSvg } from 'icon-svg'
-import { List } from '@stagas/immutable-list'
-import { SchedulerEventGroupNode, SchedulerNode } from 'scheduler-node'
-import { compressUrlSafe, decompressUrlSafe } from 'urlsafe-lzma'
-
-import { AppAudioNode, Audio } from './audio'
-import { Button } from './button'
-import { AudioMachine, Machine, MachineCompileState, MachineDetail, MachineKind, MachinePresets, MachineState } from './machine'
-import { Mono, MonoDetail, MonoMachine } from './mono'
-import { MonoGroup } from './mono-group'
-import { Preset, PresetsView } from './presets'
-import { Scheduler, SchedulerDetail, SchedulerMachine, SchedulerPresets } from './scheduler'
-import { ancient, emoji, randomName } from './util/random-name'
-import { deserialize, serialize } from './util/serialize'
-import { SliderScene } from './sliders'
-import { classes } from './util/classes'
-import { bgForHue } from './util/bg-for-hue'
-import { ObjectPool } from './util/pool'
+import { CanvyElement, EditorScene, Lens, Marker } from 'canvy'
+import { attempt, cheapRandomId, checksum, pick } from 'everyday-utils'
+import { Matrix, Point, Rect } from 'geometrik'
+import { dep, Dep, effect, element, on, Reactive, reactive, view, web } from 'minimal-view'
 import { MonoNode } from 'mono-worklet'
+import { SchedulerEventGroupNode, SchedulerNode } from 'scheduler-node'
+import { Code } from './code'
+import { monoDefaultEditorValue, patternDefaultCode, patternDefaultCode2, snareCode2 } from './demo-code'
+import { Midi } from './midi'
+import { compilePattern } from './pattern'
+import { createPreview, Preview } from './preview-service'
 import { Spacer } from './spacer'
-import { MixerView } from './mixer'
-import { animRemoveSchedule, animSchedule } from './anim'
-import { NumberInput } from './number-input'
-import { ImmMap } from 'immutable-map-set'
-import { MonoPresets } from './mono'
 
-const { clamp } = Scalar
+import { Sliders } from './types'
+import { getSliders } from './util/args'
+import { bgForHue } from './util/bg-for-hue'
+import { markerForSlider } from './util/marker'
+import { getErrorInputLine, getErrorToken, getTitle } from './util/parse'
+import { ObjectPool } from './util/pool'
+import { createWaveplot, Waveplot } from './waveplot'
 
-export interface Save {
-  name: string
-  date: string
-  machines: AppContext['machines']
-  presets: AppContext['presets']
-  isAutoSave?: boolean
+function add<T extends Reactive>(
+  map: Map<string, T>,
+  item: T
+) {
+  const copy = new Map(map)
+  copy.set(item.$.id, item)
+  return copy
 }
 
-const DELIMITERS = {
-  SAVES: '!',
-  SAVE_ID: ','
-} as const
+// function pop<T extends Reactive>(map: Map<string, T>) {
+//   if (!map.size) return map
 
-function getSaveId(save: Save) {
-  return [save.name, save.date].join(DELIMITERS.SAVE_ID)
-}
+//   const items = [...map]
+//   const [, last] = items.pop()!
+//   last.dispose()
+//   return new Map(items)
+// }
 
-export class AppDetail extends PresetsGroupDetail { }
-
-const windowWidth = window.innerWidth
-
-export const SIZES = {
-  app: 45,
-  mono: 360,
-  scheduler: 150
-}
-
-const GOLDEN_RATIO = 1.61803398875
-
-export const SPACERS = {
-  mono: [0, 1 / GOLDEN_RATIO, (1 - 45 / windowWidth)],
-  scheduler: [0, 1 / GOLDEN_RATIO, (1 - 45 / windowWidth)],
-}
-
-const aId = cheapRandomId()
-
-const defaultMachines: Record<'mono' | 'scheduler', MonoMachine | SchedulerMachine> = {
-  mono: new MonoMachine({
-    id: aId,
-    kind: 'mono',
-    groupId: 'A',
-    state: 'init',
-  }),
-  scheduler: new SchedulerMachine({
-    id: cheapRandomId(),
-    kind: 'scheduler',
-    groupId: 'A',
-    state: 'init',
-    outputs: [aId],
-  })
-}
-
-export class AppPresets extends BasePresets<AppDetail, Preset<AppDetail>> {
-  constructor(data: Partial<AppPresets> = {}) {
-    super(data, Preset, AppDetail)
-  }
-}
-
-export class AppMachine extends Machine<AppPresets>  {
-  id = 'app'
-  name = 'main'
-  kind: MachineKind = 'app'
-  hue = 230
-
-  declare methods: AppContext
-  declare audio?: Audio
-
-  gainValue = +localStorage.gainValue || 0.7
-
-  constructor(data: Partial<AppMachine> = {}) {
-    super(data)
-    Object.assign(this, data)
-  }
-
-  toJSON(): any {
-    return pick(this, [
-      'id',
-      'kind',
-    ])
-  }
-
-  equals(other?: this) {
-    return !other
-      || (this.gainValue === other.gainValue
-        && super.equals(other))
-  }
-}
-
-export type AppContext = typeof AppView.Context
-
-export const AppView = web('app', view(
+const Audio = reactive('audio',
   class props {
-    distRoot!: string
-    apiUrl!: string
+    audioContext!: AudioContext
+    bpm!: number
   },
-
   class local {
-    version = 1
-
-    host = element
-    rect = new Rect()
-    items: any[] = []
-    itemsView: JSX.Element = false
-
-    app = new AppMachine()
-    state!: AppMachine['state']
-
-    // TODO: get rid
-    align: 'x' | 'y' = 'y'
-
-    preset: Preset<AppDetail> | false = false
-
-    focusedTrack?: string
-
-    // saves
-    saves: string[] = []
-    lastSave: Save | false = false
-    isAutoSave = false
-    remoteSaves: string[] = []
-
-    // machines
-    machines!: List<Machine | AudioMachine | MonoMachine>
-
-    Machines = {
-      app: () => { },
-      mono: Mono,
-      scheduler: Scheduler,
-    }
-
-    presets = {
-      app: new AppPresets(),
-      mono: new MonoPresets(),
-      scheduler: new SchedulerPresets(),
-    } as const
-
-    sliderViews = new ImmMap<string, JSX.Element>()
-    // waveformViews = new ImmMap<string, JSX.Element>()
-    presetViews = new ImmMap<string, JSX.Element>()
-    sequencerViews = new ImmMap<string, JSX.Element>()
-    codeViews = new ImmMap<string, JSX.Element>()
-
-    // audio
-    audioContext = new AudioContext({ sampleRate: 44100, latencyHint: 0.04 })
     schedulerNode?: SchedulerNode
-    startTime?: number
-    fftSize = 32
-    audio?: Audio
-
-    bpm = +localStorage.bpm || 120
-    appAudio?: Audio
     gainNode?: GainNode
-    gainValue = +localStorage.gainValue || 0.7
-    analyserNode?: AnalyserNode
-    bytes?: Uint8Array
-    freqs?: Uint8Array
-    workerBytes?: Uint8Array
-    workerFreqs?: Uint8Array
 
-    playing = 0
+    gainNodePool?: ObjectPool<GainNode>
+    monoNodePool?: ObjectPool<MonoNode>
+    testNodePool?: ObjectPool<MonoNode>
+    groupNodePool?: ObjectPool<SchedulerEventGroupNode>
+    analyserNodePool?: ObjectPool<AnalyserNode>
 
-    sources?: any
+    startTime = 0
 
-    // editor
-    editorScene: EditorScene = new EditorScene({
-      layout: {
-        viewMatrix: new Matrix,
-        state: {
-          isIdle: true
-        },
-        viewFrameNormalRect: new Rect(0, 0, 10000, 10000),
-        pos: new Point(0, 0)
-      }
-    })
-
-    sliderScene: SliderScene = {
-      updateNormalMap: new MapMap()
-    }
-
-    // jsx views
-    mainControlsView?: JSX.Element
-    addButtonView?: JSX.Element
-    savesView?: JSX.Element
-    headerView?: JSX.Element
-    presetsView?: JSX.Element
-
-    // refs
-    saveEl?: HTMLDivElement
-
-    // saves/history
-    nextSaveEmoji = randomName(emoji)
-
-    // optimizations
-    // presetsChecksum?: string
-    // machinesChecksum?: string
+    waveplot?: Waveplot
+    preview?: Preview
+    previewSampleRate = 11025
+    previewSamplesLength = 11025 / 2 | 0
   },
-
   function actions({ $, fns, fn }) {
-    let tick = () => { }
-
-    const updateTitle = ({ name, date, isAutoSave }: Save, serializedSave?: string, isFromUrl?: boolean) => {
-      const url = new URL(location.href)
-
-      $.nextSaveEmoji = name
-
-      if (!isFromUrl) {
-        if (serializedSave) {
-          url.hash = `s=${name},${$.bpm},${$.version},${compressUrlSafe(
-            serializedSave, { mode: 9, enableEndMark: false }
-          )}`
-          console.log('url length:', url.toString().length)
-        } else {
-          // unreachable?
-          url.hash = ''
-        }
-
-        history.pushState({}, '', url)
-      }
-
-      // TODO: change favicon, change save button background
-      document.title = `${isAutoSave ? '• ' : ''}${name} - ${new Date(date).toLocaleString()}`
-    }
-
     return fns(new class actions {
-      load = (
-        saveId = 'lastSave',
-        serializedSave?: string,
-        version?: string
-      ) => {
-        let machines: AppContext['machines'] = new List();
+      getTime = fn(({ audioContext }) => () => {
+        return audioContext.currentTime - $.startTime
+      })
 
-        try {
-          const isFromUrl = serializedSave != null
-          serializedSave ??= localStorage[saveId]
+      getSliders = fn(({ audioContext }) => (code: string) => getSliders(code, {
+        sampleRate: audioContext.sampleRate,
+        beatSamples: audioContext.sampleRate,
+        numberOfBars: 1
+      }))
 
-          const json = JSON.parse(serializedSave!)
-          const obj = deserialize(json) as Save
-
-          console.log('load:', saveId, obj)
-
-          if (!version) {
-            machines.items.forEach((machine) => {
-
-            })
-            console.log(obj)
-            throw new Error('Version not provided for save')
-          }
-
-          if (Array.isArray(obj.machines)) {
-            obj.machines = new List({ items: obj.machines })
-          }
-
-          localStorage.lastSave = serializedSave
-          $.lastSave = obj
-
-          updateTitle(obj, serializedSave, isFromUrl)
-          machines = obj.machines
-          $.presets = obj.presets
-        } catch (error) {
-          console.warn(error)
-        }
-
-        try {
-          $.saves = localStorage.saves.split(DELIMITERS.SAVES)
-            .filter(Boolean)
-            .filter((key: string) => key in localStorage)
-        } catch (error) {
-          console.warn(error)
-        }
-
-        if (!machines.items.length) {
-          machines = machines
-            .add($.app)
-            .add(defaultMachines.mono.copy())
-            .add(defaultMachines.scheduler.copy())
-        }
-
-        $.machines = machines
-
-        $.focusedTrack = (machines.items.find((machine) => 'groupId' in machine) as MonoMachine).groupId
-
-        $.app = machines.getById('app')
-        this.setMachineState('app', 'ready')
-      }
-
-      loadUrl = (
-        url: URL | Location
-      ) => {
-        try {
-          if (url.hash.startsWith('#s')) {
-            const hash = decodeURIComponent(url.hash).split('#s=')[1] ?? ''
-            if (!hash.length) return false
-
-            let [, bpm, version, compressed] = hash.split(',')
-            if (version.length > 10) {
-              compressed = version
-              version = ''
-            }
-            if (bpm.length > 10) {
-              compressed = bpm
-              version = ''
-              bpm = ''
-            }
-
-            const serializedSave = decompressUrlSafe(compressed)
-            this.load(void 0, serializedSave, version)
-            $.bpm = +bpm || $.bpm
-            return true
-          } else {
-            return false
-          }
-        } catch (error) {
-          console.warn(error)
-          return false
-        }
-      }
-
-      save = (
-        name?: string
-      ) => {
-        const date = new Date()
-
-        let isAutoSave
-
-        if (name == null) {
-          isAutoSave = true
-          name = $.nextSaveEmoji
-        }
-
-        const obj: Save = {
-          name,
-          date: date.toISOString(),
-          machines: $.machines,
-          presets: $.presets
-        }
-
-        if (isAutoSave) obj.isAutoSave = true
-
-        const json = serialize(obj)
-
-        if ($.lastSave && (isAutoSave || !$.lastSave.isAutoSave)) {
-          const {
-            machines: machinesCopy,
-            presets: presetsCopy,
-          } = (deserialize(json) as Save)
-
-          console.log($.lastSave, machinesCopy)
-
-          if (
-            $.lastSave.machines.equals(machinesCopy)
-            && $.lastSave.presets.app.equals(presetsCopy.app)
-            && $.lastSave.presets.mono.equals(presetsCopy.mono)
-            && $.lastSave.presets.scheduler.equals(presetsCopy.scheduler)
-          ) {
-            console.log('there were no changes so nothing was saved')
-            return false
-          }
-        }
-
-        $.lastSave = deserialize(json) as Save
-
-        const serializedSave = JSON.stringify(json)
-
-        localStorage.lastSave = serializedSave
-
-        if (!isAutoSave) {
-          const saveId = getSaveId(obj)
-
-          localStorage[saveId] = serializedSave
-
-          $.saves = (localStorage.saves ?? '')
-            .split(DELIMITERS.SAVES)
-            .concat([saveId])
-            .filter(Boolean)
-            .filter((key: string) => key in localStorage)
-
-          localStorage.saves = $.saves.join(DELIMITERS.SAVES)
-
-          if (name && document.hasFocus()) {
-            navigator.clipboard.writeText(location.href)
-          }
-        }
-
-        updateTitle(obj, serializedSave)
-
-        if (!isAutoSave) {
-          requestAnimationFrame(() => {
-            const slurp = document.createElement('audio')
-            slurp.src = [
-              `${$.distRoot}/slurp-1.ogg`,
-              `${$.distRoot}/slurp-2.ogg`,
-            ][Math.random() * 2 | 0]
-            slurp.play()
-          })
-        }
-
-        return true
-      }
-
-      deleteSave = (
-        saveId: string
-      ) => {
-        $.saves = (localStorage.saves ?? '')
-          .split(DELIMITERS.SAVES)
-          .filter((key: string) => key !== saveId)
-
-        localStorage.saves = $.saves.join(DELIMITERS.SAVES)
-      }
-
-      getShort = async () => {
-        const res = await fetch($.apiUrl, {
-          method: 'POST',
-          body: location.hash,
+      setParam = fn(({ audioContext }) => (param: AudioParam, targetValue: number, slope = 0.015) => {
+        attempt(() => {
+          param.setTargetAtTime(targetValue, audioContext.currentTime, slope)
         })
-        const short = await res.text()
-        console.log('short', short)
-        return short
-      }
+      })
 
-      getShortList = async () => {
-        try {
-          const res = await fetch($.apiUrl, {
-            method: 'GET',
-          })
-          const data = await res.json()
-          const list = data.keys.map((key: { name: string }) => key.name) as string[]
-          console.log('list', list)
-          return list
-        } catch (error) {
-          console.warn(error)
-          return []
-        }
-      }
-
-      connectNode = (
-        sourceNode: AppAudioNode,
-        targetNode: AppAudioNode
-      ) => {
-        // const targetNode = $.audioNodes.get(targetId)
-        // if (!targetNode) {
-        //   throw new Error('No target audio node found with id: ' + targetId)
-        // }
-
-        const waitForResume = () => {
-          on(targetNode, 'resume' as never).once(() => {
-            console.log('connect', sourceNode, targetNode)
-            sourceNode.connect(targetNode as any)
-          })
-        }
-
-        const disconnectAndRetry = () => {
-          console.log('disconnect', sourceNode, targetNode)
-          sourceNode.disconnect(targetNode as any)
-          waitForResume()
-        }
-
-        let off: Off
-        if ('state' in targetNode) {
-          off = chain(
-            on(targetNode, 'suspend' as never)(disconnectAndRetry),
-            on(targetNode, 'disable' as never)(disconnectAndRetry),
-          )
-
-          if (targetNode.state !== 'running') {
-            waitForResume()
-          } else {
-            sourceNode.connect(targetNode as any)
-          }
-        } else {
-          sourceNode.connect(targetNode as any)
-        }
-
-        return () => {
-          try {
-            sourceNode.disconnect(targetNode as any)
-          } catch (error) {
-            console.warn(error)
-          }
-          off?.()
-        }
-      }
-
-      start = () => {
-        $.machines.items
-          .filter((machine) =>
-            // @ts-ignore
-            machine.kind !== 'app' && 'methods' in machine && 'start' in machine.methods)
-          .forEach(({ methods: { start } }: any) => start())
-      }
-
-      stop = () => {
-        $.machines.items
-          .filter((machine) =>
-            // @ts-ignore
-            machine.kind !== 'app' && 'methods' in machine && 'start' in machine.methods)
-          .forEach(({ methods: { stop } }: any) => stop())
-      }
-
-      removeMachinesInGroup = (
-        groupId: string
-      ) => {
-        $.machines = new List({
-          items: $.machines.items.filter((machine) =>
-            !('groupId' in machine) || machine.groupId !== groupId
-          )
+      disconnect = (sourceNode: AudioNode, targetNode: AudioNode) => {
+        attempt(() => {
+          sourceNode.disconnect(targetNode)
         })
       }
 
-      getMachinesInGroup = (
-        groupId: string
-      ) =>
-        $.machines.items.filter((machine) =>
-          'groupId' in machine && machine.groupId === groupId
-        ) as (MonoMachine | SchedulerMachine)[]
-
-      setMachineState = (
-        id: string,
-        state: MachineState
-      ) => {
-        // queueMicrotask(() => {
-        // TODO: this is needed because the machines update
-        // so the scheduler disconnects and fires the onConnectChange
-        // before it has time to off()
-        if ($.machines.hasId(id)) {
-          $.machines = $.machines.updateById(id, { state })
-        }
-        // })
-      }
-
-      setMachineCompileState = (
-        id: string,
-        compileState: MachineCompileState
-      ) => {
-        // queueMicrotask(() => {
-        $.machines = $.machines.updateById(id, { compileState } as any)
-        // })
-      }
-
-      getPresetByDetail = (
-        id: string,
-        detail: MachineDetail
-      ) => {
-        $.presets[$.machines.getById(id).kind].getByDetail(detail as any)
-      }
-
-      updatePresetById = (
-        id: string,
-        presetId: string,
-        data: Partial<Preset>
-      ) => {
-        const kind = $.machines.getById(id).kind
-        let presets = $.presets[kind] as BasePresets
-        // let presets = $.machines.getById(id).presets
-
-        presets = presets.updateById(presetId, data)
-
-
-        // $.machines = $.machines.updateById(id, {
-        //   presets
-        // })
-
-        $.presets = {
-          ...$.presets,
-          [kind]: presets
-        }
-
-        return presets.getById(presetId)
-      }
-
-      renamePresetRandom = (
-        id: string,
-        presetId: string,
-        useEmoji?: boolean
-      ) => {
-        this.updatePresetById(id, presetId, {
-          hue: (Math.round((Math.random() * 10e4) / 25) * 25) % 360,
-          name: randomName(useEmoji ? emoji : ancient)
-        })
-      }
-
-      savePreset = (
-        id: string,
-        presetId: string
-      ) => {
-        const kind = $.machines.getById(id).kind
-        const presets = $.presets[kind] as BasePresets
-        $.presets = {
-          ...$.presets,
-          [kind]: presets.savePreset(presetId)
-        }
-        // $.machines = $.machines.updateById(id, {
-        //   presets: $.machines.getById(id)
-        //     .presets.savePreset(presetId)
-        // })
-      }
-
-      removePresetById = (
-        id: string,
-        presetId: string,
-        fallbackPresetId?: string
-      ) => {
-        const kind = $.machines.getById(id).kind
-        const presets = $.presets[kind] as BasePresets
-
-        // const machine = $.machines.getById(id)
-
-        try {
-          $.presets = {
-            ...$.presets,
-            [kind]: presets.removeById(presetId, fallbackPresetId)
-          }
-
-          // $.machines = $.machines.updateById(id, {
-          //   presets: machine.presets.removeById(presetId, fallbackPresetId)
-          // })
-        } catch (error) {
-          console.warn(error)
-        }
-      }
-
-      insertPreset = (
-        id: string,
-        index: number,
-        newDetail: MachineDetail,
-        isIntent = false
-      ) => {
-        const kind = $.machines.getById(id).kind
-        const presets = $.presets[kind] as BasePresets
-
-        const newPreset = presets.createWithDetail(newDetail, { isIntent })
-
-        $.presets = {
-          ...$.presets,
-          [kind]: presets
-            .insertAfterIndex(index, newPreset)
-            .selectPreset(newPreset.id)
-        }
-
-        // $.machines = $.machines.updateById(id, {
-        //   presets: machine.presets
-        //     .insertAfterIndex(index, newPreset)
-        //     .selectPreset(newPreset.id)
-        // })
-      }
-
-      selectPreset = (
-        id: string,
-        presetId: string,
-        byClick?: boolean,
-        newDetail?: MachineDetail
-      ) => {
-        const kind = $.machines.getById(id).kind
-        let presets = $.presets[kind] as BasePresets
-
-        // const machine = $.machines.getById(id)
-
-        presets = presets.selectPreset(presetId, byClick, newDetail)
-
-        $.presets = {
-          ...$.presets,
-          [kind]: presets
-        }
-
-        // $.machines = $.machines.updateById(id, {
-        //   selectedPreset: presets.getById(presetId) as any
-        // })
-      }
-
-      setPresetDetailData = <T extends MachineDetail>(
-        id: string,
-        newDetailData: T['data'],
-        bySelect?: boolean,
-        byIntent?: boolean
-      ) => {
-        const kind = $.machines.getById(id).kind
-        let presets = $.presets[kind] as BasePresets
-
-        // const machine = $.machines.getById(id)
-
-        presets = presets
-          .setDetailData(newDetailData, bySelect, byIntent)
-
-
-        $.presets = {
-          ...$.presets,
-          [kind]: presets //.selectPreset(presetId, byClick, newDetail)
-        }
-
-        // $.machines = $.machines.updateById(id, {
-        //   presets
-        // })
-
-        return presets.selectedPreset!
-      }
-
-      // setSpacer = (
-      //   id: string,
-      //   spacer: number[]
-      // ) => {
-      //   $.machines = $.machines.updateById(id, { spacer })
-      // }
-
-      // setSize = (
-      //   id: string,
-      //   size: number
-      // ) => {
-      //   $.machines = $.machines.updateById(id, { size })
-      // }
-
-      setGainValue = (
-        id: string,
-        gainValue: number
-      ) => {
-        $.machines = $.machines.updateById<MonoMachine>(id, { gainValue })
-      }
-
-      getSelectedPresetsDetails = (machines = $.machines) => {
-        return filterMap(
-          machines.items,
-          function filterMachinesNoApp(machine) {
-            return machine.kind !== 'app'
-              // @ts-ignore
-              && machine.selectedPreset?.detail
-              && [
-                machine.id,
-                (machine as MonoMachine | SchedulerMachine).selectedPreset.detail.copy()
-              ] as const
-          }
-          // ,
-          //   function mapMachinesToSources(machine) {return [machine.id, machine.selectedPreset.detail] as const }
-        )
-      }
-
-      presetsOnSelect = (
-        next: Preset<AppDetail> | null,
-        prev: Preset<AppDetail> | null,
-        _x: AppDetail | null | undefined,
-        _y: AppDetail | null,
-        byClick: boolean | undefined
-      ) => {
-        if (byClick && next) {
-          const details = this.getSelectedPresetsDetails()
-
-          const detail = next.detail.merge({ details })
-
-          // sources = detail.applyData(detail.data) as any
-
-          if ($.preset) {
-            const machines = $.machines
-
-            detail.data.details.forEach(([id, detail]) => {
-              if (machines.hasId(id)) {
-                this.setPresetDetailData(id, detail.data)
-                // machines = machines.updateById(id, { selectedPreset })
-              }
-            })
-
-            // $.sources = this.getSelectedPresets(machines)
-            $.preset = $.presets.app.createWithDetailData(
-              { ...next.detail.data },
-              next
-            )
-            $.machines = machines
-          }
-        }
-      }
-
-      resize = queue.raf(() => {
-        const rect = $.rect.clone()
-        rect.width = window.innerWidth
-        rect.height = window.innerHeight
-        $.rect = rect
-      })
-
-      onWindowPopState = () => {
-        this.loadUrl(location)
-      }
-
-      getCurrentTimeAdjusted = fn(({ audioContext, startTime }) => () => {
-        return audioContext.currentTime - startTime
-      })
-
-      setSliderNormal = fn(({ audio }) => (sliderId: string, newNormal: number) => {
-        if (sliderId === 'vol') {
-          audio.setParam(audio.gainNode.gain, newNormal)
-          this.setGainValue('app', newNormal)
-        }
-        return newNormal
-      })
-
-      onWheel = fn(() => (ev: WheelEvent) => {
-        ev.preventDefault?.()
-        ev.stopPropagation?.()
-
-        const normal = $.app.gainValue
-
-        const newNormal = clamp(0, 1, (normal ?? 0)
-          + Math.sign(ev.deltaY) * (
-            0.01
-            + 0.10 * Math.abs(ev.deltaY * 0.005) ** 1.05
-          )
-        )
-
-        $.sliderScene.updateNormalMap.get('app', 'vol')?.(newNormal)
-
-        return this.setSliderNormal('vol', newNormal)
-      })
-
-      analyseStop = () => {
-        animRemoveSchedule(tick)
-      }
-
-      analyseStart =
-        fn(({ analyserNode, bytes, freqs, workerBytes, workerFreqs }) => {
-
-          tick = () => {
-            analyserNode.getByteTimeDomainData(bytes)
-            analyserNode.getByteFrequencyData(freqs)
-            workerBytes.set(bytes)
-            workerFreqs.set(freqs)
-            animSchedule(tick)
-          }
-
-          return () => {
-            animSchedule(tick)
-          }
-        })
     })
   },
-
-  function effects({ $, fx, refs, deps }) {
-    $.css = /*css*/`
-    & {
-      display: flex;
-      flex-flow: column nowrap;
-      align-items: center;
-      background: #000;
-    }
-    `
-
-    fx(function appCss({ align, distRoot }) {
-      const [dim, flow, padDim, , , oppDim, , viewportDim, oppFlow, ctrlPos] = [
-        ['height', 'row', 'right', 'x', 'y', 'width', 'left', 'vh', 'column', 'top'] as const,
-        ['width', 'column', 'bottom', 'y', 'x', 'height', 'top', 'vw', 'row', 'bottom'] as const,
-      ][+(align === 'y')]
-
-      const bodyStyle = document.createElement('style')
-
-      bodyStyle.textContent = /*css*/`
-      @font-face {
-        font-family: CascadiaMono;
-        src: url("${distRoot}/CascadiaMono.woff2") format("woff2");
-      }
-      html, body {
-        margin: 0;
-        padding: 0;
-        width: 100%;
-        height: 100%;
-        overflow-y: scroll;
-      }
-      `
-
-      document.head.appendChild(bodyStyle)
-
-      $.css = /*css*/`
-      & {
-        display: flex;
-        flex-flow: ${flow} nowrap;
-        align-items: center;
-        background: #000;
-        max-${dim}: 100%;
-        min-${oppDim}: 100%;
-        padding-${padDim}: 65${viewportDim};
-      }
-
-      [part=header] {
-        position: sticky;
-        left: 0;
-        top: 0;
-        z-index: 99999;
-        background: #001d;
-        ${dim}: 100%;
-      }
-
-      ${Spacer} {
-        &::part(handle) {
-          height: calc(100% - 45px);
-        }
-      }
-
-      [part=app-side] {
-        position: fixed;
-        right: 0;
-        top: 45px;
-        max-height: 1vh;
-        bottom: 0;
-        z-index: 99999;
-        background: #001d;
-      }
-
-      [part=app-presets] {
-        max-height: 100px !important;
-        height: 100px !important;
-        min-height: 100px !important;
-      }
-
-      [part=main-controls] {
-        z-index: 99999999999;
-        position: fixed;
-        ${ctrlPos}: 50px;
-        right: 50px;
-        display: flex;
-        padding: 8px 25px;
-        justify-content: space-between;
-        background: #112;
-        border-radius: 100px;
-        border: 4px solid #fff;
-        box-shadow: 3px 3px 0 6px #000;
-        ${Button} {
-          cursor: pointer;
-        }
-      }
-
-      &([playing]) {
-        [part=main-controls] {
-          border-color: #1f3;
-          color: #4f1;
-        }
-      }
-
-      [part=items] {
-        /* background: red; */
-        display: flex;
-        /* flex: 1; */
-        flex-flow: ${flow} nowrap;
-        ${dim}: 100%;
-        max-${dim}: min(800px, calc(100% - 80px));
-        /* ${oppDim}: 100%; */
-        /* align-items: center; */
-        /* max-${oppDim}: 100%;
-        ${dim}: 100%;
-        min-${dim}: 100%; */
-        /* max-width: max(900px, calc(1vw - 50px)); */
-      }
-
-      [part=item] {
-        /* display: flex; */
-        min-width: 100%;
-
-        /* flex-flow: ${oppFlow} nowrap; */
-        /* max-${oppDim}: 100%; */
-        /* flex: 1; */
-        /* align-items: center; */
-        /* width: 100%; */
-        /* position: relative; */
-        /* min-${dim}: 100%; */
-        /* min-${oppDim}: 100%; */
-        /* max-width: max(900px, calc(1vw - 50px)); */
-      }
-
-
-      /* [part=saves] {
-        display: flex;
-        flex-flow: row nowrap;
-        overflow-x: scroll;
-        overflow-y: hidden;
-
-        button {
-          all: unset;
-          cursor: pointer;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          font-family: CascadiaMono;
-
-          height: 45px;
-          width: 45px;
-          min-width: 45px;
-
-
-          &:hover {
-            background: #aaf4;
-            color: #fff;
-            text-shadow: 1px 1px #000;
-          }
-        }
-      } */
-
-      [part=saves] {
-        display: flex;
-        flex-flow: row nowrap;
-        justify-content: space-between;
-        button {
-          all: unset;
-          font-size: 27px;
-
-
-          cursor: pointer;
-          text-align: center;
-          min-width: 70px;
-          height: 45px;
-        }
-      }
-      .history {
-        z-index: 0;
-
-        &-inner {
-          display: inline-block;
-          height: 100%;
-          /* background: repeating-linear-gradient(90deg, rgba(255,0,0,1) 0px, rgba(255,154,0,1) 100px, rgba(208,222,33,1) 200px, rgba(79,220,74,1) 300px, rgba(63,218,216,1) 400px, rgba(47,201,226,1) 500px, rgba(28,127,238,1) 600px, rgba(95,21,242,1) 700px, rgba(186,12,248,1) 800px, rgba(251,7,217,1) 900px, rgba(255,0,0,1) 1000px); */
-          /* background-clip: text; */
-          /* -webkit-background-clip: text; */
-        }
-
-        box-sizing: border-box;
-        position: relative;
-        display: flex;
-        flex-flow: row nowrap;
-
-        white-space: nowrap;
-        overflow-x: scroll;
-
-        button {
-          all: unset;
-          cursor: pointer;
-          text-align: center;
-          font-family: CascadiaMono;
-
-          height: 45px;
-          width: 45px;
-          min-width: 45px;
-
-          font-size: 21px;
-          -webkit-text-fill-color: transparent;
-          line-height: 100%;
-          border: none;
-
-          &.named {
-            -webkit-text-fill-color: initial;
-          }
-        }
-      }
-
-      [part=saves] {
-        button {
-          background-repeat: repeat;
-          background-size: 30px 30px;
-          background-position: center;
-
-          &.big {
-            width: 72px;
-            min-width: 72px;
-          }
-          &:hover:not([disabled]):not(.selected) {
-            background-color: #aaf3;
-          }
-          &.selected {
-            background: #aaf5;
-            cursor: default;
-          }
-          &[disabled] {
-            cursor: not-allowed;
-          }
-        }
-      }
-
-      [part=shorten-url] {
-        all: unset;
-        width: 72px;
-        height: 45px;
-        display: inline-flex;
-        justify-content: center;
-        margin: 0;
-        color: #556;
-        cursor: pointer;
-        &:hover {
-          color: #fff;
-          background-color: #aaf3;
-        }
-      }
-
-      [part=topbar-controls] {
-        display: flex;
-        flex-flow: row nowrap;
-        font-size: 30px;
-        color: #aaf;
-
-        > * {
-          cursor: pointer;
-          width: 70px;
-
-          text-align: center;
-          &:hover {
-            background: #aaf3;
-          }
-        }
-      }
-      &([playing]) {
-        [part=topbar-controls] {
-          color: #4f1;
-        }
-      }
-
-      [part=main-view] {
-        display: flex;
-        position: relative;
-        max-width: 90%;
-        width: 100%;
-        height: 100%;
-      }
-      `
-    })
-
-    fx(function boot({ host }) {
+  function effects({ $, fx, deps, refs }) {
+    fx(() =>
       on(document.body, 'pointerdown')(function resumeAudio() {
         if ($.audioContext.state !== 'running') {
           console.log('resuming audio')
           $.audioContext.resume()
         }
       })
+    )
 
-      if (!$.loadUrl(location)) {
-        $.load()
-      }
-
-      $.getShortList().then((list) => {
-        $.remoteSaves = list
-      })
-
-      // $.methods.setMachineState('app', 'ready')
-
-      // const saveBtn = document.createElement('button')
-
-      // Object.assign(saveBtn.style, {
-      //   position: 'fixed',
-      //   top: '0',
-      //   left: '0',
-      //   zIndex: '99999999999'
-      // })
-
-      // saveBtn.textContent = 'get short url'
-
-      // saveBtn.onclick = async () => {
-      //   const res = await fetch($.apiUrl, {
-      //     method: 'POST',
-      //     body: location.hash,
-      //   })
-      //   const short = await res.text()
-      //   console.log('short', short)
-      // }
-
-      // document.body.appendChild(saveBtn)
-    })
-
-    fx(function updateMachines({ machines }) {
-      // $.sources = $.getSources()
-      const app = machines.getById('app') as AppMachine
-      if ($.app.state !== 'init') {
-        $.isAutoSave = true
-      }
-      if (!app.equals($.app)) {
-        $.app = app
-      }
-    })
-
-    fx.debounce(15000)(function autoSave({ machines: _ }) {
-      $.save()
-    })
-
-    fx(function listenPresetsOnSelect({ presets }) {
-      presets.app.on('select', $.presetsOnSelect)
-    })
-
-    fx(function updateAppProps({ app, appAudio }) {
-      app.methods = $
-      app.audio = appAudio
-
-      $.gainValue = localStorage.gainValue = app.gainValue
-      $.state = app.state
-    })
-
-    fx(function updatePreset({ presets }) {
-      const preset = presets.app.selectedPreset
-      if (preset) {
-        $.preset = preset
-        // app.selectedPreset = preset
-      }
-    })
-
-    // fx(function updateMachineSelectedPresets({ preset, presets }) {
-    //   if (preset) {
-    //     let machines = $.machines
-    //     for (const [id, detail] of preset.detail.data.details) {
-    //       const machine = machines.getById(id)
-    //       const machinePresets = presets[machine.kind] as MonoPresets | SchedulerPresets
-    //       const machinePreset = machinePresets.getByDetail(detail)
-
-    //       console.log('found', id, machinePreset)
-    //       if (machinePreset) {
-    //         machines = machines.updateById(id, {
-    //           selectedPreset: machinePreset
-    //         })
-    //         // $.selectPreset(id, machinePreset.id)
-    //       } else {
-    //         // $.setPresetDetailData(id, detail.data)
-    //       }
-    //     }
-    //     $.machines = machines
-    //   }
-    // })
-
-    fx(function updatePresetDetailData({ state, machines }) {
-      if (state === 'init') return
-
-      if (!$.preset) {
-        $.preset = new Preset({
-          detail: new AppDetail({
-            details: [],
-          })
-        })
-      }
-
-      // const newDetail = $.preset.detail.collectData($.sources)
-
-      // if ($.preset && newDetail.equals($.preset.detail)) return
-      // if ($.preset && $.preset.detail.satisfies(newDetail)) return
-
-      // $.preset =
-      $.setPresetDetailData('app', { details: $.getSelectedPresetsDetails() })
-    })
-
-    fx(function listenOnWindowResize() {
-      $.resize()
-      return on(window, 'resize')($.resize)
-    })
-
-    fx(function applyHostDim({ host, align, rect }) {
-      const dim = align === 'x' ? 'height' : 'width'
-      host.style[dim] = rect[dim] + 'px'
-    })
-
-    fx(async function createAndStartScheduler({ audioContext }) {
+    fx(async ({ audioContext }) => {
       $.schedulerNode = await SchedulerNode.create(audioContext)
-      $.startTime = await $.schedulerNode.start()
-      $.schedulerNode.setBpm($.bpm)
-      // monoNode?.worklet.setTimeToSuspend(Infinity)
     })
 
-    fx(async function createAudio({ audioContext, fftSize, schedulerNode }) {
-      const gainNodePool = new ObjectPool(() => {
+    fx(({ schedulerNode, bpm }) => {
+      schedulerNode.setBpm(bpm)
+    })
+
+    fx(({ audioContext, schedulerNode }) => {
+      $.gainNode = new GainNode(audioContext, { channelCount: 1, gain: 0.3 })
+      $.gainNodePool = new ObjectPool(() => {
         return new GainNode(audioContext, { channelCount: 1, gain: 0 })
       })
 
-      const monoNodePool = new ObjectPool(async () => {
+      $.monoNodePool = new ObjectPool(async () => {
         return await MonoNode.create(audioContext, {
           numberOfInputs: 0,
           numberOfOutputs: 1,
@@ -1296,424 +121,955 @@ export const AppView = web('app', view(
         })
       })
 
-      const groupNodePool = new ObjectPool(() => {
+      $.groupNodePool = new ObjectPool(() => {
         return new SchedulerEventGroupNode(schedulerNode)
       })
+    })
 
-      const analyserNodePool = new ObjectPool(() => {
-        return new AnalyserNode(audioContext, {
-          channelCount: 1,
-          fftSize,
-          smoothingTimeConstant: 0.5
-        })
+    fx(async function initWaveplot({ previewSampleRate, previewSamplesLength }) {
+      $.waveplot = await createWaveplot({
+        width: 250,
+        height: 100,
+        pixelRatio: window.devicePixelRatio,
+        sampleRate: previewSampleRate,
+        samplesLength: previewSamplesLength
       })
-
-      const gainNode = $.gainNode = await gainNodePool.acquire()
-
-      gainNode.connect(audioContext.destination)
-
-      $.audio = new Audio({
-        audioContext,
-        fftSize,
-        gainNode,
-        schedulerNode,
-        gainNodePool,
-        monoNodePool,
-        groupNodePool,
-        analyserNodePool,
-      })
-
-      $.audio.setParam(gainNode.gain, $.gainValue ?? 0.7)
-
-      return () => {
-        gainNode.disconnect(audioContext.destination)
-        gainNodePool.release(gainNode)
-      }
     })
 
-    fx(function drawItemsView({ addButtonView, state, audio, machines, presets, focusedTrack }) {
-      if (state === 'init') return
-
-      const itemsView: any[] = []
-
-      let mono: MonoMachine | undefined
-      let scheduler: SchedulerMachine | undefined
-
-      for (const machine of $.machines.items) {
-        if (machine.kind === 'app') continue
-        if (machine.kind === 'mono') mono = machine as any
-        if (machine.kind === 'scheduler') scheduler = machine as any
-
-        if (mono && scheduler) {
-          itemsView.push(
-            <MonoGroup
-              // key={mono.groupId}
-              part="item"
-              groupId={mono.groupId}
-              app={$}
-              audio={audio}
-              mono={mono}
-              presets={presets}
-              scheduler={scheduler}
-              focused={focusedTrack === mono.groupId}
-            />
-          )
-          mono = scheduler = void 0
-        }
-      }
-
-      $.itemsView = <div part="items">{itemsView}</div>
-      //{addButtonView}
+    fx(async function initPreview({ waveplot, previewSampleRate }) {
+      $.preview = createPreview(waveplot, previewSampleRate)
     })
-
-    fx(function updatePlayingState({ machines }) {
-      $.setMachineState('app',
-        machines.items.filter((machine) => machine.kind === 'mono' && machine.state === 'running').length
-          ? 'running'
-          : 'suspended'
-      )
-    })
-
-    fx(async function createAnalyserNode({ audio }) {
-      const analyserNode = $.analyserNode = await audio.analyserNodePool.acquire()
-
-      return () => {
-        audio.analyserNodePool.release(analyserNode)
-      }
-    })
-
-    fx(function createAppAudio({ audio, analyserNode, gainNode, workerBytes, workerFreqs }) {
-      gainNode.connect(analyserNode)
-
-      $.appAudio = new Audio({
-        ...audio,
-        gainNode,
-        analyserNode,
-        workerBytes,
-        workerFreqs,
-      })
-
-      return () => {
-        gainNode.disconnect(analyserNode)
-      }
-    })
-
-    fx(function startOrStopAnalyser({ state }) {
-      if (state === 'running' || state === 'preview') {
-        $.analyseStart()
-      } else {
-        $.analyseStop()
-      }
-    })
-
-    fx(function createAnalyserBytes({ analyserNode }) {
-      $.bytes = new Uint8Array(analyserNode.fftSize)
-      $.freqs = new Uint8Array(analyserNode.frequencyBinCount)
-    })
-
-    fx(function createWorkerBytes({ bytes, freqs }) {
-      $.workerBytes = new Uint8Array(new SharedArrayBuffer(bytes.byteLength))
-        .fill(128) // center it at 128 (0-256)
-      $.workerFreqs = new Uint8Array(new SharedArrayBuffer(freqs.byteLength))
-    })
-
-    fx(function drawAddButton() {
-      $.addButtonView = <div part="add-button">
-        <Button onClick={() => {
-          const a = cheapRandomId()
-          const b = cheapRandomId()
-          const groupId = cheapRandomId()
-
-          $.machines = $.machines
-            .add(new MonoMachine({
-              ...defaultMachines.mono,
-              id: a,
-              groupId
-            } as any))
-            .add(new SchedulerMachine({
-              ...defaultMachines.scheduler,
-              id: b,
-              groupId,
-              outputs: [a]
-            } as any))
-        }}>
-          <IconSvg class="normal" set="feather" icon="plus-circle" />
-        </Button>
-      </div>
-    })
-
-    fx(function drawHeader({ savesView }) {
-      $.headerView = <div part="header">
-        {savesView}
-      </div>
-    })
-
-    fx(function drawPresets({ presets }) {
-      $.presetsView = <PresetsView part="app-presets" app={$} id="app" presets={presets as any} />
-    })
-
-    fx(function updateAutoSave({ lastSave }) {
-      if (lastSave) {
-        $.isAutoSave = lastSave.isAutoSave || false
-      }
-    })
-
-    fx(function listenOnWindowPopState() {
-      return on(window, 'popstate')($.onWindowPopState)
-    })
-
-    fx(function focusSave({ saveEl, lastSave }) {
-      const lastSaveId = lastSave && getSaveId(lastSave)
-
-      if (lastSaveId) {
-        const targetEl = saveEl.querySelector(`[dataset-id="${lastSaveId}"]`) as HTMLButtonElement | undefined
-
-        if (targetEl) targetEl.focus({ preventScroll: false })
-      }
-    })
-
-    fx(({ audio, bpm }) => {
-      audio.schedulerNode.setBpm(bpm)
-      localStorage.bpm = bpm
-    })
-
-    fx(function drawSaves({ saves, remoteSaves, nextSaveEmoji, lastSave, isAutoSave }) {
-      const lastSaveId = lastSave && getSaveId(lastSave)
-      $.savesView = <div part="saves" onwheel={event.stop.not.passive()}>
-        <div part="topbar-controls">
-          {/* <Button style="line-height: 45px;" onClick={() => { }}>
-          🔔
-        </Button> */}
-          <Button
-            style="line-height: 45px;"
-            title="This is you. Click to become someone else."
-            onClick={() => { }}>
-            👻
-          </Button>
-
-        </div>
-
-        <NumberInput min={1} max={666} value={deps.bpm} step={1} align="x" />
-
-        <div
-          ref={refs.saveEl}
-          class="history"
-        ><div class="history-inner">
-            {remoteSaves.map(function drawRemoteSave(remoteSaveId) {
-              const [, emoji, short] = remoteSaveId.split('-')
-              return <button
-                dataset-short={short}
-                onclick={(e) => {
-                  fetch(`${$.apiUrl}/${short}?`).then((res) =>
-                    res.text()
-                  ).then((hash) => {
-                    location.hash = hash
-                  })
-                }}
-                class="named"
-                title={short}>{emoji}</button>
-            })}
-            {
-              saves.map(function drawSave(saveId, i) {
-                const [name, date] = saveId.split(DELIMITERS.SAVE_ID)
-                return <button
-                  dataset-id={saveId}
-                  onclick={(e) => {
-                    if (e.shiftKey && (e.ctrlKey || e.metaKey)) {
-                      $.deleteSave(saveId)
-                    } else {
-                      $.load(saveId)
-                    }
-                  }}
-                  class={classes({
-                    named: !!name,
-                    selected: !isAutoSave && lastSaveId && saveId === lastSaveId
-                  })}
-                  title={new Date(date).toLocaleString()}>{name}</button>
-              })}
-          </div>
-        </div>
-
-        <div style="display: flex">
-          <Button part="shorten-url"
-            title="Share project"
-            onClick={() => {
-              $.getShort().then((shortId) => {
-                prompt(
-                  'Here is your short url:',
-                  `https://play.${location.hostname}/${shortId.split('-').pop()}`
-                )
-              })
-            }}>
-            <IconSvg class="topbar" set="feather" icon="send" />
-          </Button>
-
-          <button
-            title={!isAutoSave ? "You need to make some changes to be able to save." : "Click to save.\nMiddle or right click for another icon"}
-            class="big"
-            disabled={!isAutoSave}
-            style={
-              isAutoSave
-                ? `background-image:${bgForHue(Math.round((Math.random() * 360 | 0) * 25) / 25)}`
-                : ''
-            }
-            oncontextmenu={event.prevent.stop()}
-            onpointerdown={(e) => {
-              if (e.buttons & 1 && isAutoSave) {
-                if (!$.save(nextSaveEmoji)) return
-                requestAnimationFrame(() => {
-                  $.saveEl!.scrollLeft = Number.MAX_SAFE_INTEGER
-                })
-              }
-              if ((e.buttons & 2) || (e.buttons & 4)) {
-                $.nextSaveEmoji = randomName(emoji)
-              }
-            }}>{nextSaveEmoji}</button>
-        </div>
-      </div>
-    })
-
-    fx(function drawApp({ host, machines, presets, itemsView, headerView, presetsView, state, workerBytes, workerFreqs }) {
-      if (state === 'init') return
-
-      // {/* <div>
-      //     <Button onClick={() => { }}>
-      //       <IconSvg class="small" set="feather" icon="minimize-2" />
-      //     </Button>
-      //     <Button onClick={() => { }}>
-      //       <IconSvg class="small" set="feather" icon="maximize-2" />
-      //     </Button>
-      //   </div> */}
-      $.view = <>
-        {headerView}
-        <MainView
-          part="main-view"
-          app={$}
-          machines={machines}
-          presets={presets}
-          focusedTrack={deps.focusedTrack}
-          workerBytes={workerBytes}
-          workerFreqs={workerFreqs}
-          presetsView={presetsView}
-          itemsView={itemsView} />
-      </>
-    })
-  })
+  }
 )
 
-const MainView = web('main-view', view(class props {
-  app!: AppContext
-  machines!: AppContext['machines']
-  presets!: AppContext['presets']
+export type EditorBuffer = typeof EditorBuffer.State
+export const EditorBuffer = reactive('editor-buffer',
+  class props {
+    audio!: typeof Audio.State
+    kind!: 'sound' | 'pattern'
+    id?= cheapRandomId()
 
-  focusedTrack!: Dep<string>
-  workerBytes!: Uint8Array
-  workerFreqs!: Uint8Array
-  itemsView!: JSX.Element
-  presetsView!: JSX.Element
-}, class local {
-  host = element
-}, function actions() { return ({}) }, function effects({ $, fx }) {
+    value!: string
 
-  fx(({ host, app, machines, presets, itemsView, presetsView, focusedTrack, workerBytes, workerFreqs }) => {
-    $.view = <Spacer align="x" initial={[0, 0.35]} layout={host} id="app-spacer" part="app-spacer">
-      <SideView
-        part="app-side"
-        app={app}
-        machines={machines}
-        presets={presets}
-        focusedTrack={focusedTrack}
-        workerBytes={workerBytes}
-        workerFreqs={workerFreqs}
-        presetsView={presetsView}
-        itemsView={itemsView}
-      />
-    </Spacer>
-  })
-}))
+    parentId?: string
 
-const SideView = web('side-view', view(class props {
-  app!: AppContext
-  machines!: AppContext['machines']
-  presets!: AppContext['presets']
+    createdAt?: number = Date.now()
+    isDraft?: boolean = true
+    isNew?: boolean = true
+  },
+  class local {
+    snapshot?: any
 
-  focusedTrack!: Dep<string>
-  workerBytes!: Uint8Array
-  workerFreqs!: Uint8Array
-  presetsView!: JSX.Element
-  itemsView!: JSX.Element
-}, class local {
-  host = element
-  groups?: string[]
-  trackViews = new ImmMap<string, JSX.Element>()
-  codeView: JSX.Element = false
-}, function actions() { return ({}) }, function effects({ $, fx, deps }) {
-  fx(({ host, app }) => effect({
-    // presets: app.deps.presetViews,
-    focusedTrack: app.deps.focusedTrack,
-    sliders: app.deps.sliderViews,
-    codes: app.deps.codeViews,
-    presets: app.deps.presets,
-  }, ({ sliders, codes, focusedTrack, presets }) => {
-    for (const id of sliders.keys()) {
-      $.trackViews = $.trackViews.set(id, [
-        sliders.get(id)
-      ])
+    markers: Marker[] = []
+    lenses: Lens[] = []
+
+    paramMarkers?: Marker[] = []
+    errorMarkers?: Marker[] = []
+    errorLenses?: Lens[]
+    sliders?: Sliders
+
+    canvas?: HTMLCanvasElement
+    canvases: Map<HTMLCanvasElement, string> = new Map()
+
+    midiEvents?: WebMidi.MIDIMessageEvent[]
+    numberOfBars?: number
+
+    error?: Error | false = false
+  },
+  function actions({ $, fns, fn }) {
+    return fns(new class actions {
+      derive = () => {
+        return pick($, [
+          'value',
+          'audio',
+          'kind',
+          'snapshot',
+        ])
+      }
+    })
+  },
+  function effects({ $, fx }) {
+    if ($.kind === 'sound') {
+      fx(({ audio, value }) => {
+        $.sliders = audio.$.getSliders(value)
+      })
+
+      fx(({ sliders }) => {
+        $.paramMarkers = [...sliders.values()].map((slider) =>
+          markerForSlider(slider)
+        )
+      })
+
+      fx(({ paramMarkers, errorMarkers }) => {
+        $.markers = [...paramMarkers, ...errorMarkers]
+      })
+
+      fx(({ errorLenses }) => {
+        $.lenses = [...errorLenses]
+      })
+
+      fx(({ audio }) =>
+        audio.fx(({ preview }) =>
+          fx(async ({ value }) => {
+            const error = await preview.draw($.self)
+
+            if (!error) {
+              $.errorMarkers = []
+              $.errorLenses = []
+              $.error = false
+            } else {
+              console.warn(error)
+
+              $.error = error
+
+              if ((error as any).cause) {
+                const cause = (error as any).cause
+                const message = cause.message.split('\n')[0]
+
+                $.errorLenses = [{
+                  line: cause.line,
+                  message,
+                }]
+
+                $.errorMarkers = [
+                  {
+                    key: cause.name,
+                    index: cause.index,
+                    size: cause.token?.length ?? 1,
+                    kind: 'error',
+                    color: '#a21',
+                    hoverColor: '#f42',
+                    message: cause.message,
+                  },
+                ]
+              } else {
+                const msg = (error as any).message
+                const message = msg.includes('lookup failed at: call "f"')
+                  ? 'f() is missing. This usually happens when a semicolon is missing somewhere.'
+                  : msg.includes('failed:')
+                    ? msg.split('failed:').pop()
+                    : msg.trim()
+
+                $.errorMarkers = []
+
+                $.errorLenses = [{
+                  line: value.split('\n').length,
+                  message,
+                }]
+              }
+            }
+          })
+        )
+      )
+    }
+    else if ($.kind === 'pattern') {
+      fx(({ errorMarkers }) => {
+        $.markers = [...errorMarkers]
+      })
+
+      fx(({ errorLenses }) => {
+        $.lenses = [...errorLenses]
+      })
+
+      fx(async ({ value }) => {
+        const result = await compilePattern(
+          value,
+          $.numberOfBars || 1
+        )
+
+        if (result.success) {
+          $.midiEvents = result.midiEvents
+          $.numberOfBars = result.numberOfBars
+          $.errorMarkers = []
+          $.errorLenses = []
+          $.error = false
+        } else {
+          const { error } = result
+
+          console.warn(error)
+
+          $.error = error
+
+          const message = error.message
+          const key = message.split(':')[0]
+          const line = Math.max(0, getErrorInputLine(error) - 155)
+          let token = getErrorToken(error)
+
+          const lines = value.split('\n')
+
+          let col = -1
+
+          if (token.length) {
+            col = lines.at(line)?.lastIndexOf(token) ?? -1
+          }
+
+          if (col === -1) {
+            token = lines.at(line) ?? ''
+          }
+
+          const index = Math.max(0, Math.min(
+            lines.slice(0, line).join('\n').length
+            + (line > 0 ? 1 : 0) + (col >= 0 ? col : 0),
+            value.length
+          ))
+
+          $.errorLenses = [{
+            line: Math.min(lines.length, line + (value[index] === '\n' ? 0 : 1)),
+            message: message.split('\n')[0].slice(message.indexOf(':') + 1).split('   at')[0],
+          }]
+
+          $.errorMarkers = [
+            {
+              key,
+              index,
+              size: Math.max(1, token.length),
+              kind: 'error',
+              color: '#a21',
+              hoverColor: '#f42',
+              message,
+            },
+          ]
+        }
+      })
+    }
+  }
+)
+
+type Track = typeof Track.State
+const Track = reactive('track',
+  class props {
+    id!: string
+    sound!: string
+    pattern!: string
+    vol?: number = 0.5
+    focus?: 'sound' | 'pattern'
+    isDraft?: boolean = true
+  },
+  class local {
+  },
+  function actions({ $, fns, fn }) {
+    return fns(new class actions {
+
+    })
+  },
+  function effects({ $, fx }) {
+
+  }
+)
+
+export const App = web(view('app',
+  class props {
+    distRoot?= '/example'
+    monospaceFont?= 'Brass.woff2'
+  },
+
+  class local {
+    host = element
+
+    audio = Audio({
+      bpm: 120,
+      audioContext: new AudioContext({
+        sampleRate: 44100, latencyHint: 0.04
+      }),
+    })
+
+    hint: JSX.Element = false
+
+    track?: Track
+    trackActiveId = 'a'
+    tracksLive = ['a', 'b']
+    tracks: Map<string, Track> = new Map([
+      ['a', Track({ id: 'a', sound: 'a', pattern: 'a', isDraft: false })],
+      ['b', Track({ id: 'b', sound: 'b', pattern: 'b', isDraft: false })],
+    ])
+
+    soundEditor?: typeof Editor.Element
+    sound?: EditorBuffer
+    sounds: Map<string, EditorBuffer> = new Map([
+      ['a', EditorBuffer({ id: 'a', kind: 'sound', value: snareCode2, audio: this.audio, isDraft: false, isNew: false })],
+      ['b', EditorBuffer({ id: 'b', kind: 'sound', value: monoDefaultEditorValue, audio: this.audio, isDraft: false, isNew: false })],
+    ])
+
+    patternEditor?: typeof Editor.Element
+    pattern?: EditorBuffer
+    patterns: Map<string, EditorBuffer> = new Map([
+      ['a', EditorBuffer({ id: 'a', kind: 'pattern', value: patternDefaultCode, audio: this.audio, isDraft: false, isNew: false })],
+      ['b', EditorBuffer({ id: 'b', kind: 'pattern', value: patternDefaultCode2, audio: this.audio, isDraft: false, isNew: false })],
+    ])
+
+    editorScene = new EditorScene({
+      isValidTarget: (el) => {
+        const part = el.getAttribute('part')
+        if (part === 'canvas') return true
+        return false
+      },
+      layout: {
+        viewMatrix: new Matrix,
+        state: {
+          isIdle: true
+        },
+        viewFrameNormalRect: new Rect(0, 0, 10000, 10000),
+        pos: new Point(0, 0)
+      }
+    })
+  },
+
+  function actions({ $, fns, fn }) {
+    return fns(new class actions {
+
+    })
+  },
+
+  function effects({ $, fx, deps, refs }) {
+    $.css = /*css*/`
+    & {
+      width: 100%;
+      height: 100%;
+      display: flex;
+    }
+    `
+
+    fx(({ distRoot, monospaceFont }) => {
+      const bodyStyle = document.createElement('style')
+      bodyStyle.textContent = /*css*/`
+      @font-face {
+        font-family: Mono;
+        src: url("${distRoot}/fonts/${monospaceFont}") format("woff2");
+      }
+      html, body {
+        margin: 0;
+        padding: 0;
+        width: 100%;
+        height: 100%;
+        background: #000;
+        overflow: hidden;
+      }
+      `
+
+      document.head.appendChild(bodyStyle)
+    })
+
+    fx(({ trackActiveId, tracks }) => {
+      $.track = tracks.get(trackActiveId)!
+    })
+
+    fx(({ track, patterns }) =>
+      track.fx(({ pattern }) => {
+        $.pattern = patterns.get(pattern)!
+      })
+    )
+
+    fx(({ track, sounds }) =>
+      track.fx(({ sound }) => {
+        $.sound = sounds.get(sound)!
+      })
+    )
+
+    fx(({ audio }) =>
+      audio.fx(({ preview }) =>
+        fx(({ sound }) => {
+          preview.setActiveId(sound.$.id!)
+        })
+      )
+    )
+
+    fx(({ audio, track, tracks, tracksLive, sound, sounds, pattern, patterns, editorScene }) => {
+      $.view = <>
+        <Hint message={deps.hint} />
+
+        <Spacer id="app-spacer" align="y" initial={[0, 0.3]}>
+          <Spacer id="app-top" align="x" part="top" initial={
+            Array.from({ length: tracks.size }, (_, i) => i / tracks.size)
+          }>
+            {tracksLive.map((id) =>
+              <TrackView
+                key={id}
+                audio={audio}
+                getTime={audio.$.getTime}
+                active={id === track.$.id}
+                sound={sounds.get(tracks.get(id)!.$.sound)!}
+                pattern={patterns.get(tracks.get(id)!.$.pattern)!}
+                onClick={() => {
+                  $.trackActiveId = id
+                }}
+              />
+            )}
+          </Spacer>
+
+          <Spacer id="app-bottom" align="x" part="bottom" initial={[
+            0,
+            0.5,
+            0.5 + 0.5 / 3,
+            0.5 + 0.5 / 3 * 2,
+          ]}>
+
+            <div>
+              <TrackView.Fn
+                id="main"
+                active={false}
+                audio={audio}
+                getTime={audio.$.getTime}
+                sound={sound}
+                pattern={pattern}
+              />
+
+              <Spacer id="editors" align="x" initial={[0, 0.5]}>
+                <Editor
+                  ref={refs.patternEditor}
+                  key="pattern"
+                  app={$}
+                  scene={editorScene}
+                  buffers={patterns}
+                  activeId={track.$.pattern}
+                  onEdit={(id, value) => {
+                    const pattern = patterns.get(id)!
+                    // if (pattern.$.isDraft) {
+                    pattern.$.value = value
+                    // } else {
+                    //   $.patterns = add(patterns, EditorBuffer(pattern.$.derive()))
+                    // }
+                  }}
+                  onCode={() => { }}
+                  onWheelMarker={() => { }}
+                />
+
+                <Editor
+                  ref={refs.soundEditor}
+                  key="sound"
+                  app={$}
+                  scene={editorScene}
+                  buffers={sounds}
+                  activeId={track.$.sound}
+                  onEdit={(id, value) => {
+                    // if (sound.$.isDraft) {
+                    sounds.get(id)!.$.value = value
+                    // }
+                  }}
+                  onCode={() => { }}
+                  onWheelMarker={() => { }}
+                />
+              </Spacer>
+            </div>
+
+            <div part="presets">
+              {[...patterns].map(([id, pattern]) =>
+                <TrackView
+                  active={id === track.$.pattern}
+                  getTime={audio.$.getTime}
+                  pattern={pattern}
+                  onClick={() => {
+                    // if (track.$.isDraft) {
+                    track.$.pattern = id
+                    // }
+                  }}
+                />
+              )}
+            </div>
+
+            <div part="presets">
+              {[...sounds].map(([id, sound]) =>
+                <TrackView
+                  audio={audio}
+                  active={id === track.$.sound}
+                  sound={sound}
+                  onClick={() => {
+                    track.$.sound = id
+                  }}
+                />
+              )}
+            </div>
+
+            <div part="presets">
+              {[...tracks].map(([id, t]) =>
+                <TrackView
+                  active={id === track.$.id}
+                  audio={audio}
+                  getTime={audio.$.getTime}
+                  sound={sounds.get(t.$.sound)!}
+                  pattern={patterns.get(t.$.pattern)!}
+                  onClick={() => {
+                    track.$.sound = t.$.sound
+                    track.$.pattern = t.$.pattern
+                  }}
+                />
+              )}
+            </div>
+
+          </Spacer>
+        </Spacer>
+      </>
+    })
+  }
+))
+
+const Editor = web(view('editor',
+  class props {
+    app!: typeof App.Context
+    scene!: EditorScene
+    buffers!: Map<string, EditorBuffer>
+    activeId!: string
+    markers?: Marker[] = []
+    lenses?: Lens[] = []
+    onEdit!: (id: string, value: string) => void
+    onCode!: (id: string, prev: string, next: string, editor: CanvyElement) => void
+    onWheelMarker!: (e: WheelEvent, bufferId: string, markerId: Marker['key']) => void
+  },
+
+  class local {
+    host = element
+    value?: string
+    editor?: CanvyElement
+    activeMarker?: Marker | false = false
+    buffer?: EditorBuffer
+    state: 'init' | 'compiled' | 'errored' = 'init'
+  },
+
+  function actions({ $, fns, fn }) {
+    return fns(new class actions {
+      setBuffer = fn(({ editor }) => (buffer: EditorBuffer) => {
+        if (buffer.$.snapshot) {
+          editor.setFromSnapshot(buffer.$.snapshot)
+        } else {
+          editor.setValue(buffer.$.value, true, true)
+        }
+        // editor.focus()
+      })
+
+      onWheel = fn(({ onWheelMarker }) => (e: WheelEvent) => {
+        if ($.activeMarker && $.activeMarker.kind === 'param') {
+          onWheelMarker(e, $.activeId, $.activeMarker.key)
+        }
+      })
+
+      onEnterMarker = fn(({ app }) => ({
+        detail: { marker, markerIndex }
+      }: { detail: { marker: Marker, markerIndex: number } }) => {
+        $.activeMarker = marker
+        app.hint = marker?.message
+      })
+
+      onLeaveMarker = fn(({ app }) => ({
+        detail: { marker }
+      }: { detail: { marker: Marker, markerIndex: number } }) => {
+        // if (marker === $.activeMarker) {
+        $.activeMarker = false
+        app.hint = false
+        // }
+      })
+    })
+  },
+
+  function effects({ $, fx, deps }) {
+    $.css = /*css*/`
+    [part=state] {
+      width: 10px;
+      height: 10px;
+      position: absolute;
+      right: 10px;
+      top: 10px;
+      border-radius: 100%;
+      background: #333;
+      z-index: 999999;
+    }
+    &([state=compiled]) {
+      [part=state] {
+        background: #29f;
+      }
+    }
+    &([state=errored]) {
+      [part=state] {
+        background: #f21;
+      }
+    }
+    ${Code} {
+      /* z-index: 0; */
+    }
+    `
+
+    fx.raf(({ host, state }) => {
+      host.setAttribute('state', state)
+    })
+
+    fx(({ buffers, activeId }) => {
+      $.buffer = buffers.get(activeId)!
+    })
+
+    fx(({ buffer }) =>
+      buffer.fx(({ markers }) => {
+        $.markers = markers
+      })
+    )
+
+    fx(({ buffer }) =>
+      buffer.fx(({ lenses }) => {
+        $.lenses = lenses
+      })
+    )
+
+    fx(({ buffer }) =>
+      buffer.fx(({ error }) => {
+        $.state = error ? 'errored' : 'compiled'
+      })
+    )
+
+    fx(function updateCodeValue({ editor, buffers, activeId, onCode }, prev) {
+      const buffer = buffers.get(activeId)!
+
+      if ($.value == null) {
+        $.value = buffer.$.value
+        $.setBuffer(buffer)
+        return
+      }
+
+      const prevCodeValue = $.value
+      const nextCodeValue = buffer.$.value
+
+      if (prevCodeValue === nextCodeValue) {
+        buffer.$.isNew = false
+        return
+      }
+
+      $.value = nextCodeValue
+
+      if (prev.activeId) {
+        if (activeId !== prev.activeId) {
+          const prevBuffer = buffers.get(prev.activeId)!
+          const nextBuffer = buffer
+
+          if (nextBuffer.$.isNew) {
+            if (nextBuffer.$.parentId !== prevBuffer.$.id) {
+              throw new Error('Invalid buffer')
+            }
+            nextBuffer.$.isNew = false
+            // onCode(buffer.id, prevCodeValue, nextCodeValue, editor)
+          } else {
+            // editor.$.effect.once(({ snapshot }) => {
+            //   // if (buffer.snapshot) {
+            //   //   onCode(buffer.id, buffer.snapshot.value, nextCodeValue, editor)
+            //   // }
+            // })
+
+            const snapshot = editor.editor.getSnapshotJson()
+
+            const prevBuffer = buffers.get(prev.activeId)!
+
+            prevBuffer.$.snapshot = snapshot
+
+            $.setBuffer(buffer)
+          }
+        } else {
+          onCode(buffer.$.id!, prevCodeValue, nextCodeValue, editor)
+        }
+      } else {
+        $.setBuffer(buffer)
+      }
+    })
+
+    // NOTE: this needs to be after the above function as the $.value
+    // is modified with the new buffer value, otherwise it fires with the new
+    // id but with the old value.
+    // TODO: should we collect the values in reactive pass so that
+    // the effects get the original update value?
+    fx(function dispatchOnEdit({ value, activeId, onEdit }, prev) {
+      if (prev.activeId === activeId) {
+        onEdit(activeId, value)
+      }
+    })
+
+    const initialFontSize = window.innerWidth > 800 ? 20 : 18
+    fx(({ app, scene, markers, lenses }) => {
+      $.view = <div style="width:100%; height: 100%; display: flex;">
+        <div part="state" onpointerenter={() => {
+          app.hint = ($.buffer?.$.error ? $.buffer.$.error.message : '') || ''
+        }} onpointerleave={() => {
+          app.hint = ''
+        }}></div>
+        <Code
+          style="width: 100%; height: 100%; flex: 1;"
+          font={`${app.distRoot}/fonts/${app.monospaceFont}`}
+          fontSize={initialFontSize}
+          singleComment="\"
+          scene={scene}
+          editor={deps.editor}
+          value={deps.value}
+          markers={markers}
+          lenses={lenses}
+          onWheel={$.onWheel}
+          onEnterMarker={$.onEnterMarker}
+          onLeaveMarker={$.onLeaveMarker}
+        />
+      </div>
+    })
+  }
+))
+
+const Hint = web(view('hint',
+  class props {
+    message!: Dep<JSX.Element>
+  },
+
+  class local {
+    host = element
+  },
+
+  function actions({ $, fns, fn }) {
+    return fns(new class actions {
+      onMouseMove = fn(({ host }) => (e: PointerEvent) => {
+        const viewportRect = new Rect(
+          document.scrollingElement!.scrollLeft,
+          document.scrollingElement!.scrollTop,
+          window.visualViewport!.width,
+          window.visualViewport!.height
+        )
+
+        const rect = new Rect(host.getBoundingClientRect())
+        rect.bottom = e.pageY - 25
+        rect.left = e.pageX + 10
+        rect.containSelf(viewportRect)
+
+        Object.assign(host.style, rect.toStylePosition())
+
+        this.show()
+      })
+
+      show = fn(({ host }) => () => {
+        if ($.view) {
+          host.style.opacity = '1'
+        }
+      })
+
+      hide = fn(({ host }) => () => {
+        host.style.opacity = '0'
+      })
+    })
+  },
+
+  function effects({ $, fx }) {
+    $.css = /*css*/`
+    & {
+      z-index: 9999999999;
+      position: fixed;
+      padding: 10px;
+      border: 1px solid #fff;
+      background: #000;
+      color: #fff;
+      font-family: monospace;
+      white-space: pre-wrap;
+    }
+    `
+    fx(() => on(window, 'pointermove')($.onMouseMove))
+    fx(() => on(window, 'keydown')($.hide))
+
+    fx(({ message }) =>
+      effect({ message }, ({ message }) => {
+        $.view = message
+        if (!message) {
+          $.hide()
+        } else {
+          requestAnimationFrame($.show)
+        }
+      })
+    )
+  }
+))
+
+
+export const TrackView = web(view('track-view',
+  class props {
+    id?: string = cheapRandomId()
+    audio?: typeof Audio.State
+    active!: boolean
+    sound?: EditorBuffer
+    pattern?: EditorBuffer
+    getTime?: () => number
+    onClick?: () => void
+  },
+
+  class local {
+    host = element
+    canvas?: HTMLCanvasElement
+    canvasView: JSX.Element = false
+    midiView: JSX.Element = false
+    soundLabel: JSX.Element = false
+    patternLabel: JSX.Element = false
+  },
+
+  function actions({ $, fns, fn }) {
+    return fns(new class actions {
+      onPointerDown = fn(({ onClick }) => (e: PointerEvent) => {
+        e.preventDefault()
+        e.stopPropagation()
+        onClick()
+      })
+    })
+  },
+
+  function effects({ $, fx, refs }) {
+    $.css = /*css*/`
+    & {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+      background: #000;
+      border-bottom: 1px solid #333;
+    }
+    button {
+      all: unset;
+      z-index: 2;
+      display: flex;
+      flex-flow: column nowrap;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      font-family: Mono;
+      font-size: 20px;
+      width: 100%;
+      height: 100%;
+      color: #fff;
+      cursor: pointer;
+      /* text-shadow: 1px 2px #000; */
+      > span {
+        z-index: 2;
+      }
+      .shadow {
+        position: absolute;
+        left: 0;
+        top: 0;
+        width: 100%;
+        height: 100%;
+        display: flex;
+        flex-flow: column nowrap;
+        align-items: center;
+        justify-content: center;
+        -webkit-text-stroke: 6px #000;
+        z-index: 1;
+      }
+    }
+    canvas {
+      position: absolute;
+      left: 0;
+      top: 0;
+      z-index: 0;
+      width: 100%;
+      height: 100%;
+      image-rendering: pixelated;
+      pointer-events: none;
+    }
+    ${Midi} {
+      position: absolute;
+      pointer-events: none;
+      left: 0;
+      top: 0;
+      z-index: 1;
+      width: 100%;
+      height: 100%;
     }
 
-    const machines = app.getMachinesInGroup(focusedTrack)
+    &([active]) {
+      background: #fff2;
+    }
+    `
 
-    const mono = machines.find((machine) => machine.kind === 'mono') as MonoMachine
+    fx.raf(({ host, active }) => {
+      host.toggleAttribute('active', active)
+    })
 
-    const scheduler = machines.find((machine) => machine.kind === 'scheduler') as SchedulerMachine
+    fx(({ getTime, pattern }) =>
+      pattern.fx(({ id, isDraft, midiEvents, numberOfBars }) => {
+        $.midiView = <Midi
+          part="midi"
+          state="idle"
+          style={/*css*/`
+            background: ${isDraft ? bgForHue(checksum(id)) : 'transparent'};
+            background-size: 45px 45px;
+            background-position: center 12.5px;
+          `}
+          getTime={getTime}
+          midiEvents={midiEvents!}
+          numberOfBars={numberOfBars!}
+        />
+      })
+    )
 
-    $.codeView = <><Spacer key={focusedTrack} align="x" initial={[0, 0.1, 0.5, 0.9]} id="app-code-spacer" layout={host}>
-      <PresetsView
-        app={app}
-        id={mono.id}
-        presets={presets.mono as any}
-      />
-      {codes.get(mono.id)}
-      {codes.get(scheduler.id)}
-      <PresetsView
-        app={app}
-        id={scheduler.id}
-        presets={presets.scheduler as any}
-      />
-    </Spacer>
-      {[...codes].filter(([id]) =>
-        ![mono.id, scheduler.id].includes(id)
-      ).map(([id, view]) => <div style="display: none">{view}</div>)}
-    </>
-  }))
+    fx(({ id, audio }) =>
+      audio.fx(async ({ waveplot }) => {
+        if (!$.canvas) {
+          const { canvas } = await waveplot.create(id)
+          $.canvas = canvas
+          $.canvasView = <canvas part="canvas" ref={refs.canvas} />
+        }
+        if (id !== 'main') {
+          return fx.raf(({ active }) => {
+            if (active) {
+              waveplot.copy(id, 'main')
+            }
+          })
+        }
+      })
+    )
 
-  fx(({ machines }) => {
-    $.groups = [...new Set(filterMap(machines.items, (machine) => 'groupId' in machine && machine.groupId))]
-  })
+    fx(({ sound, canvas }, prev) => {
+      if (prev.sound && prev.sound.$.id !== sound.$.id) {
+        prev.sound.$.canvases.delete(canvas)
+      }
+      sound.$.canvases.set(canvas, canvas.id)
+    })
 
-  fx(({ host, app, machines, itemsView, codeView, focusedTrack, groups, trackViews, workerBytes, workerFreqs }) => {
-    const spacer = [0, ...groups.map((_, i) => 0.7 * (i / groups.length) + 0.2), 0.9]
-    $.view = <>
-      <Spacer align="y" initial={[0, 0.44]} layout={host} id="app-side-spacer">
-        <Spacer align="x" id="app-sliders-spacer" initial={spacer} layout={host}>
-          {
-            [<MixerView.Fn
-              app={app}
-              machines={machines}
-              focusedTrack={focusedTrack}
-              workerBytes={workerBytes}
-              workerFreqs={workerFreqs}
-            />,
-            ...groups.map((groupId) => <>
-              {trackViews.get(groupId)}
-            </>),
-            app.addButtonView
-            ]
-          }
-        </Spacer>
-        {codeView}
-      </Spacer>
-      {itemsView}
-    </>
-  })
-}))
+    fx(({ id, audio }) => audio.fx(({ waveplot }) =>
+      fx(({ sound }) =>
+        sound.fx(({ id: soundId, canvas: _ }) =>
+          fx.raf(({ canvas: _ }) => {
+            waveplot.copy(soundId, id)
+          })
+        )
+      )
+    ))
+
+
+    fx(({ sound }) =>
+      sound.fx(({ value }) => {
+        $.soundLabel = <span>{getTitle(value)}</span>
+      })
+    )
+
+    fx(({ pattern }) =>
+      pattern.fx(({ value }) => {
+        $.patternLabel = <span>{getTitle(value)}</span>
+      })
+    )
+
+    fx(function drawTrackButton({ canvasView, midiView, soundLabel, patternLabel }) {
+      $.view = <>
+        {canvasView}
+        {midiView}
+        {$.onClick &&
+          <button onpointerdown={$.onPointerDown}>
+            {[soundLabel, patternLabel]}
+            <div class="shadow">
+              {[soundLabel, patternLabel]}
+            </div>
+          </button>
+        }
+      </>
+    })
+  }
+))
+
+////////////////
+
+export const Skeleton = view('skeleton',
+  class props {
+
+  },
+  class local { },
+  function actions({ $, fns, fn }) {
+    return fns(new class actions {
+
+    })
+  },
+  function effects({ $, fx, deps, refs }) {
+
+  }
+)
+type Skeleton = typeof Skeleton.Hook

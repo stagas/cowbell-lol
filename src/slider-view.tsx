@@ -12,7 +12,7 @@ let downSlider = false
 
 export { Slider }
 
-export const SliderView = web('slider', view(
+export const SliderView = web(view('slider',
   class props {
     ownerId!: string
     id!: string

@@ -30,8 +30,14 @@ export class Audio {
   groupNodePool!: ObjectPool<SchedulerEventGroupNode>
   analyserNodePool!: ObjectPool<AnalyserNode>
 
+  startTime = 0
+
   constructor(data: Partial<Audio>) {
     Object.assign(this, data)
+  }
+
+  getTime = () => {
+    return this.audioContext.currentTime - this.startTime
   }
 
   getSliders = (code: string) => getSliders(code, {

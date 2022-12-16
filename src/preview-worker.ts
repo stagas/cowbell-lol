@@ -49,7 +49,7 @@ class Task {
       this.reset()
       this.isMemDirty = false
     }
-    // console.log('set param')
+    console.log('set param', id, value)
     this.vm.exports[id].value = value
   }
 
@@ -79,6 +79,8 @@ async function execTask(code: string, floats: Float32Array) {
   let isDirty = false
 
   for (const task of tasks) {
+    if (!task.vm.isReady) continue
+
     if (code === task.code) {
       task.access()
       task.reset()
@@ -96,12 +98,14 @@ async function execTask(code: string, floats: Float32Array) {
         for (const [id, slider] of nextSliders) {
           const prev = prevSliders.get(id)!
           if (prev.value !== slider.value) {
-            task.setParam(slider.id, slider.value)
+            // task.setParam(slider.id, slider.value)
             isDirty = true
           }
+          task.setParam(slider.id, slider.value)
         }
 
         if (isDirty) {
+          task.code = code
           task.fill(floats)
           return true
         }

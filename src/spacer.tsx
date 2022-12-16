@@ -3,7 +3,7 @@
 import { Point, Rect, Scalar } from 'geometrik'
 import { chain, element, on, queue, view, web } from 'minimal-view'
 
-import { AppContext } from './app'
+// import { AppContext } from './app'
 import { Layout } from './layout'
 import { observe } from './util/observe'
 
@@ -14,15 +14,15 @@ const dims = (align: 'x' | 'y') =>
     ? ['height', 'width', 'top', 'ns-resize', 'y', 'column', '', 'innerWidth'] as const
     : ['width', 'height', 'left', 'ew-resize', 'x', 'row', '0 ', 'innerHeight'] as const
 
-export const Spacer = web('spacer', view(
+export const Spacer = web(view('spacer',
   class props {
     id!: string
-    layout!: HTMLElement
+    layout?: HTMLElement
     initial!: number[]
     snap?= true
     align: 'x' | 'y' = 'x'
     children?: JSX.Element[]
-    setSpacer?: AppContext['setSpacer']
+    setSpacer?: (id: string, sizes: number[]) => void
     minHandlePos?= 0
   },
 
@@ -39,7 +39,7 @@ export const Spacer = web('spacer', view(
       handleDown = fn(({ rect, cells, intents, align, snap }) => (el: HTMLDivElement, e: PointerEvent, index: number) => {
         el.classList.add('dragging')
 
-        const [dim, , , , n, , , innerDim] = dims(align)
+        const [dim, , , , n] = dims(align)
 
         const moveTo = (pos: Point) => {
           let posN = pos[n] / rect[dim]
@@ -51,9 +51,11 @@ export const Spacer = web('spacer', view(
 
           const diffN = posN - oldN
 
+          const shift = !e.shiftKey
+
           for (const [i, intentN] of intents.entries()) {
             if (i < index) {
-              if (e.shiftKey) {
+              if (shift) {
                 if (intentN > 0) {
                   const co = (intentN / oldN)
                   newCells[i] = clamp(0, 1, intentN + diffN * (isNaN(co) ? 1 : co))
@@ -66,7 +68,7 @@ export const Spacer = web('spacer', view(
                 }
               }
             } else if (i > index) {
-              if (e.shiftKey) {
+              if (shift) {
                 if (intentN < 1) {
                   const co = (1 - intentN) / (1 - oldN)
                   newCells[i] = clamp(0, 1, intentN + diffN * (isNaN(co) ? 1 : co))
@@ -100,7 +102,9 @@ export const Spacer = web('spacer', view(
           requestAnimationFrame(() => {
             if (snap) {
               if (index === $.cells.length - 1 && $.cells.at(-1)! > 0.99) {
-                moveTo(new Point(window[innerDim], 0))
+                const p = new Point()
+                p[dim] = rect[dim]
+                moveTo(p)
               } else {
                 moveTo(getPointerPos(e).gridRound(15))
               }
@@ -162,6 +166,12 @@ export const Spacer = web('spacer', view(
       $.cells = $.intents = [...initial]
     })
 
+    fx(({ host }) => {
+      if (!($.layout)) {
+        $.layout = host.offsetParent as any
+      }
+    })
+
     fx(function listenWindowAndHostResize({ layout }) {
       return chain(
         on(window, 'resize')($.resize),
@@ -173,12 +183,12 @@ export const Spacer = web('spacer', view(
       setSpacer(id, intents)
     })
 
-    fx(function drawHandles({ cells, align, minHandlePos }) {
+    fx(function drawHandles({ cells, align }) {
       const [, , pos] = dims(align)
       $.handles = cells.slice(1).map((p, i) =>
         <div
           part="handle"
-          style={{ [pos]: `max(${minHandlePos}px, ${p * 100}%)` }}
+          style={{ [pos]: `min(calc(100% - 2.5px), max(2.5px, ${p * 100}%))` }}
           onpointerdown={function (this: HTMLDivElement, e) {
             e.preventDefault()
             $.handleDown(this, e, i + 1)

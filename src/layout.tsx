@@ -4,9 +4,10 @@ import { Rect } from 'geometrik'
 import { element, view, web } from 'minimal-view'
 
 import { observe } from './util/observe'
-import { WaveplotButton } from './waveplot-button'
+import { TrackView } from './app'
+// import { Midi } from './midi'
 
-export const Layout = web('layout', view(
+export const Layout = web(view('layout',
   class props {
     size!: string | number
     align!: 'x' | 'y'
@@ -42,12 +43,6 @@ export const Layout = web('layout', view(
   },
 
   function effects({ $, fx }) {
-    // fx(function layoutCss({ align }) {
-    // const [dim, wrap] = [
-    //   ['width', 'row'] as const,
-    //   ['height', 'column'] as const
-    // ][+(align === 'y')]
-
     $.css = /*css*/`
     & {
       position: relative;
@@ -59,6 +54,61 @@ export const Layout = web('layout', view(
       height: 100%;
     }
 
+    [part=editors] {
+      display: flex;
+      flex-flow: row nowrap;
+      /* height: 100%; */
+      width: 100%;
+      max-width: 100%;
+      flex: 1;
+      overflow: hidden;
+      /* position: relative; */
+      /* width: 100%; */
+      /* height: calc(100% - 200px); */
+    }
+
+    [part=top] {
+      display: flex;
+      flex-flow: row nowrap;
+      > * {
+        flex: 1;
+      }
+    }
+
+    [part=presets] {
+      height: 100%;
+      overflow-y: scroll;
+      ${TrackView} {
+        height: 70px;
+      }
+    }
+
+    [part=canvas] {
+      position: absolute;
+      box-sizing: border-box;
+      image-rendering: pixelated;
+      pointer-events: none;
+      z-index: 999;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+    }
+
+    [part=midi] {
+      position: absolute;
+      pointer-events: none;
+      left: 0;
+      top: 0;
+      z-index: 999;
+      width: 100%;
+      height: 100%;
+    }
+
+    [part=bottom] {
+      height: 100%;
+      /* display: flex; */
+    }
     [part=track] {
       position: relative;
       display: flex;
@@ -70,29 +120,27 @@ export const Layout = web('layout', view(
         display: flex;
         flex: 1;
         height: 200px;
-        padding: 0 15px;
+        padding: 15px 15px 0;
         position: relative;
         flex-flow: row nowrap;
       }
 
-      ${WaveplotButton} {
-        height: 50px;
+      ${TrackView} {
+        height: 70px;
         background-repeat: no-repeat;
         background-size: 100% 100%;
         background-position: center;
       }
 
-      &.active {
-        background: #fff3;
+      /* &.active {
+        background: #fff1;
 
-        ${WaveplotButton}::part(canvas) {
-          background-color: #fff3;
+        ${TrackView}::part(canvas) {
+          background-color: #fff2;
         }
-      }
+      } */
     }
-
     `
-    // })
 
     fx(function listenLayoutResize({ layout }) {
       return observe.resize.initial(layout, $.resize)

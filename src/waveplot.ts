@@ -1,4 +1,3 @@
-import { queue } from 'event-toolkit'
 import { debugObjectMethods } from 'everyday-utils'
 import { rpc } from 'rpc-mini'
 import { WaveplotWorker } from './waveplot-worker'
@@ -8,9 +7,7 @@ export function getWaveplotPort() {
   worker ??= new Worker(
     // @ts-ignore
     new URL('./waveplot-worker.js', import.meta.url),
-    {
-      type: 'module',
-    }
+    { type: 'module' }
   )
 
   return worker
@@ -55,6 +52,7 @@ export async function createWaveplot(setup: WaveplotSetup): Promise<Waveplot> {
 
     async create(id) {
       const canvas = document.createElement('canvas')
+      canvas.id = id
       canvas.width = setup.width
       canvas.height = setup.height
       const offscreen = canvas.transferControlToOffscreen()

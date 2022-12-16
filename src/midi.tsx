@@ -3,13 +3,14 @@
 import { Rect } from 'geometrik'
 import { element, view, web } from 'minimal-view'
 import { MidiOp } from 'webaudio-tools'
-import { AppContext } from './app'
+// import { AppContext } from './app'
 
 const MidiOps = new Set(Object.values(MidiOp))
 
-export const Midi = web('midi', view(
+export const Midi = web(view('midi',
   class props {
-    app!: AppContext
+    // app!: AppContext
+    getTime!: () => number
     state!: 'idle' | 'running' | 'suspended'
     midiEvents: WebMidi.MIDIMessageEvent[] = []
     numberOfBars: number = 1
@@ -50,15 +51,17 @@ export const Midi = web('midi', view(
     [part=note] {
       shape-rendering: optimizeSpeed;
       fill: var(--note-color);
+      stroke: #000;
+      stroke-width: 1px;
       &.lit {
         fill: #03f;
       }
     }
     `
 
-    fx.raf(function updateAttrState({ host, state }) {
-      host.setAttribute('state', state)
-    })
+    // fx.raf(function updateAttrState({ host, state }) {
+    //   host.setAttribute('state', state)
+    // })
 
     fx(function updateRects({ midiEvents, numberOfBars }) {
       const events: WebMidi.MIDIMessageEvent[] = midiEvents.filter(x => MidiOps.has(x.data[0]) && x.receivedTime < numberOfBars * 1000)
@@ -93,10 +96,10 @@ export const Midi = web('midi', view(
 
     const notesMap = new Map<SVGRectElement, readonly [Rect, [WebMidi.MIDIMessageEvent, WebMidi.MIDIMessageEvent]]>()
 
-    fx(function updateTimer({ state, app, numberOfBars }) {
+    fx(function updateTimer({ state, numberOfBars, getTime }) {
       if (state === 'running') {
         const iv = setInterval(() => {
-          $.currentTime = (app.getCurrentTimeAdjusted() % numberOfBars) * 1000
+          $.currentTime = (getTime() % numberOfBars) * 1000
         }, 16.666666)
         return () => {
           clearInterval(iv)
