@@ -31,6 +31,7 @@
     "start:web:debugging": "devito example/web --debugging-this",
     "start:node": "onchange -i src example -- swcno example/node.ts",
     "build:watch": "fastpm autolink && tsc -p tsconfig.dist.json --outDir dist/types --watch & swc -w -C module.type=commonjs ./src -d dist/cjs -w & swc -w -C module.type=es6 ./src -d dist/esm",
+    "watch": "tsc -p tsconfig.dist.json --outDir dist/types --watch & swc -w -C module.type=commonjs ./src -d dist/cjs -w & swc -w -C module.type=es6 ./src -d dist/esm",
     "build:dist": "npm run build:bundle && npm run build:min",
     "cov:watch": "utr --coverage --watch",
     "clean": "rimraf dist",
