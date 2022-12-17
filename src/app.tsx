@@ -373,7 +373,10 @@ export const App = web(view('app',
       }),
     })
 
+    
     hint: JSX.Element = false
+
+    isBackgroundVisible: boolean = false
 
     track?: Track
     trackActiveId = 'a'
@@ -473,7 +476,7 @@ export const App = web(view('app',
       )
     )
 
-    fx(({ audio, track, tracks, tracksLive, sound, sounds, pattern, patterns, editorScene }) => {
+    fx(({ audio, track, tracks, tracksLive, sound, sounds, pattern, patterns, editorScene, isBackgroundVisible }) => {
       $.view = <>
         <Hint message={deps.hint} />
 
@@ -504,15 +507,21 @@ export const App = web(view('app',
           ]}>
 
             <div>
-              <TrackView.Fn
-                id="main"
-                active={false}
-                audio={audio}
-                getTime={audio.$.getTime}
-                sound={sound}
-                pattern={pattern}
-              />
+              <button style="all:unset; background: #ccc;text-align: center;position:absolute; z-index:9999999;bottom:0;left:0;width:100px; height:60px;" onclick={() => {
+                $.isBackgroundVisible = !$.isBackgroundVisible
+              }}>Hide waveforms</button>
 
+              {isBackgroundVisible &&
+                 <TrackView.Fn
+                 id="main"
+                 active={false}
+                 audio={audio}
+                 getTime={audio.$.getTime}
+                 sound={sound}
+                 pattern={pattern}
+               />
+              }
+             
               <Spacer id="editors" align="x" initial={[0, 0.5]}>
                 <Editor
                   ref={refs.patternEditor}
