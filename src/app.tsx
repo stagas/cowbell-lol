@@ -3,7 +3,7 @@
 import { CanvyElement, EditorScene, Lens, Marker } from 'canvy'
 import { attempt, cheapRandomId, checksum, pick } from 'everyday-utils'
 import { Matrix, Point, Rect } from 'geometrik'
-import { Dep, effect, element, on, reactive, view, web } from 'minimal-view'
+import { Dep, effect, element, on, Reactive, reactive, view, web } from 'minimal-view'
 import { MonoNode } from 'mono-worklet'
 import { SchedulerEventGroupNode, SchedulerNode } from 'scheduler-node'
 import { Code } from './code'
@@ -21,14 +21,16 @@ import { getErrorInputLine, getErrorToken, getTitle } from './util/parse'
 import { ObjectPool } from './util/pool'
 import { createWaveplot, Waveplot } from './waveplot'
 
-// function add<T extends Reactive>(
-//   map: Map<string, T>,
-//   item: T
-// ) {
-//   const copy = new Map(map)
-//   copy.set(item.$.id, item)
-//   return copy
-// }
+const noop = () => { }
+
+function add<T extends Reactive>(
+  map: Map<string, T>,
+  item: T
+) {
+  const copy = new Map(map)
+  copy.set(item.$.id, item)
+  return copy
+}
 
 // function pop<T extends Reactive>(map: Map<string, T>) {
 //   if (!map.size) return map
@@ -373,7 +375,7 @@ export const App = web(view('app',
       }),
     })
 
-    
+
     hint: JSX.Element = false
 
     isBackgroundVisible: boolean = false
@@ -419,7 +421,24 @@ export const App = web(view('app',
 
   function actions({ $, fns, fn }) {
     return fns(new class actions {
+      onPatternEdit = (id: string, value: string) => {
+        const pattern = $.patterns.get(id)!
+        if (pattern.$.isDraft) {
+          pattern.$.value = value
+        } else {
+          const data = pattern.$.derive()
+          data.value = value
+          const p = EditorBuffer(data)
+          $.patterns = add($.patterns, p)
+          $.track!.$.pattern = p.$.id!
+        }
+      }
 
+      onCodeEdit = (id: string, value: string) => {
+        // if (sound.$.isDraft) {
+        $.sounds.get(id)!.$.value = value
+        // }
+      }
     })
   },
 
@@ -476,6 +495,14 @@ export const App = web(view('app',
       )
     )
 
+    // TODO: terrible workaround gets over a nasty jsx bug
+    // i can't trace, which goes away on the second redraw
+    fx.once(({ patterns }) => {
+      setTimeout(() => {
+        $.patterns = new Map(patterns)
+      })
+    })
+
     fx(({ audio, track, tracks, tracksLive, sound, sounds, pattern, patterns, editorScene, isBackgroundVisible }) => {
       $.view = <>
         <Hint message={deps.hint} />
@@ -505,57 +532,40 @@ export const App = web(view('app',
             0.5 + 0.5 / 3,
             0.5 + 0.5 / 3 * 2,
           ]}>
-
             <div>
               <button style="all:unset; background: #ccc;text-align: center;position:absolute; z-index:9999999;bottom:0;left:0;width:100px; height:60px;" onclick={() => {
                 $.isBackgroundVisible = !$.isBackgroundVisible
               }}>Hide waveforms</button>
 
               {isBackgroundVisible &&
-                 <TrackView.Fn
-                 id="main"
-                 active={false}
-                 audio={audio}
-                 getTime={audio.$.getTime}
-                 sound={sound}
-                 pattern={pattern}
-               />
+                <TrackView.Fn
+                  id="main"
+                  active={false}
+                  audio={audio}
+                  getTime={audio.$.getTime}
+                  sound={sound}
+                  pattern={pattern}
+                />
               }
-             
+
               <Spacer id="editors" align="x" initial={[0, 0.5]}>
                 <Editor
-                  ref={refs.patternEditor}
-                  key="pattern"
                   app={$}
                   scene={editorScene}
                   buffers={patterns}
                   activeId={track.$.pattern}
-                  onEdit={(id, value) => {
-                    const pattern = patterns.get(id)!
-                    // if (pattern.$.isDraft) {
-                    pattern.$.value = value
-                    // } else {
-                    //   $.patterns = add(patterns, EditorBuffer(pattern.$.derive()))
-                    // }
-                  }}
-                  onCode={() => { }}
-                  onWheelMarker={() => { }}
+                  onEdit={$.onPatternEdit}
+                  onCode={noop}
                 />
 
                 <Editor
-                  ref={refs.soundEditor}
-                  key="sound"
                   app={$}
                   scene={editorScene}
                   buffers={sounds}
                   activeId={track.$.sound}
-                  onEdit={(id, value) => {
-                    // if (sound.$.isDraft) {
-                    sounds.get(id)!.$.value = value
-                    // }
-                  }}
-                  onCode={() => { }}
-                  onWheelMarker={() => { }}
+                  onEdit={$.onCodeEdit}
+                  onCode={noop}
+                  onWheelMarker={noop}
                 />
               </Spacer>
             </div>
@@ -621,7 +631,7 @@ const Editor = web(view('editor',
     lenses?: Lens[] = []
     onEdit!: (id: string, value: string) => void
     onCode!: (id: string, prev: string, next: string, editor: CanvyElement) => void
-    onWheelMarker!: (e: WheelEvent, bufferId: string, markerId: Marker['key']) => void
+    onWheelMarker?: (e: WheelEvent, bufferId: string, markerId: Marker['key']) => void
   },
 
   class local {
