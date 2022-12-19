@@ -20,6 +20,8 @@ import { markerForSlider } from './util/marker'
 import { getErrorInputLine, getErrorToken, getTitle } from './util/parse'
 import { ObjectPool } from './util/pool'
 import { createWaveplot, Waveplot } from './waveplot'
+import { MenuBar } from './menu-bar'
+
 
 // function add<T extends Reactive>(
 //   map: Map<string, T>,
@@ -479,7 +481,7 @@ export const App = web(view('app',
     fx(({ audio, track, tracks, tracksLive, sound, sounds, pattern, patterns, editorScene, isBackgroundVisible }) => {
       $.view = <>
         <Hint message={deps.hint} />
-
+        <MenuBar app={$}></MenuBar>
         <Spacer id="app-spacer" align="y" initial={[0, 0.3]}>
           <Spacer id="app-top" align="x" part="top" initial={
             Array.from({ length: tracks.size }, (_, i) => i / tracks.size)
@@ -507,9 +509,10 @@ export const App = web(view('app',
           ]}>
 
             <div>
-              <button style="all:unset; background: #ccc;text-align: center;position:absolute; z-index:9999999;bottom:0;left:0;width:100px; height:60px;" onclick={() => {
+              
+              {/* <button style="all:unset; background: #ccc;text-align: center;position:absolute; z-index:9999999;bottom:0;left:0;width:100px; height:60px;" onclick={() => {
                 $.isBackgroundVisible = !$.isBackgroundVisible
-              }}>Hide waveforms</button>
+              }}>Hide waveforms</button> */}
 
               {isBackgroundVisible &&
                  <TrackView.Fn
