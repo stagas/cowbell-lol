@@ -7,8 +7,8 @@ import { NumberInput } from './number-input'
 export const MenuBar = web(view('menu-bar',
   class props {
     app!: typeof App.Context;
-    save!: () => void;
-    share!: () => void;
+    onSave!: () => void;
+    onShare!: () => void;
   },
   class local {
 
@@ -40,15 +40,16 @@ export const MenuBar = web(view('menu-bar',
         color: black;
         padding: 5px;
         background-color: white;
+        
           &:active {
-          border: 5px solid white;
+          border: 2px solid white;
           color: white;
           background-color: black;
         } 
       }
     `
 
-    fx(function drawMenuBar({ app, save, share }) {
+    fx(function drawMenuBar({ app, onSave, onShare }) {
       $.view = <>
         <button
           onclick={
@@ -60,10 +61,10 @@ export const MenuBar = web(view('menu-bar',
           Change Background
         </button>
         <NumberInput min={1} max={666} value={$.app.audio.deps.bpm} step={1} align="x" />
-        <button onclick={save}>
+        <button onclick={onSave}>
           Save
         </button>
-        <button onclick={share}>
+        <button onclick={onShare}>
           Share
         </button>
       </>
