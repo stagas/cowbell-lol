@@ -41,7 +41,7 @@ export const MenuBar = web(view('menu-bar',
         padding: 5px;
         background-color: white;
         
-          &:active {
+        &:active {
           border: 2px solid white;
           color: white;
           background-color: black;
