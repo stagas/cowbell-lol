@@ -1,6 +1,6 @@
 /** @jsxImportSource minimal-view */
 
-import {  view, web } from 'minimal-view'
+import { view, web } from 'minimal-view'
 import { App } from './app'
 import { NumberInput } from './number-input'
 
@@ -17,7 +17,6 @@ export const MenuBar = web(view('menu-bar',
     return fns(new class actions { 
       setBPM = function(this: HTMLInputElement ) { 
         $.app.audio.$.bpm = this.valueAsNumber
-        console.log($.app.audio.$.bpm)
       }
     })
   },
@@ -25,9 +24,9 @@ export const MenuBar = web(view('menu-bar',
     $.css = /*css*/ `
       & { 
         display: flex;
-        position:fixed;  
-        height:50px;
-        width:100%;
+        position: fixed;  
+        height: 50px;
+        width: 100%;
         background-color: #093;
         z-index: 999999999;
         flex-direction: row;
