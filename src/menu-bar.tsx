@@ -2,7 +2,7 @@
 
 import {  view, web } from 'minimal-view'
 import {App} from './app'
-
+import { NumberInput } from './number-input'
 
 export const MenuBar = web(view('menuBar',
   class props {
@@ -30,7 +30,6 @@ export const MenuBar = web(view('menuBar',
   function effects({ $, fx }) {
     $.css = /*css*/ `
       & { 
-        all: unset;
         display: flex;
         position:fixed;  
         height:50px;
@@ -43,7 +42,7 @@ export const MenuBar = web(view('menuBar',
         font-size: 20px;
       }
       button {
-        all: unset; /* katharizei ta koubia*/ 
+        all: unset;
         border: 2px solid #000  ;
         color: black;
         padding:5px;
@@ -54,10 +53,7 @@ export const MenuBar = web(view('menuBar',
           background-color: black;
         } 
       }
-
-
     `
-
 
     fx(function drawMenuBar({app}) {
       $.view = <>
@@ -70,9 +66,7 @@ export const MenuBar = web(view('menuBar',
         >
           Change Background
         </button>
-        <input type="number"  min="1" class="bpm" name="bpmValue" value={$.app.audio.$.bpm} 
-          onchange={$.setBPM}>
-        </input>
+        <NumberInput min={1} max={666} value={$.app.audio.deps.bpm} step={1} align="x" />
         <button onclick={$.save}>
           Save
         </button>
