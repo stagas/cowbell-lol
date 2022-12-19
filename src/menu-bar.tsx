@@ -1,10 +1,10 @@
 /** @jsxImportSource minimal-view */
 
 import {  view, web } from 'minimal-view'
-import {App} from './app'
+import { App } from './app'
 import { NumberInput } from './number-input'
 
-export const MenuBar = web(view('menuBar',
+export const MenuBar = web(view('menu-bar',
   class props {
     app!: typeof App.Context
   },
@@ -34,7 +34,7 @@ export const MenuBar = web(view('menuBar',
         position:fixed;  
         height:50px;
         width:100%;
-        background-color: #093893;
+        background-color: #093;
         z-index: 999999999;
         flex-direction: row;
         justify-content: space-between;
