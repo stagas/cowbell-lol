@@ -96,6 +96,7 @@
     "minimal-view": "^1.2.1",
     "mono-worklet": "^1.1.0",
     "monolang": "^3.0.1",
+    "plenty-themes": "^1.1.1",
     "pretty-fast-fft": "^1.0.0",
     "rpc-mini": "^1.1.0",
     "scheduler-node": "^1.1.0",
