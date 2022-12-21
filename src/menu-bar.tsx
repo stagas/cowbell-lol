@@ -13,12 +13,7 @@ export const MenuBar = web(view('menu-bar',
   class local {
 
   },
-  function actions({ $, fns, fn }) {
-    return fns(new class actions {
-      setBPM = function (this: HTMLInputElement) {
-        $.app.audio.$.bpm = this.valueAsNumber
-      }
-    })
+  function actions() {
   },
   function effects({ $, fx }) {
     $.css = /*css*/ `
@@ -49,7 +44,7 @@ export const MenuBar = web(view('menu-bar',
       }
     `
 
-    fx(function drawMenuBar({ app, onSave, onShare }) {
+    fx(function drawMenuBar({ onSave, onShare }) {
       $.view = <>
         <button
           onclick={

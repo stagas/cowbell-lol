@@ -481,7 +481,7 @@ export const App = web(view('app',
     fx(({ audio, track, tracks, tracksLive, sound, sounds, pattern, patterns, editorScene, isBackgroundVisible }) => {
       $.view = <>
         <Hint message={deps.hint} />
-        <MenuBar app={$} onSave={() => { console.log('saving...') }} onShare={() => { console.log('saving...') }} ></MenuBar>
+        <MenuBar app={$} onSave={() => { console.log('saving...') }} onShare={() => { console.log('sharing...') }} ></MenuBar>
         <Spacer id="app-spacer" align="y" initial={[0, 0.3]}>
           <Spacer id="app-top" align="x" part="top" initial={
             Array.from({ length: tracks.size }, (_, i) => i / tracks.size)
