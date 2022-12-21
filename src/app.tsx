@@ -13,6 +13,7 @@ import { compilePattern } from './pattern'
 import { createPreview, Preview } from './preview-service'
 import { Spacer } from './spacer'
 
+
 import { Sliders } from './types'
 import { getSliders } from './util/args'
 import { bgForHue } from './util/bg-for-hue'
@@ -21,6 +22,8 @@ import { getErrorInputLine, getErrorToken, getTitle } from './util/parse'
 import { ObjectPool } from './util/pool'
 import { createWaveplot, Waveplot } from './waveplot'
 import { MenuBar } from './menu-bar'
+import { theme } from './theme';
+
 
 
 // function add<T extends Reactive>(
@@ -239,8 +242,8 @@ export const EditorBuffer = reactive('editor-buffer',
                     index: cause.index,
                     size: cause.token?.length ?? 1,
                     kind: 'error',
-                    color: '#a21',
-                    hoverColor: '#f42',
+                    color: theme['stateError'],
+                    hoverColor: theme['stateErrorHover'],
                     message: cause.message,
                   },
                 ]
@@ -326,8 +329,8 @@ export const EditorBuffer = reactive('editor-buffer',
               index,
               size: Math.max(1, token.length),
               kind: 'error',
-              color: '#a21',
-              hoverColor: '#f42',
+              color: theme['stateError'],
+              hoverColor: theme['stateErrorHover'],
               message,
             },
           ]
@@ -438,7 +441,7 @@ export const App = web(view('app',
       const bodyStyle = document.createElement('style')
       bodyStyle.textContent = /*css*/`
       @font-face {
-        font-family: Mono;
+        font-family: ${theme['fontFamily']};
         src: url("${distRoot}/fonts/${monospaceFont}") format("woff2");
       }
       html, body {
@@ -446,7 +449,7 @@ export const App = web(view('app',
         padding: 0;
         width: 100%;
         height: 100%;
-        background: #000;
+        background: ${theme['primaryBgColor']};
         overflow: hidden;
       }
       `
@@ -676,17 +679,17 @@ const Editor = web(view('editor',
       right: 10px;
       top: 10px;
       border-radius: 100%;
-      background: #333;
+      background:${theme['stateNeutral']};
       z-index: 999999;
     }
     &([state=compiled]) {
       [part=state] {
-        background: #29f;
+        background: ${theme['stateCompiled']};
       }
     }
     &([state=errored]) {
       [part=state] {
-        background: #f21;
+        background: ${theme['stateError']};
       }
     }
     ${Code} {
@@ -858,10 +861,10 @@ const Hint = web(view('hint',
       z-index: 9999999999;
       position: fixed;
       padding: 10px;
-      border: 1px solid #fff;
-      background: #000;
-      color: #fff;
-      font-family: monospace;
+      border: 1px solid ${theme['primaryLight']};
+      background: ${theme['primaryBgColor']};
+      color:${theme['primaryLight']};
+      font-family: ${theme['fontFamily']};
       white-space: pre-wrap;
     }
     `
@@ -919,8 +922,8 @@ export const TrackView = web(view('track-view',
       align-items: center;
       justify-content: center;
       position: relative;
-      background: #000;
-      border-bottom: 1px solid #333;
+      background:${theme['primaryBgColor']};
+      border-bottom: 1px solid ${theme['borderBottom']};
     }
     button {
       all: unset;
@@ -930,11 +933,11 @@ export const TrackView = web(view('track-view',
       align-items: center;
       justify-content: center;
       text-align: center;
-      font-family: Mono;
-      font-size: 20px;
+      font-family: ${theme['fontFamily']};
+      font-size: ${theme['fontSize']};
       width: 100%;
       height: 100%;
-      color: #fff;
+      color: ${theme['primaryLight']};
       cursor: pointer;
       /* text-shadow: 1px 2px #000; */
       > span {
@@ -950,7 +953,7 @@ export const TrackView = web(view('track-view',
         flex-flow: column nowrap;
         align-items: center;
         justify-content: center;
-        -webkit-text-stroke: 6px #000;
+        -webkit-text-stroke: 6px ${theme['primaryBgColor']};
         z-index: 1;
       }
     }

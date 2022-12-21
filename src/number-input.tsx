@@ -2,8 +2,11 @@
 
 import { view, web, Dep, effect, on } from 'minimal-view'
 import { Scalar } from 'geometrik'
+import { theme } from './theme'
 
 const { clamp } = Scalar
+
+
 
 export const NumberInput = web(view('number-input',
   class props {
@@ -50,7 +53,7 @@ export const NumberInput = web(view('number-input',
       & {
         display: flex;
         flex-flow: ${align === 'y' ? 'column' : 'row'} nowrap;
-        font-family: CascadiaMono;
+        font-family: ${theme['fontFamily']};
         align-items: stretch;
         justify-content: stretch;
         text-align: center;
@@ -66,7 +69,7 @@ export const NumberInput = web(view('number-input',
       [part=value] {
         display: inline-flex;
         height: 100%;
-        font-size: 21px;
+        font-size: ${theme['fontSize']};
         flex-flow: ${align === 'y' ? 'column' : 'row'} nowrap;
         align-items: center;
       }
