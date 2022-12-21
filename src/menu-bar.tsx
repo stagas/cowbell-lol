@@ -13,7 +13,10 @@ export const MenuBar = web(view('menu-bar',
   class local {
 
   },
-  function actions() {
+  function actions({ $, fns, fn }) {
+    return fns(new class actions {
+
+    })
   },
   function effects({ $, fx }) {
     $.css = /*css*/ `
