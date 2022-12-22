@@ -4,6 +4,7 @@ import { Rect } from 'geometrik'
 import { element, view, web } from 'minimal-view'
 import { MidiOp } from 'webaudio-tools'
 // import { AppContext } from './app'
+import { theme } from './theme'
 
 const MidiOps = new Set(Object.values(MidiOp))
 
@@ -51,7 +52,7 @@ export const Midi = web(view('midi',
     [part=note] {
       shape-rendering: optimizeSpeed;
       fill: var(--note-color);
-      stroke: #000;
+      stroke: ${theme['primaryBgColor']};
       stroke-width: 1px;
       &.lit {
         fill: #03f;
