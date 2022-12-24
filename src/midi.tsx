@@ -3,6 +3,7 @@
 import { Rect } from 'geometrik'
 import { element, view, web } from 'minimal-view'
 import { MidiOp } from 'webaudio-tools'
+import { AudioState } from './audio'
 // import { AppContext } from './app'
 
 const MidiOps = new Set(Object.values(MidiOp))
@@ -11,9 +12,11 @@ export const Midi = web(view('midi',
   class props {
     // app!: AppContext
     getTime!: () => number
-    state!: 'idle' | 'running' | 'suspended'
+    offset?: number = 0
+    state!: AudioState
     midiEvents: WebMidi.MIDIMessageEvent[] = []
     numberOfBars: number = 1
+    timeBars?: number = 1
   },
 
   class local {
@@ -31,7 +34,7 @@ export const Midi = web(view('midi',
   function effects({ $, fx }) {
     $.css = /*css*/`
     & {
-      --note-color: #c30e;
+      --note-color: #c30;
       contain: size layout style paint;
       display: inline-flex;
       pointer-events: none;
@@ -51,8 +54,8 @@ export const Midi = web(view('midi',
     [part=note] {
       shape-rendering: optimizeSpeed;
       fill: var(--note-color);
-      stroke: #000;
-      stroke-width: 1px;
+      /* stroke: #000; */
+      /* stroke-width: 1px; */
       &.lit {
         fill: #03f;
       }
@@ -96,10 +99,10 @@ export const Midi = web(view('midi',
 
     const notesMap = new Map<SVGRectElement, readonly [Rect, [WebMidi.MIDIMessageEvent, WebMidi.MIDIMessageEvent]]>()
 
-    fx(function updateTimer({ state, numberOfBars, getTime }) {
+    fx(function updateTimer({ state, getTime, timeBars }) {
       if (state === 'running') {
         const iv = setInterval(() => {
-          $.currentTime = (getTime() % numberOfBars) * 1000
+          $.currentTime = (getTime() % timeBars) * 1000
         }, 16.666666)
         return () => {
           clearInterval(iv)
@@ -107,7 +110,8 @@ export const Midi = web(view('midi',
       }
     })
 
-    fx.raf(function updateLitNotes({ currentTime }) {
+    fx.raf(function updateLitNotes({ currentTime, offset }) {
+      currentTime -= offset * 1000
       for (const [
         el, [, [noteOnEvent, noteOffEvent]]
       ] of notesMap) {

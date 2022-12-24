@@ -73,7 +73,7 @@ export async function createWaveplot(setup: WaveplotSetup): Promise<Waveplot> {
       return target
     },
     draw: async (id) => {
-      await remote('draw', id)
+      return await remote('draw', id)
     },
     async copy(a, b) {
       await remote('copy', a, b)

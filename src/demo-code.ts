@@ -11,7 +11,7 @@ play(nt,x,y)=(
   saw(x/4)*env(nt, 100, 30)*y
 );
 synth(
-  'cut[50f..5k]=500,
+  'cut[50f..5k]=50,
   'q[.1..0.95]=0.125
 )=(
   x=tanh(
@@ -27,6 +27,43 @@ synth(
 f()=synth();
 `
 
+export const kickCode = String.raw`\\\ kick \\\
+#:2,3;
+write_note(x,y)=(
+  #=(t,note_to_hz(x),y/127);
+  0
+);
+midi_in(op=0,x=0,y=0)=(
+  op==144 && write_note(x,y)
+);
+play(nt,x,y)=(
+  y*sine(45+300*exp(-(t-nt)*30))
+    *exp(-(t-nt)*10)
+);
+f()=#::play:sum
+`
+
+export const beat1_4 = String.raw`/// 1/4 ///
+bars=1
+seed=1
+on(1/4,x=>
+  [x,127,127,.05])
+`
+
+export const beat1_12 = String.raw`/// 1/4 ///
+bars=1
+seed=1
+on(1/12,x=>
+  [x,127,127,.03])
+`
+
+export const beat1_2__1_4 = String.raw`/// 1/2+1/4 ///
+bars=1
+seed=1
+on(1/2,x=>
+  [x+1/4,127,127,.05])
+`
+
 export const patternDefaultCode = String.raw`/// snare 1/2 ///
 bars=2
 seed=391434
@@ -34,8 +71,7 @@ on(1/4,delay(
    1/8,0.39,x=>
   rnd(10)<2?0:[x,
   24+rnd(5)**2,
-  rnd(100)*3,0.1]))
-`
+  rnd(100)*3,0.1]))`
 
 export const patternDefaultCode2 = String.raw`/// bassline techno ///
 bars=2
@@ -57,7 +93,7 @@ midi_in(op=0,x=0,y=0)=(
   op==144 && write_note(x,y)
 );
 play(nt,x,y,
- 'eatt[1..500f]=33.115,
+ 'eatt[1..500f]=500,
  'edec[1..500f]=50.396,
  'datt[1..500f]=500,
  'ddec[1..500f]=72.286,

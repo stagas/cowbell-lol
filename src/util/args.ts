@@ -1,5 +1,5 @@
 import { checksum, isEqual } from 'everyday-utils'
-import { Slider } from '../slider'
+import type { Slider } from '../slider'
 import type { Sliders } from '../types'
 
 export const parseArgsRegExp = /'(?<name>\w+)\s*?(?<range>\[.+\])\s*?=\s*(?<value>[.0-9kKbBmsf]+)/gi
@@ -37,49 +37,57 @@ export function argValueToNumber(t: string, { sampleRate, beatSamples, numberOfB
   else if (lastOne === 'B')
     return number * beatSamples * bars
 
-  return number
+  return parseFloat(number.toFixed(3))
 }
 
-export function removeSliderArgsFromCode(sliders: Sliders | undefined, code: string | undefined) {
-  if (sliders == null) return code
-  if (code == null) return
+// editor-buffer
+// export function removeSliderArgsFromCode(sliders: Sliders | undefined, code: string | undefined) {
+//   if (sliders == null) return code
+//   if (code == null) return
 
-  Array.from(sliders.values()).reverse().forEach((slider) => {
-    if (!('source' in slider) || !('default' in slider.source)) return
+//   Array.from(sliders.values()).reverse().forEach((slider) => {
+//     const { source, sourceIndex } = slider.$
+//     if (source == null || sourceIndex == null) return
 
-    const argMinusDefaultLength = slider.source.arg.length - slider.source.default.length
+//     const argMinusDefaultLength = source.arg.length - source.default.length
 
-    code = code!.slice(
-      0, slider.sourceIndex! + argMinusDefaultLength
-    ) + code!.slice(slider.sourceIndex! + slider.source.arg.length)
-  })
+//     code = code!.slice(
+//       0, sourceIndex + argMinusDefaultLength
+//     ) + code!.slice(sourceIndex + source.arg.length)
+//   })
 
-  return code
-}
+//   return code
+// }
 
-export function copySliders(sliders: Sliders): Sliders {
-  return new Map([...sliders].map(
-    ([key, slider]) =>
-      [key, new Slider(slider.toJSON!() as any)]
-  ))
-}
+// export function copySliders(sliders: Sliders): Sliders {
+//   return new Map([...sliders].map(
+//     ([key, slider]) =>
+//       [key, Slider(slider.$.toJSON())]
+//   ))
+// }
 
-export function areSlidersCompatible(prevSliders: Sliders, nextSliders: Sliders) {
+export function areSlidersCompatible(prevSliders: Sliders | Map<string, typeof Slider.State['$']>, nextSliders: Map<string, typeof Slider.State['$']>) {
   if (!isEqual([...prevSliders.keys()], [...nextSliders.keys()])) {
     return false
   }
 
   for (const [id, slider] of prevSliders) {
     const other = nextSliders.get(id)!
-    if (slider.min !== other.min
-      || slider.max !== other.max)
-      return false
+    if ('$' in slider) {
+      if (!slider.$.isCompatibleWith(other)) return false
+    } else {
+      if (slider.min !== other.min
+        || slider.max !== other.max) return false
+    }
   }
 
   return true
 }
 
-export function getSliders(code: string, argContext: ArgContext) {
+export function getSliders(
+  code: string,
+  argContext: ArgContext,
+) {
   const funcs = [...code.matchAll(parseFuncsRegExp)]
 
   return new Map(
@@ -105,13 +113,14 @@ export function getSliders(code: string, argContext: ArgContext) {
 
         const exportId = `export/${func}/${name}`
 
-        return [exportId, new Slider({
+        return [exportId, {
           value: argValueToNumber(value, argContext),
           min: argValueToNumber(min, argContext),
           max: argValueToNumber(max, argContext),
           hue: checksum(exportId) % 300 + 20,
           id: exportId,
           name,
+
           source: {
             id: name,
             arg,
@@ -119,7 +128,7 @@ export function getSliders(code: string, argContext: ArgContext) {
             default: value,
           },
           sourceIndex: code.indexOf(arg, funcIndex)
-        })]
+        } as typeof Slider.State['$']]
       })
     }))
 }

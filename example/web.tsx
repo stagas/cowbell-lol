@@ -8,14 +8,14 @@ import { render, enableDebug, effect } from 'minimal-view'
 // document.body.appendChild(window.recorder.el)
 
 // @ts-ignore
-// globalThis.DEBUG = ['app', 'mono', 'scheduler', 'mono-group', 'abstract-presets']
+// globalThis.DEBUG = ['editor', 'editor-buffer', 'slider']
 
 // @ts-ignore
 const isDebug = !!globalThis.DEBUG
 
 // if (isDebug) enableDebug(5000)
 
-effect.maxUpdates = 10000
+effect.maxUpdates = 100000
 
 // import { AppView } from '..'
 import { App } from '..'

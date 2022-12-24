@@ -29,6 +29,7 @@ export async function compilePattern(codeValue: string, numberOfBars: number): P
   try {
     const setup = `
   let seed = 42;
+  let maxNotes = 512;
   const rnd = (amt = 1) => {
     var t = seed += 0x6D2B79F5;
     t = Math.imul(t ^ t >>> 15, t | 1);
@@ -60,13 +61,16 @@ export async function compilePattern(codeValue: string, numberOfBars: number): P
 
     const events: any[] = []
 
+    const maxNotes = 512
+
     const On = (start: number, end: number) => {
-      return (measure: number, fn: (x: number, end: number) => number[]) => {
+      return (measure: number, fn: (x: number, end: number, index: number) => number[]) => {
         const result = []
         let count = 0
         end = bars
-        for (let x = start; (x < end) && (++count < 128); x += measure) {
-          const events = fn(x, x + measure)
+        let i = 0
+        for (let x = start; (x < end) && (++count < maxNotes); x += measure) {
+          const events = fn(x, x + measure, i++)
           if (!events) continue
           if (Array.isArray(events[0])) {
             result.push(...events)
@@ -143,7 +147,7 @@ export async function compilePattern(codeValue: string, numberOfBars: number): P
         const pattern = getEuclideanPattern(pulses, Math.floor((end - start) / measure) / bars)
 
         let i = 0;
-        for (let x = start; (x < end) && (++count < 128); x += measure) {
+        for (let x = start; (x < end) && (++count < maxNotes); x += measure) {
           const events = fn(x, x + measure, pattern[i % pattern.length])
           i++
           if (!events) continue
@@ -178,7 +182,7 @@ export async function compilePattern(codeValue: string, numberOfBars: number): P
         }
 
         let x: any
-        for (x = start; (x < end) && (++count < 128); x += measure) {
+        for (x = start; (x < end) && (++count < maxNotes); x += measure) {
           note = [...note]
           note[0] = x + offset
           result.push(note)

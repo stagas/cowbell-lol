@@ -1,11 +1,9 @@
-export const parseTitleRegExp = /(\\\\\\|\/\/\/)\s+(?<title>.*)\s+(\\\\\\|\/\/\/)/
+export const parseTitleRegExp = /(\\\\\\|\/\/\/)\s*(?<title>.*)\s*(\\\\\\|\/\/\/)/
 
 export function getTitle(code: string) {
   const match = parseTitleRegExp.exec(code || '')
   if (match) {
     return match[2]
-  } else {
-    return '[ untitled ]'
   }
 }
 

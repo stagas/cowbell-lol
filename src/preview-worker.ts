@@ -36,7 +36,7 @@ class Task {
       this.startVmMem = this.vm.floats.slice()
     }
 
-    await this.vm.setCode(code)
+    await this.vm.setCode(!code.trim() ? 'f()=0' : code)
 
     this.resetVmMem = this.vm.floats.slice()
     this.isMemDirty = false
@@ -49,7 +49,6 @@ class Task {
       this.reset()
       this.isMemDirty = false
     }
-    console.log('set param', id, value)
     this.vm.exports[id].value = value
   }
 
@@ -58,12 +57,12 @@ class Task {
   }
 
   async fill(floats: Float32Array) {
-    // console.log('fill')
     this.vm.exports.sampleRate.value = argContext.sampleRate
-    this.vm.exports.currentTime.value = 0
-    this.vm.exports.midi_in?.(144, 32, 100)
+    this.vm.exports.currentTime.value = 1
+    // this.vm.exports.fill(0, argContext.sampleRate, 0, 0)
+    this.vm.exports.midi_in?.(144, 40, 127)
     for (let i = 0; i < floats.length - 128; i += 128) {
-      this.vm.exports.fill(0, i, 0, 128)
+      this.vm.exports.fill(0, argContext.sampleRate + i, 0, 128)
       floats.set(this.vm.outputs[0], i)
     }
     this.isMemDirty = true

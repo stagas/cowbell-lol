@@ -1,8 +1,7 @@
 import { rpc } from 'rpc-mini'
 import { debugObjectMethods } from 'everyday-utils'
 import { getSharedWorkerPort } from 'monolang'
-
-import { EditorBuffer } from './app'
+import { EditorBuffer } from './editor-buffer'
 import { Waveplot } from './waveplot'
 import { queue } from 'minimal-view'
 
@@ -17,8 +16,8 @@ export function getPreviewPort() {
 }
 
 export interface Preview {
-  setActiveId(id: string): void
-  draw(buffer: EditorBuffer): Promise<Error | void>
+  // setActiveId(id: string): void
+  draw(buffer: EditorBuffer): Promise<Error | void | false>
 }
 
 export function createPreview(waveplot: Waveplot, sampleRate: number): Preview {
@@ -32,19 +31,20 @@ export function createPreview(waveplot: Waveplot, sampleRate: number): Preview {
     numberOfBars: 1
   })
 
-  let activeId: string
+  // let activeId: string
   return debugObjectMethods({
-    setActiveId: (id) => {
-      activeId = id
-    },
+    // setActiveId: (id) => {
+    //   activeId = id
+    // },
     draw: queue.atomic(async (buffer) => {
       const id = buffer.$.id!
 
-      if (!waveplot.targets.has(id)) {
-        const { canvas } = await waveplot.create(id)
-        buffer.$.canvas = canvas
-      }
+      // if (!waveplot.targets.has(id)) {
+      //   const { canvas } = await waveplot.create(id)
+      //   buffer.$.canvas = canvas
+      // }
 
+      // console.log('trying', id, buffer)
       try {
         const isDirty = await remote(
           'fillPreview',
@@ -57,14 +57,15 @@ export function createPreview(waveplot: Waveplot, sampleRate: number): Preview {
         return error as Error
       }
 
-      waveplot.draw(id).then(() => {
-        if (activeId === id) {
-          waveplot.copy(id, 'main')
-        }
-        buffer.$.canvases?.forEach((key) => {
-          waveplot.copy(id, key)
-        })
-      })
+      return waveplot.draw(id)
+      // .then(() => {
+      //   // if (activeId === id) {
+      //   //   waveplot.copy(id, 'main')
+      //   // }
+      //   buffer.$.canvases?.forEach((key) => {
+      //     waveplot.copy(id, key)
+      //   })
+      // })
     }),
   }, [], {
     before: (key, args) => {

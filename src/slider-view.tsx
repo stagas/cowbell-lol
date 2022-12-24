@@ -1,34 +1,34 @@
 /** @jsxImportSource minimal-view */
 
-import { Point, Rect, Scalar } from 'geometrik'
-import { chain, element, on, queue, view, web } from 'minimal-view'
+import { Point, Rect } from 'geometrik'
+import { chain, Dep, element, on, queue, view, web } from 'minimal-view'
+import { Player } from './player'
 import { Slider } from './slider'
-
 import { observe } from './util/observe'
-
-const { clamp } = Scalar
 
 let downSlider = false
 
+const yDims = ['height', 'minHeight', 'maxHeight'] as const
+const xDims = ['width', 'minWidth', 'maxWidth'] as const
+
 export { Slider }
 
-export const SliderView = web(view('slider',
+export const SliderView = web(view('slider-view',
   class props {
-    ownerId!: string
     id!: string
     slider!: Slider
 
-    onValue!: (value: number, ownerId: string, sliderId: string) => void
-    onWheel!: (e: WheelEvent, ownerId: string, sliderId: string) => number
-
     running!: boolean
-    vertical!: boolean
+    vertical?= false
     showBg!: boolean
+
+    player?: Player
+    vol?: Dep<number>
 
     children?: JSX.Element
   },
 
-  class local extends Slider {
+  class local {
     host = element
     rect?: Rect
     fill?: HTMLDivElement
@@ -37,38 +37,10 @@ export const SliderView = web(view('slider',
   },
 
   function actions({ $, fn, fns }) {
-    const yDims = ['height', 'minHeight', 'maxHeight'] as const
-    const xDims = ['width', 'minWidth', 'maxWidth'] as const
-
-    let currentNormal = -1
-
     let handling = false
 
     return fns(new class actions {
-      updateNormal = fn(({ fill, vertical }) => (newNormal) => {
-        if (currentNormal === newNormal) return
-        currentNormal = newNormal
-
-        const [[dim, dimMin, dimMax], [opp, oppMin, oppMax]] = vertical
-          ? [xDims, yDims]
-          : [yDims, xDims]
-
-        fill.style[dim] =
-          fill.style[dimMin] =
-          fill.style[dimMax] =
-          newNormal * 100 + '%'
-
-        fill.style[opp] =
-          fill.style[oppMin] =
-          fill.style[oppMax] = '100%'
-      })
-
-      // setSliderNormal =
-      //   fn(({ ownerId, id }) =>
-      //     (value: number) =>
-      //       $.machine.methods.setSliderNormal(id, value))
-
-      handleDown = fn(({ host, ownerId, id, onValue, vertical }) => (e: PointerEvent) => {
+      handleDown = fn(({ host, id, vertical }) => (e: PointerEvent) => {
         if (handling || !(e.buttons & 1)) return
 
         if (e.type === 'pointerdown') {
@@ -98,7 +70,7 @@ export const SliderView = web(view('slider',
           return new Point(e.pageX, e.pageY - scrollTop)
         }
 
-        const ownRect = new Rect(host.getBoundingClientRect())
+        const ownRect = $.rect!
 
         const moveTo = (pos: Point) => {
           let newSize = (pos[n] - ownRect[n])
@@ -106,8 +78,11 @@ export const SliderView = web(view('slider',
 
           const size = Math.max(0, Math.min(ownRect[dim], newSize))
           const normal = size / ownRect[dim]
-          this.updateNormal(normal)
-          onValue(normal, ownerId, id)
+          if ($.player) {
+            $.player.$.onSliderNormal(id, normal)
+          } else {
+            $.slider.$.normal = normal
+          }
         }
 
         moveTo(getPointerPos(e))
@@ -127,17 +102,24 @@ export const SliderView = web(view('slider',
         })
       })
 
-      handleWheel =
-        fn(({ ownerId, id, onWheel }) =>
-          (e: WheelEvent) => {
-            onWheel(e, ownerId, id)
-            // update normal here?
-          })
+      handleWheel = (e: WheelEvent) => {
+        const normal = $.slider.$.onWheel(e)
+        if ($.player) {
+          $.player.$.onSliderNormal($.id, normal)
+        } else {
+          $.slider.$.normal = normal
+        }
+      }
 
-      resize = fn(({ host }) => queue.raf(() => {
+      resize = fn(({ host }): ResizeObserverCallback => queue.raf((entries) => {
         $.rect = new Rect(host.getBoundingClientRect()).round()
+        const aspect = $.rect.size.x / $.rect.size.y
+        if (aspect < 0.5) {
+          $.vertical = false
+        } else {
+          $.vertical = true
+        }
       }))
-
     })
   },
 
@@ -279,35 +261,45 @@ export const SliderView = web(view('slider',
       host.toggleAttribute('running', running)
     })
 
-    fx(({ slider }) => {
-      Object.assign($, slider)
-    })
+    fx(({ slider, vol }) =>
+      slider.fx(({ normal }) => {
+        vol.value = normal
+      })
+    )
 
-    fx.raf(function onValueChange({ fill: _, value, min, max }) {
-      const normal = clamp(0, 1, (value - min) / (max - min))
-      $.updateNormal(normal)
-    })
+    fx(({ slider, vertical, fill }) =>
+      slider.fx.raf(({ normal }) => {
+        const [[dim, dimMin, dimMax], [opp, oppMin, oppMax]] = vertical
+          ? [xDims, yDims]
+          : [yDims, xDims]
 
-    fx(function updateColorCss({ hue, running }) {
+        fill.style[dim] =
+          fill.style[dimMin] =
+          fill.style[dimMax] = `${normal * 100}%`
 
-      $.colorCss = /*css*/`
+        fill.style[opp] =
+          fill.style[oppMin] =
+          fill.style[oppMax] = '100%'
+      })
+    )
 
-      :host {
-        --hue: ${(Math.round(hue / 25) * 25) % 360};
-        --sat: ${running ? '85%' : '80%'};
-        --lum: ${running ? '40%' : '30%'};
-      }
-      `
-    })
+    fx(({ slider }) =>
+      slider.fx(({ hue }) =>
+        fx.raf(({ running }) => {
+          $.colorCss = /*css*/`
+          :host {
+            --hue: ${(Math.round(hue / 25) * 25) % 360};
+            --sat: ${running ? '85%' : '80%'};
+            --lum: ${running ? '40%' : '30%'};
+          }
+          `
+        })
+      )
+    )
 
     fx(function listenHostResize({ host }) {
       return observe.resize.initial(host, $.resize)
     })
-
-
-    // fx(function registerSliderUpdateNormal({ id, scene }) {
-    //   scene.updateNormalMap.set($.machine.id, id, $.updateNormal)
-    // })
 
     fx(function listenPointerEvents({ host }) {
       return chain(
@@ -317,12 +309,12 @@ export const SliderView = web(view('slider',
       )
     })
 
-    fx(function drawSlider({ name, colorCss }) {
+    fx(function drawSlider({ slider, colorCss }) {
       $.view = <>
         <style>{colorCss}</style>
         <div part="hoverable"></div>
         <div part="fill" ref={refs.fill}>
-          <span part="name">{name}</span>
+          <span part="name">{slider.$.name}</span>
         </div>
       </>
     })

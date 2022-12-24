@@ -1,6 +1,6 @@
 /** @jsxImportSource minimal-view */
 
-import { Dep, element, view, web } from 'minimal-view'
+import { Dep, effect, element, on, view, web } from 'minimal-view'
 
 import { Canvy, CanvyElement, EditorScene, Lens, Marker } from 'canvy'
 
@@ -10,17 +10,18 @@ export interface EditorDetailData {
 
 export const Code = web(view('code',
   class props {
+    name!: string
     font!: string
     fontSize!: number
     scene!: EditorScene
     value!: Dep<string>
     editor!: Dep<CanvyElement>
     singleComment!: string
-    markers!: Marker[]
-    lenses!: Lens[]
+    markers!: Dep<Marker[]>
+    lenses!: Dep<Lens[]>
     onWheel?: (ev: WheelEvent) => void = () => { }
-    onEnterMarker?: (ev: { detail: { marker: Marker, markerIndex: number } }) => void = () => { }
-    onLeaveMarker?: (ev: { detail: { marker: Marker, markerIndex: number } }) => void = () => { }
+    onMarkerEnter?: (ev: { detail: { marker: Marker, markerIndex: number } }) => void = () => { }
+    onMarkerLeave?: (ev: { detail: { marker: Marker, markerIndex: number } }) => void = () => { }
   },
 
   class local {
@@ -33,6 +34,12 @@ export const Code = web(view('code',
     return fns(new class actions {
       onCodeChange =
         fn(({ value }) => function onCodeChange(this: CanvyElement) {
+          if (this.editor.hasFocus) {
+            // fixes a bug where we lose focus sometimes
+            requestAnimationFrame(() => {
+              this.focus()
+            })
+          }
           if (this.ready && this.value != null) {
             value.value = this.value
           }
@@ -65,25 +72,41 @@ export const Code = web(view('code',
       })
     })
 
-    fx(function updateMarkers({ canvy, markers }) {
-      canvy.setMarkers(markers)
+    fx(({ host, canvy }) => {
+      host.tabIndex = 0
+      return on(host, 'focus')(() => {
+        canvy.focus()
+      })
     })
 
-    fx(function updateLenses({ canvy, lenses }) {
-      canvy.setLenses(lenses)
-    })
+    fx(({ name, canvy }) => canvy.$.effect(({ fontSize }) => {
+      localStorage[`editor-fontSize-${name}`] = `${fontSize}`
+    }))
 
-    fx(function drawCode({ value, font, fontSize, scene, onEnterMarker, onLeaveMarker }) {
+    fx(({ canvy, markers }) =>
+      effect({ markers }, ({ markers }) => {
+        canvy.setMarkers(markers)
+      })
+    )
+
+    fx(({ canvy, lenses }) =>
+      effect({ lenses }, ({ lenses }) => {
+        canvy.setLenses(lenses)
+      })
+    )
+
+    fx(function drawCode({ name, value, font, fontSize, scene, onMarkerEnter, onMarkerLeave }) {
       $.view = <Canvy
         key="text"
         ref={refs.waitingEditor}
         part="canvy"
         scene={scene}
         font={font}
-        fontSize={fontSize}
+        fontSize={+localStorage[`editor-fontSize-${name}`] || fontSize}
+        // padding={0}
         onevent={$.onEvent}
-        onentermarker={onEnterMarker}
-        onleavemarker={onLeaveMarker}
+        onentermarker={onMarkerEnter}
+        onleavemarker={onMarkerLeave}
         onchange={$.onCodeChange}
         onedit={$.onCodeChange}
         initialValue={value.value as string}

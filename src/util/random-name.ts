@@ -23,5 +23,6 @@ export const emoji = [
   [0x1f680, 0x1f6c5],
 ] as readonly [number, number][]
 
-export const randomName = (pages = ancient) =>
-  unicode(...pages[Math.random() * pages.length | 0])
+export function randomName(pages: [number, number][] | readonly [number, number][] = [...ancient, ...emoji]) {
+  return unicode(...pages[Math.random() * pages.length | 0])
+}

@@ -67,12 +67,14 @@ function createWorker({ sampleRate, canvas, width, height, pixelRatio, floats }:
 
   const draw = async () => {
     if (!c || !floats) return
-    if (floats[1] === 0 && floats[10] === 0 && floats[20] === 0) return
+    // if (floats[1] === 0 && floats[10] === 0 && floats[20] === 0) return
 
     c.clearRect(0, 0, width, height)
+
     const stft_magnitudes = fftAnalyser.processAudio(floats)
 
-    const frequencies = [50, 100, 200, 400, 800, 1600, 3200, 6400] // blue..green..red
+    // blue..green..red
+    const frequencies = [50, 100, 200, 400, 800, 1600, 3200, 6400]
 
     let max_value = 0
     let min_value = 10000
@@ -130,22 +132,6 @@ function createWorker({ sampleRate, canvas, width, height, pixelRatio, floats }:
 
     for (x = 0; x < width; x++) {
       h = floats[x * coeff | 0] * 0.5 + 0.5
-
-      // rgb[0] = rgb[1] = rgb[2] = 1
-
-      // rgb[2] = (freqs[0] + freqs[1] + freqs[2] + freqs[3] + freqs[4] + freqs[5]) / 6 // 256
-      // rgb[1] = (freqs[6] + freqs[7] + freqs[8] + freqs[9] + freqs[10]) / 5 // 256
-      // rgb[0] = (freqs[11] + freqs[12] + freqs[13] + freqs[14] + freqs[15]) / 5 // 256
-
-      // hsl = rgbToHsl([rgb[0], rgb[1] ** 0.8, rgb[2]])
-      // rgb = hslToRgb([hsl[0], hsl[1] ** 0.1, hsl[2] ** 1])
-
-      // c.strokeStyle = `rgb(${rgb[0] ** 0.2 * 255},${rgb[1] ** 0.8 * 255},${rgb[2] ** 1.15 * 255})`
-      // c.strokeStyle = '#fff'
-
-      // const normal = 1 - h * 2
-      // const sign = Math.sign(normal)
-      // h = ((Math.abs(normal) ** 0.38) * sign * 0.5 + 0.5)
       drawFn()
     }
   }
@@ -170,7 +156,7 @@ let setupData: WaveplotSetup
 const workers = new Map<string, WaveplotWorkerInstance>()
 
 export interface WaveplotWorker {
-  draw(id: string): Promise<void>;
+  draw(id: string): Promise<false>;
   setup(data: WaveplotSetup): Promise<void>
   create(id: string, canvas: OffscreenCanvas, floats: Float32Array): Promise<void>
   copy(a: string, b: string): Promise<void>
@@ -180,6 +166,9 @@ export const WaveplotWorker: WaveplotWorker = {
   async draw(id: string) {
     const worker = workers.get(id)!
     await worker.draw()
+    // this is part of a tribool (false | void | Error)
+    // false because we want the error only to be truthy (if (error) ...)
+    return false
   },
 
   async setup(data: WaveplotSetup) {
@@ -197,6 +186,8 @@ export const WaveplotWorker: WaveplotWorker = {
   async copy(a, b) {
     const wa = workers.get(a)!
     const wb = workers.get(b)!
+    if (!wa || !wb) return
+
     wb.context.clearRect(0, 0, wb.canvas.width, wb.canvas.height)
     wb.context.drawImage(wa.canvas, 0, 0)
 

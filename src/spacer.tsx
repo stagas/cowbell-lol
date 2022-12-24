@@ -6,8 +6,15 @@ import { chain, element, on, queue, view, web } from 'minimal-view'
 // import { AppContext } from './app'
 import { Layout } from './layout'
 import { observe } from './util/observe'
+import { spacer } from './util/storage'
 
 const { clamp } = Scalar
+
+// given:   [0, 0.3]
+// becomes: [0, 0.7]
+function reverseCells(cells: number[]) {
+  return [...cells].map((x) => x > 0 ? 1 - x : x)
+}
 
 const dims = (align: 'x' | 'y') =>
   align === 'y'
@@ -19,9 +26,11 @@ export const Spacer = web(view('spacer',
     id!: string
     layout?: HTMLElement
     initial!: number[]
+    reverse?: boolean = false
     snap?= true
     align: 'x' | 'y' = 'x'
     children?: JSX.Element[]
+    shifted?: boolean = false
     setSpacer?: (id: string, sizes: number[]) => void
     minHandlePos?= 0
   },
@@ -51,7 +60,7 @@ export const Spacer = web(view('spacer',
 
           const diffN = posN - oldN
 
-          const shift = !e.shiftKey
+          const shift = +$.shifted! ^ +e.shiftKey
 
           for (const [i, intentN] of intents.entries()) {
             if (i < index) {
@@ -120,7 +129,7 @@ export const Spacer = web(view('spacer',
 
         $.rect = new Rect(layout.getBoundingClientRect()) //.round()
         Object.assign(host.style, {
-          ...$.rect.toStyle(),
+          ...$.rect.toStyleSize(),
           [oppDim]: '100%'
         })
       }))
@@ -143,7 +152,7 @@ export const Spacer = web(view('spacer',
         pointer-events: all;
         position: absolute;
         touch-action: none;
-        z-index: 10;
+        z-index: 999999999;
         ${dim}: 2px;
         padding: ${pad} 4px 0;
         margin-${pos}: -5px;
@@ -162,8 +171,34 @@ export const Spacer = web(view('spacer',
       `
     })
 
-    fx.once(function createCellsAndIntents({ initial }) {
-      $.cells = $.intents = [...initial]
+    fx.once(function createCellsAndIntents({ id, initial, children, reverse }) {
+      let cells = spacer(id, initial)
+
+      if (reverse) cells = reverseCells(cells)
+
+      const length = children.filter(Boolean).length
+      if (initial.length !== length) {
+        initial = Array.from({ length }, (_, i) =>
+          i / length
+        )
+      }
+      $.cells = $.intents = [...cells]
+    })
+
+    fx(({ children, cells }) => {
+      const length = children.filter(Boolean).length
+      if (cells.length !== length) {
+        const cells = Array.from({ length }, (_, i) =>
+          i / length
+        )
+        $.cells = $.intents = cells
+      }
+    })
+
+    fx(({ cells, reverse }, prev) => {
+      if (prev.reverse != null && reverse !== prev.reverse) {
+        $.cells = reverseCells(cells)
+      }
     })
 
     fx(({ host }) => {
@@ -179,7 +214,8 @@ export const Spacer = web(view('spacer',
       )
     })
 
-    fx(function updateMachineSpacer({ setSpacer, id, intents }) {
+    fx(function updateMachineSpacer({ setSpacer, id, intents, reverse }) {
+      if (reverse) intents = reverseCells(intents)
       setSpacer(id, intents)
     })
 
@@ -188,7 +224,12 @@ export const Spacer = web(view('spacer',
       $.handles = cells.slice(1).map((p, i) =>
         <div
           part="handle"
-          style={{ [pos]: `min(calc(100% - 2.5px), max(2.5px, ${p * 100}%))` }}
+          style={{
+            [pos]: `min(calc(100% - 2.5px), max(2.5px, ${p * 100}%))`,
+            zIndex:
+              999999999
+              + (p < 0.01 ? i : p > 0.99 ? (cells.length - i) : 0)
+          }}
           onpointerdown={function (this: HTMLDivElement, e) {
             e.preventDefault()
             $.handleDown(this, e, i + 1)
@@ -197,12 +238,26 @@ export const Spacer = web(view('spacer',
       )
     })
 
-    fx(function drawSpacer({ layout, handles, children, cells, align }) {
+    fx(function drawSpacer({ layout, handles, reverse, children, cells, align }) {
+      children = (Array.isArray(children) ? children : [children])
+
+      const keys = Array.from({ length: children.length }, (_, i) => `${i + 1}`)
+
+      if (reverse) {
+        children = [...children].reverse()
+        keys.reverse()
+      }
+
       $.view = [
-        (Array.isArray(children) ? children : [children]).map((child, i) => {
+        children.map((child, i) => {
           const after = (i < children.length - 1 ? cells[i + 1] : 1)
           const size = after - cells[i]
-          return <Layout layout={layout} size={size} align={align}>{child}</Layout>
+          return <Layout
+            key={keys[i]}
+            layout={layout}
+            size={size}
+            align={align}
+          >{child}</Layout>
         }),
         handles
       ]
