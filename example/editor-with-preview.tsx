@@ -343,7 +343,7 @@ const TabbedEditor = web('tabbed-editor', view(
                 size: cause.token?.length ?? 1,
                 kind: 'error',
                 color: '#a21',
-                hoverColor: '#f42',
+                hoverColor: theme['stateErrorHover'],
                 message: cause.message,
               },
             ]

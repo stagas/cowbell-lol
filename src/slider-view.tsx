@@ -3,6 +3,7 @@
 import { Point, Rect, Scalar } from 'geometrik'
 import { chain, element, on, queue, view, web } from 'minimal-view'
 import { Slider } from './slider'
+import { theme } from './theme'
 
 import { observe } from './util/observe'
 
@@ -181,9 +182,9 @@ export const SliderView = web(view('slider',
         text-orientation: upright;
         `}
         direction: ltr;
-        font-family: monospace;
+        font-family: ${theme['fontFamily']};
         font-weight: bold;
-        text-shadow: 1px 1px #000;
+        text-shadow: 1px 1px ${theme['primaryBgColor']};
       }
 
       &:before {
@@ -234,7 +235,7 @@ export const SliderView = web(view('slider',
         ${pos}: 0;
         ${oppPos}: auto;
         &:before {
-          box-shadow: 5px 5px 0 0px #000;
+          box-shadow: 5px 5px 0 0px ${theme['primaryBgColor']};
           content: ' ';
           position: absolute;
           ${line}: calc(50% - max(${small}, 12px) / 2);
