@@ -68,7 +68,6 @@ export const NumberInput = web(view('number-input',
       }
       [part=value] {
         display: inline-flex;
-        height: 100%;
         font-size: ${theme['fontSize']};
         flex-flow: ${align === 'y' ? 'column' : 'row'} nowrap;
         align-items: center;

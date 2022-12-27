@@ -22,6 +22,7 @@ import { getErrorInputLine, getErrorToken, getTitle } from './util/parse'
 import { ObjectPool } from './util/pool'
 import { createWaveplot, Waveplot } from './waveplot'
 import { MenuBar } from './menu-bar'
+import { SettingsPanel } from './settings-pannel'
 import { theme } from './theme';
 
 
@@ -382,6 +383,8 @@ export const App = web(view('app',
     hint: JSX.Element = false
 
     isBackgroundVisible: boolean = false
+    isHelperOn: boolean = false
+    isSettingsPanelOpen: boolean = false
 
     track?: Track
     trackActiveId = 'a'
@@ -481,8 +484,11 @@ export const App = web(view('app',
       )
     )
 
-    fx(({ audio, track, tracks, tracksLive, sound, sounds, pattern, patterns, editorScene, isBackgroundVisible }) => {
+    fx(({ audio, track, tracks, tracksLive, sound, sounds, pattern, patterns, editorScene, isBackgroundVisible, isSettingsPanelOpen }) => {
       $.view = <>
+        {isSettingsPanelOpen &&
+          <SettingsPanel app={$}></SettingsPanel>
+        }
         <Hint message={deps.hint} />
         <MenuBar app={$} onSave={() => { console.log('saving...') }} onShare={() => { console.log('sharing...') }} ></MenuBar>
         <Spacer id="app-spacer" align="y" initial={[0, 0.3]}>
