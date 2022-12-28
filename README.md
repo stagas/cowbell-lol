@@ -1,6 +1,6 @@
 # cowbell.lol
 
-Live: https://play.cowbell.lol/agafvs
+Live: https://play.cowbell.lol/v2/fooe78
 
 To run locally:
 
