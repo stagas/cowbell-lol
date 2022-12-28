@@ -108,7 +108,7 @@ function createWorker({ sampleRate, canvas, width, height, pixelRatio, floats }:
           ]
 
           const [h, s, l] = rgbToHsl(rgb as any) as [number, number, number]
-          return hslToRgb([h, s ** 0.2, l ** 0.5] as any).map(x => x * 255)
+          return hslToRgb([h, s ** 0.03, l ** 0.38] as any).map(x => x * 255)
         })()
         }`,
       ]

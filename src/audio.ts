@@ -24,6 +24,7 @@ export const Audio = reactive('audio',
 
     schedulerNode?: SchedulerNode
     gainNode?: GainNode
+    keysNode?: SchedulerEventGroupNode
 
     gainNodePool?: ObjectPool<GainNode>
     monoNodePool?: ObjectPool<MonoNode>
@@ -150,6 +151,8 @@ export const Audio = reactive('audio',
     })
 
     fx(({ audioContext, schedulerNode, fftSize }) => {
+      $.keysNode = new SchedulerEventGroupNode(schedulerNode)
+
       $.gainNode = new GainNode(audioContext, { channelCount: 1, gain: $.vol })
       $.gainNode.connect(audioContext.destination)
 

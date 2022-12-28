@@ -1,5 +1,11 @@
 import { Reactive, ReactiveFactory } from 'minimal-view'
 
+export function replaceAtIndex<T>(items: T[], index: number, item: T): T[] {
+  items = [...items]
+  items[index] = item
+  return items
+}
+
 export function add<T extends Reactive>(
   items: T[],
   item: T,
@@ -49,7 +55,7 @@ export function findEqual<T extends Reactive<
   string,
   unknown,
   {
-    id: string
+    id?: string
     equals: (props: Partial<T['$']>) => boolean
   }
 >

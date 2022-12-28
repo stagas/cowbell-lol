@@ -26,6 +26,7 @@ export const EditorBuffer = reactive('editor-buffer',
     isDraft?: boolean = true
     isNew?: boolean = true
     isIntent?: boolean = false
+    isImport?: boolean = false
     didPaint?: boolean = false
     fallbackTitle?: string = randomName()
 
@@ -52,6 +53,8 @@ export const EditorBuffer = reactive('editor-buffer',
     midiEvents?: WebMidi.MIDIMessageEvent[]
     numberOfBars?: number
 
+    sandboxCode?: string
+
     error?: Error | false = false
   },
 
@@ -75,7 +78,8 @@ export const EditorBuffer = reactive('editor-buffer',
         if (noDraw) return
 
         if (!$.didPaint && $.parentId) {
-          waveplot.copy($.parentId, id)
+          waveplot.copy($.parentId!, id)
+          this.copyCanvases()
         }
 
         const error = await preview.draw($.self as any)
@@ -137,9 +141,6 @@ export const EditorBuffer = reactive('editor-buffer',
         if (!noDraw && !$.canvas) {
           const { canvas } = await waveplot.create(id)
           $.canvas = canvas
-          return fx.once(({ canvas: _ }) => {
-            $.draw()
-          })
         }
       })
 
@@ -165,7 +166,7 @@ export const EditorBuffer = reactive('editor-buffer',
         }
       })
 
-      fx(({ value }) => {
+      fx.raf(({ canvas: _, value }) => {
         $.draw()
       })
     }
@@ -181,8 +182,9 @@ export const EditorBuffer = reactive('editor-buffer',
           $.numberOfBars = result.numberOfBars
           $.error = false
         } else {
-          const { error } = result
+          const { error, sandboxCode } = result
           console.warn(error)
+          $.sandboxCode = sandboxCode || ''
           $.error = error
         }
       })

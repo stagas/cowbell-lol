@@ -1,15 +1,19 @@
-import { pick } from 'everyday-utils'
+import { cheapRandomId, pick } from 'everyday-utils'
 import { Scalar } from 'geometrik'
-import { reactive } from 'minimal-view'
+import { queue, reactive } from 'minimal-view'
 import { app } from './app'
 import { Audio, AudioState } from './audio'
+import { PlayerView } from './player-view'
 import { markerForSlider, fixed } from './slider'
 import { add, del, derive, findEqual, get } from './util/list'
+import { spacer } from './util/storage'
 
 const { clamp } = Scalar
 
 export const Player = reactive('player',
   class props {
+    id?: string = cheapRandomId()
+
     audio!: Audio
     state?: AudioState = 'init'
 
@@ -18,8 +22,12 @@ export const Player = reactive('player',
     patterns!: string[]
 
     vol: number = 0.5
+
+    view?: PlayerView
   },
-  class local { },
+  class local {
+    preview = false
+  },
   function actions({ $, fns, fn }) {
     return fns(new class actions {
       derive = () =>
@@ -56,6 +64,14 @@ export const Player = reactive('player',
         }
       }
 
+      startPreview = () => {
+        $.preview = true
+      }
+
+      stopPreview = queue.debounce(3000)(() => {
+        $.preview = false
+      })
+
       onBufferValue = (newBufferValue: string, kind: 'sound' | 'pattern') => {
         let bufferId
 
@@ -90,6 +106,7 @@ export const Player = reactive('player',
           const newKinds = add(kinds, newBuffer, index + 1)
 
           if (kind === 'sound') {
+            spacer.set(newBuffer.$.id!, spacer.get(bufferId, [0, 0.35]))
             app.sounds = newKinds as any
             $.sound = newBuffer.$.id!
           } else {

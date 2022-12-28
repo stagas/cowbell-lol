@@ -2,8 +2,6 @@
 
 import { Point, Rect, Scalar } from 'geometrik'
 import { chain, element, on, queue, view, web } from 'minimal-view'
-
-// import { AppContext } from './app'
 import { Layout } from './layout'
 import { observe } from './util/observe'
 import { spacer } from './util/storage'
@@ -31,7 +29,6 @@ export const Spacer = web(view('spacer',
     align: 'x' | 'y' = 'x'
     children?: JSX.Element[]
     shifted?: boolean = false
-    setSpacer?: (id: string, sizes: number[]) => void
     minHandlePos?= 0
   },
 
@@ -172,7 +169,7 @@ export const Spacer = web(view('spacer',
     })
 
     fx.once(function createCellsAndIntents({ id, initial, children, reverse }) {
-      let cells = spacer(id, initial)
+      let cells = spacer.get(id, initial)
 
       if (reverse) cells = reverseCells(cells)
 
@@ -214,9 +211,9 @@ export const Spacer = web(view('spacer',
       )
     })
 
-    fx(function updateMachineSpacer({ setSpacer, id, intents, reverse }) {
+    fx(function updateMachineSpacer({ id, intents, reverse }) {
       if (reverse) intents = reverseCells(intents)
-      setSpacer(id, intents)
+      spacer.set(id, intents)
     })
 
     fx(function drawHandles({ cells, align }) {

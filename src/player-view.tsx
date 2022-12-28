@@ -1,6 +1,5 @@
 /** @jsxImportSource minimal-view */
 
-import { cheapRandomId } from 'everyday-utils'
 import { chain, view, web } from 'minimal-view'
 import { MonoNode } from 'mono-worklet'
 import { SchedulerEventGroupNode } from 'scheduler-node'
@@ -12,9 +11,20 @@ import { Player } from './player'
 import { getCodeWithoutArgs } from './util/args'
 import { get } from './util/list'
 
+class MIDIMessageEvent extends Event {
+  data!: Uint8Array
+  receivedTime!: number
+  constructor(kind: string, payload: { data: Uint8Array }) {
+    super(kind)
+    this.data = payload.data
+  }
+}
+
+export type PlayerView = typeof PlayerView.Context
+
 export const PlayerView = web(view('player-view',
   class props {
-    id?= cheapRandomId()
+    id!: string
     audio!: Audio
     player!: Player
   },
@@ -50,10 +60,12 @@ export const PlayerView = web(view('player-view',
         fn(({ analyserNode, bytes, freqs, workerBytes, workerFreqs }) => {
 
           tick = () => {
-            analyserNode.getByteTimeDomainData(bytes)
-            analyserNode.getByteFrequencyData(freqs)
-            workerBytes.set(bytes)
-            workerFreqs.set(freqs)
+            if (app.player === $.player) {
+              analyserNode.getByteTimeDomainData(bytes)
+              analyserNode.getByteFrequencyData(freqs)
+              workerBytes.set(bytes)
+              workerFreqs.set(freqs)
+            }
             animSchedule(tick)
           }
 
@@ -69,6 +81,8 @@ export const PlayerView = web(view('player-view',
           const events = patterns.map(
             (pattern) => [pattern.$.midiEvents!, pattern.$.numberOfBars!] as const
           ).map(([midiEvents, numberOfBars], x) => {
+            if (!midiEvents) return []
+
             const evs = midiEvents.map((midiEvent) => {
               const newEvent = new MIDIMessageEvent('message', { data: midiEvent.data })
               newEvent.receivedTime = midiEvent.receivedTime + bars * 1000
@@ -131,9 +145,8 @@ export const PlayerView = web(view('player-view',
   },
 
   function effects({ $, fx }) {
-    fx(({ id }) => {
-      return () => {
-      }
+    fx(({ player }) => {
+      player.$.view = $
     })
 
     fx(({ player }) =>
@@ -163,13 +176,18 @@ export const PlayerView = web(view('player-view',
           audio.$.connectedPlayers.delete(id)
           $.analyseStop()
           audio.$.setParam(gainNode.gain, 0)
-          monoNodePool.release(monoNode)
+
+          // TODO: disabled temporarily until we resolve memory overlap
+          // issues in monolang
+          // monoNodePool.release(monoNode)
+
           gainNodePool.release(gainNode)
           groupNodePool.release(groupNode)
           analyserNodePool.release(analyserNode)
           setTimeout(() => {
             if (!audio.$.connectedPlayers.has(id)) {
-              monoNode.suspend()
+              // monoNode.suspend()
+              monoNode.disable()
               disconnect(monoNode, gainNode)
               disconnect(gainNode, audioGainNode)
               disconnect(groupNode, monoNode)
@@ -189,30 +207,50 @@ export const PlayerView = web(view('player-view',
       $.workerFreqs = new Uint8Array(new SharedArrayBuffer(freqs.byteLength))
     })
 
-    fx(({ state, audio, monoNode, gainNode, groupNode, analyserNode }) => {
-      if (state === 'running' || state === 'preview') {
-        $.analyseStart()
-        audio.$.setParam(gainNode.gain, $.player.$.vol!)
-        if (state === 'running') {
-          // audio.$.start()
-          groupNode.connect(monoNode)
-        }
-
-        monoNode.resume()
-        monoNode.connect(gainNode)
-      } else {
-        $.analyseStop()
-
-        audio.$.setParam(gainNode.gain, 0)
-        audio.$.disconnect(groupNode, monoNode)
-        setTimeout(() => {
-          if ($.state !== 'running' && $.state !== 'preview') {
-            audio.$.disconnect(monoNode, gainNode)
-            audio.$.disconnect(monoNode, analyserNode)
+    fx(({ state, audio, player, monoNode, gainNode, groupNode, analyserNode: _ }) =>
+      player.fx(({ preview }) => {
+        if (state === 'running' || preview) {
+          audio.$.setParam(gainNode.gain, $.player.$.vol!)
+          if (state === 'running') {
+            // audio.$.start()
+            groupNode.connect(monoNode)
           }
-        }, 50)
-      }
-    })
+          monoNode.resume()
+          monoNode.connect(gainNode)
+        } else {
+          audio.$.setParam(gainNode.gain, 0)
+          audio.$.disconnect(groupNode, monoNode)
+          setTimeout(() => {
+            if ($.state !== 'running' && !$.player.$.preview) {
+              audio.$.disconnect(monoNode, gainNode)
+            }
+          }, 50)
+        }
+      })
+    )
+
+    fx(({ audio, monoNode, analyserNode }) =>
+      audio.fx(({ keysNode }) =>
+        fx(({ state }) =>
+          app.self.fx(({ player }) =>
+            player.fx(({ preview }) => {
+              if ((preview || state === 'running') && player === $.player) {
+                $.analyseStart()
+                monoNode.connect(analyserNode)
+                keysNode.connect(monoNode)
+
+                return () => {
+                  $.analyseStop()
+                  player.$.preview = false
+                  audio.$.disconnect(monoNode, analyserNode)
+                  audio.$.disconnect(keysNode, monoNode)
+                }
+              }
+            })
+          )
+        )
+      )
+    )
 
     fx(({ audio, gainNode, player }) =>
       player.fx(({ vol }) => {

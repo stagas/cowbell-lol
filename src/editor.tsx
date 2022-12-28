@@ -206,7 +206,11 @@ export const Editor = web(view('editor',
                 } else {
                   const message = error.message
                   const key = message.split(':')[0]
-                  const line = Math.max(0, getErrorInputLine(error) - 155)
+
+                  const sandboxCode = buffer.$.sandboxCode || ''
+                  const lineOffset = sandboxCode.slice(0, sandboxCode.indexOf('detectLinePos')).split('\n').length + 4
+                  const line = Math.max(0, getErrorInputLine(error) - lineOffset)
+
                   let token = getErrorToken(error)
 
                   const lines = value.split('\n')

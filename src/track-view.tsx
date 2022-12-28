@@ -1,8 +1,8 @@
 /** @jsxImportSource minimal-view */
 
 import { cheapRandomId, checksum } from 'everyday-utils'
-import { web, view, element, event, chain } from 'minimal-view'
-import { app } from './app'
+import { web, view, element, event, chain, on } from 'minimal-view'
+import { app, focusMap } from './app'
 import { Audio } from './audio'
 import { EditorBuffer } from './editor-buffer'
 import { Midi } from './midi'
@@ -12,7 +12,8 @@ import { Spacer } from './spacer'
 import { bgForHue } from './util/bg-for-hue'
 import { get } from './util/list'
 
-export type TrackViewClickHandler = (id: string, meta: any, byClick: boolean) => void
+export type TrackViewHandler = (id: string, meta: any, byClick?: boolean) => void
+
 export const TrackView = web(view('track-view',
   class props {
     id?: string = cheapRandomId()
@@ -25,6 +26,7 @@ export const TrackView = web(view('track-view',
     autoscroll?: boolean = false
     showLabel?: boolean = true
     leftAlignLabel?: boolean = false
+    canFocus?: boolean = false
 
     player?: Player | false = false
     sound?: EditorBuffer | false
@@ -34,12 +36,13 @@ export const TrackView = web(view('track-view',
 
     getTime?: () => number
     clickMeta?: any
-    onClick?: TrackViewClickHandler
-    onRightClick?: TrackViewClickHandler
-    onDblClick?: TrackViewClickHandler
-    onCtrlShiftClick?: TrackViewClickHandler
-    onCtrlClick?: TrackViewClickHandler
-    onAltClick?: TrackViewClickHandler
+    onClick?: TrackViewHandler
+    onRightClick?: TrackViewHandler
+    onDblClick?: TrackViewHandler
+    onCtrlShiftClick?: TrackViewHandler
+    onCtrlClick?: TrackViewHandler
+    onAltClick?: TrackViewHandler | false
+    onRearrange?: TrackViewHandler
   },
 
   class local {
@@ -58,10 +61,10 @@ export const TrackView = web(view('track-view',
 
   function actions({ $, fns, fn }) {
     return fns(new class actions {
-      handleClick = fn(({ clickMeta, onClick }) => (e: PointerEvent) => {
+      handleClick = fn(({ host, clickMeta, onClick }) => (e: PointerEvent) => {
         e.preventDefault()
         e.stopPropagation()
-        let fn: TrackViewClickHandler | void
+        let fn: TrackViewHandler | false | void
         if ((e.ctrlKey || e.metaKey) && e.shiftKey) {
           fn = $.onCtrlShiftClick
         } else if (e.ctrlKey || e.metaKey) {
@@ -73,7 +76,14 @@ export const TrackView = web(view('track-view',
         } else {
           fn = onClick
         }
-        fn?.(clickMeta.id, clickMeta, true)
+        if (fn) fn(clickMeta.id, clickMeta, true)
+        host.focus()
+      })
+
+      handleRearrange = fn(({ clickMeta, onRearrange }) => (e: KeyboardEvent, dir: 1 | -1) => {
+        e.preventDefault()
+        e.stopPropagation()
+        onRearrange(clickMeta.id, { ...clickMeta, dir })
       })
 
       handleDblClick = fn(({ clickMeta, onDblClick }) => (e: MouseEvent) => {
@@ -95,14 +105,17 @@ export const TrackView = web(view('track-view',
         align-items: center;
         justify-content: center;
         border-bottom: 1px solid #333;
+        outline: none;
+        outline-offset: -8px;
       }
 
+      &(:focus),
       &(:hover) {
-        box-shadow: inset 0 0 0 8px #fff2;
+        outline: 8px solid #fff2;
       }
 
       &([active]) {
-        box-shadow: inset 0 0 0 8px #34f;
+        outline: 8px solid #34f;
       }
 
       &([live]) {
@@ -110,7 +123,11 @@ export const TrackView = web(view('track-view',
       }
 
       &([active][error]) {
-        box-shadow: inset 0 0 0 8px #f21;
+        outline: 8px solid #f21;
+      }
+
+      &([active]:focus) {
+        outline-color: #67f;
       }
 
       [part=button] {
@@ -181,6 +198,36 @@ export const TrackView = web(view('track-view',
         }
       }
       `
+    })
+
+    fx(({ host, canFocus, clickMeta }) => {
+      if (canFocus) {
+        host.tabIndex = 0
+
+        const focusLabel = `${clickMeta.kind}${clickMeta.id}`
+        focusMap.set(focusLabel, host)
+
+        return chain(
+          on(host, 'keydown')((e) => {
+            console.log(e.key)
+            if (e.key === 'Enter') {
+              $.handleClick(e as any)
+            }
+            else if (e.altKey && e.key.startsWith('Arrow')) {
+              const dir = e.key.endsWith('Up') ? -1 : +1
+
+              $.handleRearrange(e, dir)
+
+              setTimeout(() => {
+                focusMap.get(focusLabel)?.focus()
+              }, 100)
+            }
+          }),
+          () => {
+            focusMap.delete(focusLabel)
+          }
+        )
+      }
     })
 
     fx.raf(({ host, active }) => {
@@ -352,10 +399,25 @@ export const TrackView = web(view('track-view',
       </div>
     })
 
-    fx(() => {
+    fx(({ host, isDraft, active }) => {
       $.buttonView = ($.onClick || $.onDblClick) &&
         <button
           part="button"
+          // @ts-ignore
+          tabIndex={-1}
+          onfocus={() => {
+            host.focus()
+          }}
+          title={isDraft ? [
+            $.onDblClick && 'Double click to Save.',
+            $.onCtrlShiftClick && (
+              'Ctrl+Shift+Click to Delete.' +
+              (active ? '\n  (cannot delete the active one,\n  you need to select another first).'
+                : '')
+            )
+          ].filter(Boolean).join('\n') : [
+            $.onAltClick && 'Alt+Click to Paste current pattern.',
+          ].filter(Boolean).join('\n')}
           onpointerdown={$.handleClick}
           oncontextmenu={prevent}
           ondblclick={$.handleDblClick}
@@ -377,7 +439,6 @@ export const TrackView = web(view('track-view',
           part="sliders"
           align="x"
           initial={[0, 0.35]}
-          setSpacer={app.setSpacer}
         >
           <div></div>
           <Sliders player={player} sound={sound} />

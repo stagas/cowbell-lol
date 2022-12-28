@@ -21,10 +21,20 @@ let sandboxTimeout: any
   })()
 
 export async function compilePattern(codeValue: string, numberOfBars: number): Promise<
-  { success: false, error: Error }
-  | { success: true, midiEvents: WebMidi.MIDIMessageEvent[], numberOfBars: number }
+  {
+    success: false,
+    error: Error,
+    sandboxCode: string | void,
+  }
+  | {
+    success: true,
+    midiEvents: WebMidi.MIDIMessageEvent[],
+    numberOfBars: number
+  }
 > {
   sandbox = await sandboxPromise
+
+  let sandboxCode: string | void
 
   try {
     const setup = `
@@ -57,6 +67,9 @@ export async function compilePattern(codeValue: string, numberOfBars: number): P
       ...x.slice(2)
     ]
   )
+
+  // used to show correct error lenses/markers
+  const detectLinePos = 0;
 `
 
     const events: any[] = []
@@ -196,28 +209,30 @@ export async function compilePattern(codeValue: string, numberOfBars: number): P
       }
     }
 
+    sandboxCode = `
+      let start = 0;
+      let end = ${numberOfBars};
+      const getEuclideanPattern = ${getEuclideanPattern};
+      const on = ${On(0, numberOfBars)};
+      const euc = ${Euclidean(0, numberOfBars)}
+      const delay = ${Delay};
+      const has = () => true;
+      const get = (target, key, receiver) => {
+        if (key === Symbol.unscopables) return undefined;
+        return Reflect.get(target, key, receiver);
+      }
+      // const sandbox = new Proxy({ Math, on }, { has, get });
+      let events = [];
+      let bars = ${numberOfBars};
+      // with (sandbox) {
+        ${setup};
+        ${codeValue};
+      // }
+      return [events, bars];
+    `
+
     const [notes = [], bars = numberOfBars] = await Promise.race([
-      sandbox(`
-    let start = 0;
-    let end = ${numberOfBars};
-    const getEuclideanPattern = ${getEuclideanPattern};
-    const on = ${On(0, numberOfBars)};
-    const euc = ${Euclidean(0, numberOfBars)}
-    const delay = ${Delay};
-    const has = () => true;
-    const get = (target, key, receiver) => {
-      if (key === Symbol.unscopables) return undefined;
-      return Reflect.get(target, key, receiver);
-    }
-    // const sandbox = new Proxy({ Math, on }, { has, get });
-    let events = [];
-    let bars = ${numberOfBars};
-    // with (sandbox) {
-      ${setup};
-      ${codeValue};
-    // }
-    return [events, bars];
-`) as unknown as Promise<readonly [[number, number, number, number][], number]>,
+      sandbox(sandboxCode) as unknown as Promise<readonly [[number, number, number, number][], number]>,
       new Promise<void>((_, reject) => setTimeout(reject, 10000, new Error('timeout'))),
     ]) || []
 
@@ -231,6 +246,7 @@ export async function compilePattern(codeValue: string, numberOfBars: number): P
     return {
       success: false,
       error: error as Error,
+      sandboxCode,
     }
   }
 }

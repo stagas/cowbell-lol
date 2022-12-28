@@ -101,6 +101,11 @@ export const Layout = web(view('layout',
       overflow-x: scroll;
     }
 
+    [part=app-drafts] {
+      display: flex;
+      flex-flow: row nowrap;
+    }
+
     [part=app-players] {
       display: flex;
       flex-flow: row nowrap;
@@ -226,6 +231,9 @@ export const Layout = web(view('layout',
       flex: 1;
       width: 100%;
       height: 100%;
+    }
+
+    [part=app-selected] {
       &:focus-within {
         &::before {
           content: '';
@@ -246,6 +254,12 @@ export const Layout = web(view('layout',
           }
         }
       }
+    }
+
+    [part=app-scroller] {
+      position: absolute;
+      top: 0;
+      left: 0;
     }
     `
 

@@ -1,23 +1,40 @@
-import { Selected } from '../app'
+import type { Selected } from '../app'
 
-export function spacer(name: string, fallback: number[]) {
-  // return fallback
-  const cells: number[] = (localStorage[`spacer-${name}`] ?? '')
-    .split(',')
-    .filter((s: string) => s !== '')
-    .map(parseFloat)
-  if (!cells.length) return fallback
-  return cells
-}
-
-export function selected(fallback: Selected): Selected {
-  try {
-    return JSON.parse(localStorage.selected)
-  } catch {
-    return fallback
+export const spacer = {
+  get: (id: string, fallbackSizes: number[]) => {
+    // return fallback
+    const cells: number[] = (localStorage[`spacer-${id}`] ?? '')
+      .split(',')
+      .filter((s: string) => s !== '')
+      .map(parseFloat)
+    if (!cells.length) return fallbackSizes
+    return cells
+  },
+  set: (id: string, sizes: number[]) => {
+    localStorage[`spacer-${id}`] = sizes
   }
 }
 
-export function setSelected(selected: Selected) {
-  localStorage.selected = JSON.stringify(selected)
+export interface KvStorage<T> {
+  get: (fallback: T) => T
+  set: (data: T) => void
 }
+
+function kvStorage<T>(key: string): KvStorage<T> {
+  return {
+    get: (fallback: T): T => {
+      try {
+        return JSON.parse(localStorage[key])
+      } catch {
+        return fallback
+      }
+    },
+    set: (data: T) => {
+      localStorage[key] = JSON.stringify(data)
+    }
+  }
+}
+
+export const selected = kvStorage<Selected>('selected')
+export const project = kvStorage<string>('project')
+export const projects = kvStorage<string[]>('projects')

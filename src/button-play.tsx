@@ -19,8 +19,6 @@ export const ButtonPlay = web(view('button-play',
     return fns(new class actions {
       handleClick = (e: MouseEvent) => {
         if ((e.ctrlKey || e.metaKey) && e.shiftKey) {
-          e.preventDefault()
-          e.stopPropagation()
           $.onDelete?.()
         } else {
           return $.target.$.toggle()
@@ -32,10 +30,13 @@ export const ButtonPlay = web(view('button-play',
     fx(({ target, running, suspended }) =>
       target.fx(({ state }) => {
         $.view =
-          <ButtonIcon onClick={$.handleClick} color={state === 'running'
-            ? ['#0f0', '#0f0']
-            : ['#444', '#888']
-          }>
+          <ButtonIcon
+            onClick={$.handleClick}
+            onCtrlShiftClick={$.handleClick}
+            color={state === 'running'
+              ? ['#0f0', '#0f0']
+              : ['#444', '#888']
+            }>
             {state === 'running' ? running : suspended}
           </ButtonIcon>
       })
