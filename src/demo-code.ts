@@ -11,7 +11,7 @@ play(nt,x,y)=(
   saw(x/4)*env(nt, 100, 30)*y
 );
 synth(
-  'cut[50f..5k]=50,
+  'cut[50f..5k]=1400,
   'q[.1..0.95]=0.125
 )=(
   x=tanh(
@@ -27,6 +27,35 @@ synth(
 f()=synth();
 `
 
+export const bassCode = String.raw`\\\ bass \\\
+#:2,3;
+write_note(x,y)=(
+  #=(t,note_to_hz(x),y/127);
+  0
+);
+midi_in(op=0,x=0,y=0)=(
+  op==144 && write_note(x,y)
+);
+play(nt,x,y,
+'cut[0.1f..5k]=487.103,
+'q[.1..0.95]=0.868
+)=(
+  e=env(nt, 500, 20)
+  *y;
+  lpf(
+    soft(saw(x/4)*e*3,0.5),
+    cut+12k*e,
+    q
+  )
+);
+synth(
+)=(
+  x=tanh(#::play:sum*2.25);
+  x
+);
+f()=synth();
+`
+
 export const kickCode = String.raw`\\\ kick \\\
 #:2,3;
 write_note(x,y)=(
@@ -36,9 +65,26 @@ write_note(x,y)=(
 midi_in(op=0,x=0,y=0)=(
   op==144 && write_note(x,y)
 );
-play(nt,x,y)=(
-  y*sine(45+300*exp(-(t-nt)*30))
-    *exp(-(t-nt)*10)
+play(nt,x,y,
+  'pitch[1..100f]=43.573,
+  'punch[0..500f]=280.567,
+  'pdecay[1..50f]=36.044,
+  'edecay[1..50f]=36.927,
+  'verbfilt[100f..2k]=180.494,
+  'pre[1f..30f]=13.112
+)=(
+  dt=t-nt;
+  s=y*sine(pitch
+    +punch
+    *exp(-dt*pdecay),
+     dt<0.003)
+    *exp(-dt*edecay);
+  s=tanh(s*pre);
+  s=s+lpf(
+    daverb(s)*.52,
+    verbfilt,
+    .7);
+  s
 );
 f()=#::play:sum
 `
@@ -48,6 +94,19 @@ bars=1
 seed=1
 on(1/4,x=>
   [x,127,127,.05])
+`
+
+export const algo1_4 = String.raw`/// 1/4 ///
+bars=1
+seed=1261
+euc(1/14,8,(x,y,z)=>
+  [x,12+
+  ((t%4)*2)
+  +rand(10)
+  ,z*127+5,.05])
+if (events[events.length-1][0]>0.9) {
+  events.pop()
+}
 `
 
 export const beat1_12 = String.raw`/// 1/4 ///

@@ -20,7 +20,7 @@ let sandboxTimeout: any
     }
   })()
 
-export async function compilePattern(codeValue: string, numberOfBars: number): Promise<
+export async function compilePattern(codeValue: string, numberOfBars: number, turn?: number): Promise<
   {
     success: false,
     error: Error,
@@ -80,7 +80,7 @@ export async function compilePattern(codeValue: string, numberOfBars: number): P
       return (measure: number, fn: (x: number, end: number, index: number) => number[]) => {
         const result = []
         let count = 0
-        end = bars
+        end = start + bars
         let i = 0
         for (let x = start; (x < end) && (++count < maxNotes); x += measure) {
           const events = fn(x, x + measure, i++)
@@ -224,11 +224,12 @@ export async function compilePattern(codeValue: string, numberOfBars: number): P
       // const sandbox = new Proxy({ Math, on }, { has, get });
       let events = [];
       let bars = ${numberOfBars};
+      let t = ${turn};
       // with (sandbox) {
         ${setup};
         ${codeValue};
       // }
-      return [events, bars];
+      return [events, bars, seed];
     `
 
     const [notes = [], bars = numberOfBars] = await Promise.race([
@@ -237,6 +238,11 @@ export async function compilePattern(codeValue: string, numberOfBars: number): P
     ]) || []
 
     const midiEvents = getMidiEventsForNotes(notes)
+    // if (next) {
+    //   midiEvents.forEach((midiEvent) => {
+    //     midiEvent.receivedTime -= bars * 1000
+    //   })
+    // }
     return {
       success: true,
       midiEvents,

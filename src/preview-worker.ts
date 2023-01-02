@@ -25,7 +25,7 @@ class Task {
   }
 
   async compile(code: string) {
-    console.log('compile')
+    // console.log('compile')
 
     this.code = code
 

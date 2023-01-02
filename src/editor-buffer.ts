@@ -1,5 +1,6 @@
 import { CanvyElement } from 'canvy'
 import { cheapRandomId, pick } from 'everyday-utils'
+import { ImmMap } from 'immutable-map-set'
 import { queue, reactive } from 'minimal-view'
 import { Audio } from './audio'
 import { compilePattern } from './pattern'
@@ -50,8 +51,10 @@ export const EditorBuffer = reactive('editor-buffer',
     canvas?: HTMLCanvasElement
     canvases: Set<string> = new Set()
 
-    midiEvents?: WebMidi.MIDIMessageEvent[]
+    midiEvents = new ImmMap<number, WebMidi.MIDIMessageEvent[]>()
     numberOfBars?: number
+    recompute = false
+    turn = 0
 
     sandboxCode?: string
 
@@ -115,6 +118,26 @@ export const EditorBuffer = reactive('editor-buffer',
 
         return code
       }
+
+      compilePattern = async (turn: number) => {
+        const result = await compilePattern(
+          $.value,
+          $.numberOfBars || 1,
+          turn
+        )
+
+        if (result.success) {
+          $.midiEvents = $.midiEvents.set(turn, result.midiEvents)
+          $.numberOfBars = result.numberOfBars
+          $.error = false
+          return result.midiEvents
+        } else {
+          const { error, sandboxCode } = result
+          console.warn(error)
+          $.sandboxCode = sandboxCode || ''
+          $.error = error
+        }
+      }
     })
   },
 
@@ -171,24 +194,9 @@ export const EditorBuffer = reactive('editor-buffer',
       })
     }
     else if ($.kind === 'pattern') {
-      fx(async ({ value }) => {
-        const result = await compilePattern(
-          value,
-          $.numberOfBars || 1
-        )
-
-        if (result.success) {
-          $.midiEvents = result.midiEvents
-          $.numberOfBars = result.numberOfBars
-          $.error = false
-        } else {
-          const { error, sandboxCode } = result
-          console.warn(error)
-          $.sandboxCode = sandboxCode || ''
-          $.error = error
-        }
+      fx.once(({ value }) => {
+        $.compilePattern(0)
       })
-
     }
   }
 )

@@ -8,6 +8,8 @@ export type ClickHandler = (e: MouseEvent, meta?: any) => void
 export const ButtonIcon = web(view('button-icon',
   class props {
     onClick?: ClickHandler | false
+    onTap?: ClickHandler | false
+    onShiftTap?: ClickHandler | false
     onDblClick?: ClickHandler | false = false
     onCtrlShiftClick?: ClickHandler | false | null = false
     clickMeta?: any
@@ -29,6 +31,21 @@ export const ButtonIcon = web(view('button-icon',
           fn = $.onCtrlShiftClick
         } else {
           fn = $.onClick
+        }
+
+        if (fn) fn(e, $.clickMeta)
+      }
+
+      handleDown = (e: PointerEvent) => {
+        e.preventDefault()
+        e.stopPropagation()
+
+        let fn: ClickHandler | false | void
+
+        if (e.shiftKey) {
+          fn = $.onShiftTap
+        } else {
+          fn = $.onTap
         }
 
         if (fn) fn(e, $.clickMeta)
@@ -98,7 +115,11 @@ export const ButtonIcon = web(view('button-icon',
 
     fx(({ children }) => {
       $.view =
-        <button onclick={$.handleClick} ondblclick={$.handleDblClick}>
+        <button
+          onclick={$.handleClick}
+          onpointerdown={$.handleDown}
+          ondblclick={$.handleDblClick}
+        >
           {children}
         </button>
     })

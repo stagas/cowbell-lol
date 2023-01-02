@@ -12,9 +12,11 @@ export const ButtonPlay = web(view('button-play',
     suspended!: JSX.Element
     onDelete?: () => void
   },
+
   class local {
     host = element
   },
+
   function actions({ $, fns, fn }) {
     return fns(new class actions {
       handleClick = (e: MouseEvent) => {
@@ -26,12 +28,13 @@ export const ButtonPlay = web(view('button-play',
       }
     })
   },
+
   function effects({ $, fx }) {
     fx(({ target, running, suspended }) =>
       target.fx(({ state }) => {
         $.view =
           <ButtonIcon
-            onClick={$.handleClick}
+            onTap={$.handleClick}
             onCtrlShiftClick={$.handleClick}
             color={state === 'running'
               ? ['#0f0', '#0f0']
