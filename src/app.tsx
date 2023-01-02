@@ -4,14 +4,14 @@ import { EditorScene } from 'canvy'
 import { cheapRandomId, checksum, filterMap, modWrap, pick, sortCompare } from 'everyday-utils'
 import { Matrix, Point, Rect } from 'geometrik'
 import { IconSvg } from 'icon-svg'
-import { chain, element, on, queue, view, web } from 'minimal-view'
+import { chain, element, on, queue, ValuesOf, view, web } from 'minimal-view'
 import { compressUrlSafe, decompressUrlSafe } from 'urlsafe-lzma'
 import { PianoKeys } from 'x-pianokeys'
 import { Audio } from './audio'
 import { ButtonIcon } from './button-icon'
 import { ButtonPlay } from './button-play'
 import * as db from './db'
-import { beat1_12, beat1_2__1_4, beat1_4, kickCode, snareCode2 } from './demo-code'
+import { algo1_4, bassCode, beat1_12, beat1_2__1_4, beat1_4, kickCode, monoDefaultEditorValue, snareCode2 } from './demo-code'
 import { Editor } from './editor'
 import { EditorBuffer } from './editor-buffer'
 import { Hint } from './hint'
@@ -38,6 +38,12 @@ export const DELIMITERS = {
   SAVE_ID: ',',
   SHORT_ID: ',',
 } as const
+
+export const APP_MODE = {
+  NORMAL: 'normal',
+  SOLO: 'solo'
+} as const
+export type AppMode = ValuesOf<typeof APP_MODE>
 
 function getNewDraftProjectId() {
   return `${randomName(emoji)},${new Date().toISOString()},1`
@@ -114,16 +120,16 @@ export const App = web(view('app',
     players: Player[] = [
       Player({
         id: 'a', vol: 0.5, sound: 'b', pattern: 0, patterns: [
-          'b', 'b', 'b', 'c',
+          'b',
           // 'b', 'b', 'b', 'c',
         ], audio: this.audio
       }),
-      Player({
-        id: 'b', vol: 0.5, sound: 'a', pattern: 0, patterns: [
-          'a', 'a', 'a', 'a',
-          // 'a', 'a', 'a', 'a',
-        ], audio: this.audio
-      }),
+      // Player({
+      //   id: 'b', vol: 0.5, sound: 'a', pattern: 0, patterns: [
+      //     'a', 'a', 'a', 'a',
+      //     // 'a', 'a', 'a', 'a',
+      //   ], audio: this.audio
+      // }),
       // Player({ vol: 0.5, sound: 'b', pattern: 0, patterns: ['b', 'b', 'b', 'b'], audio: this.audio }),
       // Player({ vol: 0.5, sound: 'a', pattern: 0, patterns: ['a', 'a', 'a', 'a'], audio: this.audio }),
       // Player({ vol: 0.5, sound: 'b', pattern: 0, patterns: ['b', 'b', 'b', 'b'], audio: this.audio }),
@@ -135,14 +141,14 @@ export const App = web(view('app',
     player: Player = this.players[this.selected.player]
 
     sounds: EditorBuffer[] = [
-      EditorBuffer({ id: 'b', kind: 'sound', value: kickCode, audio: this.audio, isDraft: false, isNew: false, isIntent: true }),
-      EditorBuffer({ id: 'a', kind: 'sound', value: snareCode2, audio: this.audio, isDraft: false, isNew: false, isIntent: true }),
+      EditorBuffer({ id: 'b', kind: 'sound', value: bassCode, audio: this.audio, isDraft: false, isNew: false, isIntent: true }),
+      // EditorBuffer({ id: 'a', kind: 'sound', value: snareCode2, audio: this.audio, isDraft: false, isNew: false, isIntent: true }),
     ]
 
     patterns: EditorBuffer[] = [
-      EditorBuffer({ id: 'b', kind: 'pattern', value: beat1_4, audio: this.audio, isDraft: false, isNew: false, isIntent: true }),
-      EditorBuffer({ id: 'c', kind: 'pattern', value: beat1_12, audio: this.audio, isDraft: false, isNew: false, isIntent: true }),
-      EditorBuffer({ id: 'a', kind: 'pattern', value: beat1_2__1_4, audio: this.audio, isDraft: false, isNew: false, isIntent: true }),
+      EditorBuffer({ id: 'b', kind: 'pattern', value: algo1_4, audio: this.audio, isDraft: false, isNew: false, isIntent: true }),
+      // EditorBuffer({ id: 'c', kind: 'pattern', value: beat1_12, audio: this.audio, isDraft: false, isNew: false, isIntent: true }),
+      // EditorBuffer({ id: 'a', kind: 'pattern', value: beat1_2__1_4, audio: this.audio, isDraft: false, isNew: false, isIntent: true }),
     ]
 
     editor?: InstanceType<typeof Editor.Element>
@@ -166,6 +172,8 @@ export const App = web(view('app',
     project = storage.project.get(getNewDraftProjectId())
     projects: string[] = storage.projects.get([this.project])
     remoteProjects: string[] = []
+
+    mode = storage.mode.get('normal')
 
     mainWaveform: JSX.Element = false
   },
@@ -279,19 +287,21 @@ export const App = web(view('app',
 
       // working state
       save = () => {
-        try {
-          console.time('save')
-          const json = this.toJSON(true)
-          const res = JSON.stringify(json)
-          localStorage.autoSave = res
-          console.timeEnd('save')
-          console.log('save:', res.length, json)
-        } catch (error) {
-          console.warn('Error while saving')
-          console.warn(error)
-        }
+        if ($.mode === APP_MODE.NORMAL) {
+          try {
+            console.time('save')
+            const json = this.toJSON(true)
+            const res = JSON.stringify(json)
+            localStorage.autoSave = res
+            console.timeEnd('save')
+            console.log('save:', res.length, json)
+          } catch (error) {
+            console.warn('Error while saving')
+            console.warn(error)
+          }
 
-        this.onProjectSave(true)
+          this.onProjectSave(true)
+        }
       }
 
       autoSave = queue.debounce(5000)(this.save)
@@ -752,37 +762,80 @@ export const App = web(view('app',
       height: 100%;
       display: flex;
     }
+
+    [part=app-inner] {
+      display: flex;
+      position: relative;
+      flex-flow: column nowrap;
+      width: 100%;
+      height: 100%;
+    }
+
+    [part=app-main-outer] {
+      position: relative;
+      display: flex;
+      flex: 1;
+      overflow: hidden;
+    }
+
+    [part=app-mixer] {
+      display: flex;
+      flex-flow: row nowrap;
+      min-height: 55px;
+      max-height: 55px;
+      align-items: stretch;
+      justify-content: space-between;
+    }
+
+    [part=app-projects] {
+      white-space: nowrap;
+      width: 0;
+      display: flex;
+      flex: 1;
+      margin: 0 20px;
+      overflow-x: scroll;
+    }
+
     `
 
-    try {
-      $.fromJSON(JSON.parse(localStorage.autoSave))
-    } catch (error) {
-      console.warn('autoload failed:')
-      console.warn(error)
-    }
+    let didInit = false
+    fx(({ mode }) => {
+      if (mode === APP_MODE.NORMAL) {
+        if (didInit) return
 
-    try {
-      $.save()
-    } catch (error) {
-      console.warn('initial autosave failed:')
-      console.warn(error)
-    }
+        didInit = true
 
-    try {
-      $.fromURL(location)
-    } catch (error) {
-      console.warn('load url failed:')
-      console.warn(error)
-    }
+        try {
+          $.fromJSON(JSON.parse(localStorage.autoSave))
+        } catch (error) {
+          console.warn('autoload failed:')
+          console.warn(error)
+        }
 
-    db.getShortList().then((result) => {
-      $.remoteProjects = result.sort((a, b) => {
-        const [, , aDate] = a.split(',')
-        const [, , bDate] = b.split(',')
-        const aTime = new Date(aDate).getTime()
-        const bTime = new Date(bDate).getTime()
-        return aTime - bTime
-      })
+        try {
+          $.save()
+        } catch (error) {
+          console.warn('initial autosave failed:')
+          console.warn(error)
+        }
+
+        try {
+          $.fromURL(location)
+        } catch (error) {
+          console.warn('load url failed:')
+          console.warn(error)
+        }
+
+        db.getShortList().then((result) => {
+          $.remoteProjects = result.sort((a, b) => {
+            const [, , aDate] = a.split(',')
+            const [, , bDate] = b.split(',')
+            const aTime = new Date(aDate).getTime()
+            const bTime = new Date(bDate).getTime()
+            return aTime - bTime
+          })
+        })
+      }
     })
 
     fx(({ distRoot, monospaceFont }) => {
@@ -880,6 +933,10 @@ export const App = web(view('app',
       storage.project.set(project)
     })
 
+    fx(({ mode }) => {
+      storage.mode.set(mode)
+    })
+
     fx(({ audio }) =>
       audio.fx(({ bpm: _ }) => {
         $.autoSave()
@@ -965,337 +1022,100 @@ export const App = web(view('app',
       )
     )
 
-    fx.task(({ state, project, projects, remoteProjects, audio, players, selected, sounds, patterns, editorBuffer, mainWaveform }) => {
+    fx.task(({ state, mode, project, projects, remoteProjects, audio, players, selected, sounds, patterns, editorBuffer, mainWaveform }) => {
       $.autoSave()
 
       const player = players[selected.player]
+      if (mode === APP_MODE.SOLO) {
+        const sound = get(sounds, player.$.sound)!
+        const pattern = get(patterns, player.$.patterns[0])!
 
-      const soundId = selected.pattern == null ? player.$.sound : null
-      const patternId = selected.pattern != null ? player.$.patterns[selected.pattern] : null
+        player.$.pattern = 0
 
-      const sound = soundId ? get(sounds, soundId)! : false
-      const pattern = patternId ? get(patterns, patternId)! : false
+        $.view = <>
+          <style>{`
+            ${TrackView} {
+              width: 50%;
+              height: 100%;
+            }
+          `}</style>
 
-      const mixerMain =
-        <div part="app-mixer">
+          <Hint message={deps.hint} />
 
-          <div style="display: flex; flex-flow: row nowrap; width: 35%;">
-            <ButtonPlay
-              part="app-mixer-button"
-              target={audio as any}
-              running={iconStop}
-              suspended={iconPlay}
+          {players.map((player, y) =>
+            <PlayerView
+              key={player.$.id!}
+              id={player.$.id!}
+              audio={$.audio}
+              player={player}
             />
+          )}
 
-            <ButtonIcon part="app-mixer-button" onClick={() => {
-              $.players.push(Player(player.$.derive()))
-              $.players = [...$.players]
-            }}>
-              <IconSvg
-                set="feather"
-                icon="plus-circle"
-              />
-            </ButtonIcon>
-
-            <VolSlider id="main" running={
-              audio.$.state === 'running'
-            } />
-
-            <NumberInput
-              part="app-bpm"
-              min={1}
-              max={666}
-              value={audio.deps.bpm}
-              step={1}
-              align="x"
-            />
+          <div style="position: absolute;left:0;top:0;width:100%;height:100%;">
+            {mainWaveform}
           </div>
 
-          <div part="app-projects">
-            {filterMap(remoteProjects, (long) => {
-              const [, icon, date, short, checksum] = long.split(DELIMITERS.SHORT_ID)
-              const [pIcon, pDate, , pChecksum] = project.split(DELIMITERS.SAVE_ID)
-              const a = [icon, date, checksum].join()
-              const b = [pIcon, pDate, pChecksum].join()
-              return <ButtonIcon
-                key={long}
-                part="app-mixer-button"
-                onref={el => {
-                  projectButtonRefs.set(long, el)
-                }}
-                title={[
-                  `Click to Open ${icon}.`,
-                  `Saved on: ${new Date(date).toLocaleString()}`,
-                ].filter(Boolean).join('\n')}
-                class={classes({
-                  save: true,
-                  selected: a === b
-                })}
-                onClick={() => {
-                  $.fromRemoteProject(short, long)
-                }}
-              >
-                {icon}
-              </ButtonIcon>
-            })}
-          </div>
 
-          <div part="app-projects">
-            {filterMap(projects, (p) => {
-              const [icon, date, kind] = p.split(DELIMITERS.SAVE_ID)
-              if (kind != PROJECT_KINDS.SAVED) return
+          <div style="width:100%;height:100%;display: flex; flex-flow: column nowrap;">
 
-              return <ButtonIcon
-                key={p}
-                part="app-mixer-button"
-                onref={el => {
-                  projectButtonRefs.set(p, el)
-                }}
-                title={[
-                  `Click to Open ${icon}.`,
-                  `Saved on: ${new Date(date).toLocaleString()}`,
-                  'Ctrl+Shift+Click to Delete.',
-                ].filter(Boolean).join('\n')}
-                class={classes({
-                  save: true,
-                  selected: p === project
-                })}
-                onClick={() => {
-                  $.fromProjectJSON(p, JSON.parse(localStorage[p]))
-                  location.hash = `p=${p}`
-                }}
-                onCtrlShiftClick={() => {
-                  $.projects = $.projects.filter((id) => id !== p)
-                }}
-              >
-                {icon}
-              </ButtonIcon>
-            })}
-          </div>
-
-          <div part="app-drafts">
-            {filterMap(projects, (p) => {
-              const [icon, , isDraft] = p.split(DELIMITERS.SAVE_ID)
-              if (isDraft != '1') return
-
-              return <ButtonIcon
-                key={p}
-                part="app-mixer-button"
-                onref={el => {
-                  projectButtonRefs.set(p, el)
-                }}
-                title={[
-                  p === project && 'Double click to Save.',
-                  p !== project && 'Ctrl+Shift+Click to Delete.',
-                ].filter(Boolean).join('\n')}
-                class={classes({
-                  draft: true,
-                  selected: p === project
-                })}
-                onClick={p !== project && (() => {
-                  $.fromProjectJSON(p, JSON.parse(localStorage[p]))
-                  location.hash = `p=${p}`
-                })}
-                onDblClick={p === project && (() => {
-                  $.onProjectSave()
-                })}
-                onCtrlShiftClick={p !== project && (() => {
-                  $.projects = $.projects.filter((id) => id !== p)
-                })}
-              >
-                {icon}
-              </ButtonIcon>
-            })}
-          </div>
-
-          <ButtonIcon
-            key="share"
-            part="app-mixer-button"
-            title="Get short URL to Share"
-            onClick={$.publishCurrent}
-          >
-            <IconSvg set="feather" icon="send" />
-          </ButtonIcon>
-        </div>
-
-      const soundPresets = <div part="app-presets">
-        {sounds.map((sound) =>
-          <TrackView
-            key={sound.$.id!}
-            canFocus
-            active={sound.$.id === soundId}
-            audio={audio}
-            sound={sound}
-            clickMeta={sound.$}
-            onClick={$.onSoundSelect}
-            onDblClick={$.onSoundSave}
-            onCtrlShiftClick={$.onSoundDelete}
-            onRearrange={$.onSoundRearrange}
-          />
-        )}
-      </div>
-
-      const patternPresets = <div part="app-presets">
-        {patterns.map((pattern) =>
-          <TrackView
-            key={pattern.$.id!}
-            canFocus
-            active={pattern.$.id === patternId}
-            getTime={audio.$.getTime}
-            pattern={pattern}
-            clickMeta={pattern.$}
-            onClick={$.onPatternSelect}
-            onDblClick={$.onPatternSave}
-            onCtrlShiftClick={$.onPatternDelete}
-            onRearrange={$.onPatternRearrange}
-          />
-        )}
-      </div>
-
-      const playersView =
-        <Spacer
-          id="app-players"
-          part="app-players"
-          align="x"
-          initial={[0, 0.15, 0.5]}
-        >
-          <div part="app-players-mixer">
-            {players.map((player, y) =>
-              <div part="app-player-controls">
-                <ButtonPlay
-                  part="app-player-play"
-                  target={player as any}
-                  running={state === 'deleting' ? iconDelete : iconStop}
-                  suspended={state === 'deleting' ? iconDelete : iconPlay}
-                  onDelete={() => {
-                    if ($.players.length > 1 && $.selected.player !== y) {
-                      if ($.selected.player > y) $.selected.player--
-                      $.players.splice(y, 1)
-                      $.players = [...$.players]
-                      $.selected = { ...$.selected }
-                    }
-                  }}
+            <div style="height:45px; z-index:999999999;display:flex;flex-flow:row nowrap;">
+              <ButtonIcon
+                part="app-mixer-button" onClick={() => {
+                  $.mode = APP_MODE.NORMAL
+                }}>
+                <IconSvg
+                  set="feather"
+                  icon="cpu"
                 />
-                <VolSlider id={y} running={
-                  player.$.state === 'running'
-                } />
-              </div>
-            )}
-          </div>
+              </ButtonIcon>
+              <ButtonPlay
+                part="app-player-play"
+                target={player as any}
+                running={iconStop}
+                suspended={iconPlay}
+              />
+              <VolSlider id={0} running={
+                player.$.state === 'running'
+              } />
+            </div>
 
-          <div part="app-player-sounds">
-            {players.map((player, y) => {
-              return <TrackView
-                part="app-player-sound"
-                leftAlignLabel
+            <div style="width:100%;height:70%;display:flex; flex-flow: row nowrap;">
+              <Editor
+                ref={refs.editor}
+                style="width:50%;height:100%;"
+                part="app-editor"
+                name="sound-editor"
+                player={player}
+                buffer={editorBuffer}
+              />
+              <TrackView
+                active={false}
+                audio={audio}
                 sliders
-                active={selected.player === y && player.$.sound === soundId}
+                player={player}
+                sound={sound}
+                clickMeta={sound.$}
+                onClick={() => { }}
+              />
+            </div>
+
+            <div style="width:100%;height:30%;display:flex; flex-flow: row nowrap;">
+              <TrackView
+                active={false}
+                getTime={audio.$.getTime}
                 audio={audio}
                 player={player}
-                sound={get(sounds, player.$.sound)!}
-                clickMeta={{ id: player.$.sound, y }}
-                onClick={$.onPlayerSoundSelect}
-                onDblClick={$.onSoundSave}
+                pattern={pattern}
+                clickMeta={pattern.$}
+                onClick={() => { }}
               />
-            })}
-          </div>
-
-          <div part="app-player-patterns">
-            {players.map((player, y) => {
-              return <div style="height:0">
-                {
-                  player.$.patterns.map((id, x) => {
-                    const pattern = get(patterns, id)!
-                    return <TrackView
-                      part="app-player-pattern"
-                      active={selected.player === y && selected.pattern === x && id === patternId}
-                      live={player.$.pattern === x}
-                      xPos={x}
-                      audio={audio}
-                      getTime={audio.$.getTime}
-                      player={player}
-                      pattern={pattern}
-                      clickMeta={{ id, x, y }}
-                      onClick={$.onPlayerPatternSelect}
-                      onDblClick={$.onPatternSave}
-                      onAltClick={selected.pattern != null && player.$.pattern !== x && $.onPlayerPatternPaste}
-                    />
-                  })
-                }
-              </div>
-            })}
-          </div>
-        </Spacer>
-
-      $.view = <>
-        <Hint message={deps.hint} />
-
-        {players.map((player, y) =>
-          <PlayerView
-            key={player.$.id!}
-            id={player.$.id!}
-            audio={$.audio}
-            player={player}
-          />
-        )}
-
-        <Spacer
-          id="app"
-          part="app"
-          align="x"
-          initial={[0, 0.1, 0.9]}
-        >
-          {soundPresets}
-
-          <div part="app-inner">
-            {mixerMain}
-
-            <div part="app-main-outer">
-              <Spacer
-                id="app-main"
-                part="app-main"
-                align="y"
-                initial={[0, 0.5]}
-              >
-                {playersView}
-
-                <div>
-                  {mainWaveform}
-
-                  <Spacer
-                    id="app-selected"
-                    part="app-selected"
-                    align="x"
-                    reverse={true}
-                    initial={[0, 0.5]}
-                  >
-                    <Editor
-                      ref={refs.editor}
-                      part="app-editor"
-                      name="editor"
-                      player={player}
-                      buffer={editorBuffer}
-                    />
-
-                    <TrackView
-                      active={false}
-                      // showLabel={false}
-                      padded
-                      leftAlignLabel={selected.pattern == null}
-                      sliders
-                      player={player}
-                      audio={audio}
-                      sound={sound}
-                      pattern={pattern}
-                      getTime={audio.$.getTime}
-                      clickMeta={editorBuffer.$}
-                      onDblClick={$.onBufferSave}
-                    />
-
-                  </Spacer>
-                </div>
-
-              </Spacer>
+              <Editor
+                style="width:50%;height:100%;"
+                part="app-editor"
+                name="pattern-editor"
+                player={player}
+                buffer={pattern}
+              />
             </div>
 
             <PianoKeys
@@ -1313,11 +1133,373 @@ export const App = web(view('app',
             />
           </div>
 
-          {patternPresets}
+        </>
+      }
 
-        </Spacer>
+      if (mode === APP_MODE.NORMAL) {
+        const soundId = selected.pattern == null ? player.$.sound : null
+        const patternId = selected.pattern != null ? player.$.patterns[selected.pattern] : null
 
-      </>
+        const sound = soundId ? get(sounds, soundId)! : false
+        const pattern = patternId ? get(patterns, patternId)! : false
+
+        const mixerMain =
+          <div part="app-mixer">
+
+            <div style="display: flex; flex-flow: row nowrap; width: 35%;">
+              <ButtonPlay
+                part="app-mixer-button"
+                target={audio as any}
+                running={iconStop}
+                suspended={iconPlay}
+              />
+
+              <ButtonIcon part="app-mixer-button" onClick={() => {
+                $.players.push(Player(player.$.derive()))
+                $.players = [...$.players]
+              }}>
+                <IconSvg
+                  set="feather"
+                  icon="plus-circle"
+                />
+              </ButtonIcon>
+
+              <VolSlider id="main" running={
+                audio.$.state === 'running'
+              } />
+
+              <NumberInput
+                part="app-bpm"
+                min={1}
+                max={666}
+                value={audio.deps.bpm}
+                step={1}
+                align="x"
+              />
+            </div>
+
+            <ButtonIcon part="app-mixer-button" onClick={() => {
+              $.mode = APP_MODE.SOLO
+            }}>
+              <IconSvg
+                set="feather"
+                icon="cpu"
+              />
+            </ButtonIcon>
+
+            <div part="app-projects">
+              {filterMap(remoteProjects, (long) => {
+                const [, icon, date, short, checksum] = long.split(DELIMITERS.SHORT_ID)
+                const [pIcon, pDate, , pChecksum] = project.split(DELIMITERS.SAVE_ID)
+                const a = [icon, date, checksum].join()
+                const b = [pIcon, pDate, pChecksum].join()
+                return <ButtonIcon
+                  key={long}
+                  part="app-mixer-button"
+                  onref={el => {
+                    projectButtonRefs.set(long, el)
+                  }}
+                  title={[
+                    `Click to Open ${icon}.`,
+                    `Saved on: ${new Date(date).toLocaleString()}`,
+                  ].filter(Boolean).join('\n')}
+                  class={classes({
+                    save: true,
+                    selected: a === b
+                  })}
+                  onClick={() => {
+                    $.fromRemoteProject(short, long)
+                  }}
+                >
+                  {icon}
+                </ButtonIcon>
+              })}
+            </div>
+
+            <div part="app-projects">
+              {filterMap(projects, (p) => {
+                const [icon, date, kind] = p.split(DELIMITERS.SAVE_ID)
+                if (kind != PROJECT_KINDS.SAVED) return
+
+                return <ButtonIcon
+                  key={p}
+                  part="app-mixer-button"
+                  onref={el => {
+                    projectButtonRefs.set(p, el)
+                  }}
+                  title={[
+                    `Click to Open ${icon}.`,
+                    `Saved on: ${new Date(date).toLocaleString()}`,
+                    'Ctrl+Shift+Click to Delete.',
+                  ].filter(Boolean).join('\n')}
+                  class={classes({
+                    save: true,
+                    selected: p === project
+                  })}
+                  onClick={() => {
+                    $.fromProjectJSON(p, JSON.parse(localStorage[p]))
+                    location.hash = `p=${p}`
+                  }}
+                  onCtrlShiftClick={() => {
+                    $.projects = $.projects.filter((id) => id !== p)
+                  }}
+                >
+                  {icon}
+                </ButtonIcon>
+              })}
+            </div>
+
+            <div part="app-drafts">
+              {filterMap(projects, (p) => {
+                const [icon, , isDraft] = p.split(DELIMITERS.SAVE_ID)
+                if (isDraft != '1') return
+
+                return <ButtonIcon
+                  key={p}
+                  part="app-mixer-button"
+                  onref={el => {
+                    projectButtonRefs.set(p, el)
+                  }}
+                  title={[
+                    p === project && 'Double click to Save.',
+                    p !== project && 'Ctrl+Shift+Click to Delete.',
+                  ].filter(Boolean).join('\n')}
+                  class={classes({
+                    draft: true,
+                    selected: p === project
+                  })}
+                  onClick={p !== project && (() => {
+                    $.fromProjectJSON(p, JSON.parse(localStorage[p]))
+                    location.hash = `p=${p}`
+                  })}
+                  onDblClick={p === project && (() => {
+                    $.onProjectSave()
+                  })}
+                  onCtrlShiftClick={p !== project && (() => {
+                    $.projects = $.projects.filter((id) => id !== p)
+                  })}
+                >
+                  {icon}
+                </ButtonIcon>
+              })}
+            </div>
+
+            <ButtonIcon
+              key="share"
+              part="app-mixer-button"
+              title="Get short URL to Share"
+              onClick={$.publishCurrent}
+            >
+              <IconSvg set="feather" icon="send" />
+            </ButtonIcon>
+          </div>
+
+        const soundPresets = <div part="app-presets">
+          {sounds.map((sound) =>
+            <TrackView
+              key={sound.$.id!}
+              canFocus
+              active={sound.$.id === soundId}
+              audio={audio}
+              sound={sound}
+              clickMeta={sound.$}
+              onClick={$.onSoundSelect}
+              onDblClick={$.onSoundSave}
+              onCtrlShiftClick={$.onSoundDelete}
+              onRearrange={$.onSoundRearrange}
+            />
+          )}
+        </div>
+
+        const patternPresets = <div part="app-presets">
+          {patterns.map((pattern) =>
+            <TrackView
+              key={pattern.$.id!}
+              canFocus
+              active={pattern.$.id === patternId}
+              getTime={audio.$.getTime}
+              pattern={pattern}
+              clickMeta={pattern.$}
+              onClick={$.onPatternSelect}
+              onDblClick={$.onPatternSave}
+              onCtrlShiftClick={$.onPatternDelete}
+              onRearrange={$.onPatternRearrange}
+            />
+          )}
+        </div>
+
+        const playersView =
+          <Spacer
+            id="app-players"
+            part="app-players"
+            align="x"
+            shifted
+            initial={[0, 0.125, 0.25, 0.40]}
+          >
+
+            {editorBuffer.$.kind === 'sound'
+              ? soundPresets
+              : patternPresets
+            }
+
+            <div part="app-players-mixer">
+              {players.map((player, y) =>
+                <div part="app-player-controls">
+                  <ButtonPlay
+                    part="app-player-play"
+                    target={player as any}
+                    running={state === 'deleting' ? iconDelete : iconStop}
+                    suspended={state === 'deleting' ? iconDelete : iconPlay}
+                    onDelete={() => {
+                      if ($.players.length > 1 && $.selected.player !== y) {
+                        if ($.selected.player > y) $.selected.player--
+                        $.players.splice(y, 1)
+                        $.players = [...$.players]
+                        $.selected = { ...$.selected }
+                      }
+                    }}
+                  />
+                  <VolSlider id={y} running={
+                    player.$.state === 'running'
+                  } />
+                </div>
+              )}
+            </div>
+
+            <div part="app-player-sounds">
+              {players.map((player, y) => {
+                return <TrackView
+                  part="app-player-sound"
+                  leftAlignLabel
+                  sliders
+                  active={selected.player === y && player.$.sound === soundId}
+                  audio={audio}
+                  player={player}
+                  sound={get(sounds, player.$.sound)!}
+                  clickMeta={{ id: player.$.sound, y }}
+                  onClick={$.onPlayerSoundSelect}
+                  onDblClick={$.onSoundSave}
+                />
+              })}
+            </div>
+
+            <div part="app-player-patterns">
+              {players.map((player, y) => {
+                return <div style="height:0">
+                  {
+                    player.$.patterns.map((id, x) => {
+                      const pattern = get(patterns, id)!
+                      return <TrackView
+                        part="app-player-pattern"
+                        active={selected.player === y && selected.pattern === x && id === patternId}
+                        live={player.$.pattern === x}
+                        xPos={x}
+                        audio={audio}
+                        getTime={audio.$.getTime}
+                        player={player}
+                        pattern={pattern}
+                        clickMeta={{ id, x, y }}
+                        onClick={$.onPlayerPatternSelect}
+                        onDblClick={$.onPatternSave}
+                        onAltClick={selected.pattern != null && player.$.pattern !== x && $.onPlayerPatternPaste}
+                      />
+                    })
+                  }
+                </div>
+              })}
+            </div>
+          </Spacer>
+
+        $.view = <>
+          <Hint message={deps.hint} />
+
+          {players.map((player, y) =>
+            <PlayerView
+              key={player.$.id!}
+              id={player.$.id!}
+              audio={$.audio}
+              player={player}
+            />
+          )}
+
+
+          <div part="app-inner">
+            {mixerMain}
+
+            <div part="app-main-outer">
+              <Spacer
+                id="app-main"
+                part="app-main"
+                align="y"
+                initial={[0, 0.5]}
+              >
+                {playersView}
+
+                <Spacer
+                  id="app-bottom"
+                  part="app-bottom"
+                  align="y"
+                  initial={[0, 0.7]}
+                >
+                  <div style="width: 100%; height: 100%; display:flex; flex-flow: column nowrap; position:relative">
+                    {mainWaveform}
+
+                    <Spacer
+                      id="app-selected"
+                      part="app-selected"
+                      align="x"
+                      reverse={true}
+                      initial={[0, 0.5]}
+                    >
+                      <Editor
+                        ref={refs.editor}
+                        part="app-editor"
+                        name="editor"
+                        player={player}
+                        buffer={editorBuffer}
+                      />
+
+                      <TrackView
+                        active={false}
+                        // showLabel={false}
+                        padded
+                        leftAlignLabel={selected.pattern == null}
+                        sliders
+                        player={player}
+                        audio={audio}
+                        sound={sound}
+                        pattern={pattern}
+                        getTime={audio.$.getTime}
+                        clickMeta={editorBuffer.$}
+                        onDblClick={$.onBufferSave}
+                      />
+
+                    </Spacer>
+                  </div>
+
+                  <PianoKeys
+                    invertColors
+                    halfOctaves={7}
+                    startOctave={2}
+                    audioContext={audio.$.audioContext}
+                    onmidimessage={e => {
+                      if (!$.player.$.preview) {
+                        $.player.$.startPreview()
+                      }
+                      $.player.$.view?.monoNode?.processMidiEvent(e)
+                    }}
+                    style="pointer-events: all"
+                  />
+                </Spacer>
+
+
+              </Spacer>
+            </div>
+          </div>
+
+        </>
+
+      }
     })
   }
 ))

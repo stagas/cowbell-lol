@@ -80,7 +80,7 @@ export const Player = reactive('player',
         if (kind === 'sound') {
           bufferId = $.sound
         } else if (kind === 'pattern') {
-          bufferId = $.patterns[app.selected.pattern!]
+          bufferId = $.patterns[app.selected.pattern ?? 0]
         }
         if (!bufferId) return
 
@@ -111,7 +111,7 @@ export const Player = reactive('player',
             $.sound = newBuffer.$.id!
           } else {
             app.patterns = newKinds as any
-            $.patterns[app.selected.pattern!] = newBuffer.$.id!
+            $.patterns[app.selected.pattern ?? 0] = newBuffer.$.id!
             $.patterns = [...$.patterns]
           }
         } else {
@@ -128,8 +128,11 @@ export const Player = reactive('player',
               $.sound = equalItem.$.id!
             } else {
               app.patterns = del(app.patterns, buffer)
-              $.patterns[app.selected.pattern!] = equalItem.$.id!
-              $.patterns = [...$.patterns]
+              const pat = $.patterns[app.selected.pattern ?? 0]
+              $.patterns = $.patterns
+                .join(',')
+                .replaceAll(pat, equalItem.$.id!)
+                .split(',')
             }
           } else {
             return true

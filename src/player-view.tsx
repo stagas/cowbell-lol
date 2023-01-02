@@ -2,7 +2,7 @@
 
 import { chain, view, web } from 'minimal-view'
 import { MonoNode } from 'mono-worklet'
-import { SchedulerEventGroupNode } from 'scheduler-node'
+import { LoopKind, SchedulerEventGroupNode } from 'scheduler-node'
 import { animRemoveSchedule, animSchedule } from './anim'
 import { app } from './app'
 import { Audio, AudioState } from './audio'
@@ -46,6 +46,8 @@ export const PlayerView = web(view('player-view',
     workerFreqs?: Uint8Array
 
     soundValue?: string
+
+    bars = 1
   },
 
   function actions({ $, fns, fn }) {
@@ -75,30 +77,35 @@ export const PlayerView = web(view('player-view',
         })
 
       updateMidiEvents =
-        fn(({ patterns, groupNode }) => () => {
+        fn(({ patterns, groupNode }) => async (turn: number, clear?: boolean) => {
           let bars = 0
 
-          const events = patterns.map(
-            (pattern) => [pattern.$.midiEvents!, pattern.$.numberOfBars!] as const
-          ).map(([midiEvents, numberOfBars], x) => {
-            if (!midiEvents) return []
+          const turns: WebMidi.MIDIMessageEvent[][] = [[], []]
 
-            const evs = midiEvents.map((midiEvent) => {
-              const newEvent = new MIDIMessageEvent('message', { data: midiEvent.data })
+          for (const pattern of patterns) {
+            const t0 = await pattern.$.compilePattern(turn)
+            if (!t0) continue
+
+            const t1 = await pattern.$.compilePattern(turn + 1)
+            if (!t1) continue
+
+            const fixTime = (midiEvent: WebMidi.MIDIMessageEvent) => {
+              const newEvent = new MIDIMessageEvent('message', {
+                data: midiEvent.data
+              })
               newEvent.receivedTime = midiEvent.receivedTime + bars * 1000
               return newEvent
-            })
-            bars += numberOfBars
-            return evs
-          })
+            }
 
-          groupNode.eventGroup.replaceAllWithMidiEvents(events.flat())
-          // groupNode.eventGroup.replaceAllWithMidiEvents(midiEvents)
-          // TODO: for the sequencer we also need to tweak loopStart
-          // groupNode.eventGroup.loopStart = 0
-          groupNode.eventGroup.loopEnd = bars
-          groupNode.eventGroup.loop = true
+            turns[0].push(...t0.map(fixTime))
+            turns[1].push(...t1.map(fixTime))
 
+            bars += pattern.$.numberOfBars!
+          }
+
+          $.bars = bars
+
+          groupNode.eventGroup.setMidiEvents(turns, turn, clear)
         })
 
       compileCode = fn(({ id, monoNode }) => {
@@ -166,12 +173,18 @@ export const PlayerView = web(view('player-view',
     fx(({ id, audio }) =>
       audio.fx(async ({ gainNode: audioGainNode, disconnect, monoNodePool, gainNodePool, groupNodePool, analyserNodePool }) => {
         audio.$.connectedPlayers.add(id)
+
         const monoNode = $.monoNode = await monoNodePool.acquire()
         const gainNode = $.gainNode = await gainNodePool.acquire()
         const groupNode = $.groupNode = await groupNodePool.acquire()
         const analyserNode = $.analyserNode = await analyserNodePool.acquire()
+
         audio.$.setParam(gainNode.gain, 0)
+        monoNode.connect(gainNode)
         gainNode.connect(audioGainNode)
+        groupNode.connect(monoNode)
+        groupNode.suspend(monoNode)
+
         return () => {
           audio.$.connectedPlayers.delete(id)
           $.analyseStop()
@@ -212,19 +225,11 @@ export const PlayerView = web(view('player-view',
         if (state === 'running' || preview) {
           audio.$.setParam(gainNode.gain, $.player.$.vol!)
           if (state === 'running') {
-            // audio.$.start()
-            groupNode.connect(monoNode)
+            groupNode.resume(monoNode)
           }
-          monoNode.resume()
-          monoNode.connect(gainNode)
         } else {
           audio.$.setParam(gainNode.gain, 0)
-          audio.$.disconnect(groupNode, monoNode)
-          setTimeout(() => {
-            if ($.state !== 'running' && !$.player.$.preview) {
-              audio.$.disconnect(monoNode, gainNode)
-            }
-          }, 50)
+          groupNode.suspend(monoNode)
         }
       })
     )
@@ -276,16 +281,30 @@ export const PlayerView = web(view('player-view',
       player.fx(({ patterns }) => {
         $.patterns = patterns.map((patternId) =>
           get(app.patterns, patternId)!
-        )
+        ).filter(Boolean)
       })
     )
 
-    fx(({ patterns, groupNode }) =>
+    fx(({ groupNode, bars }) => {
+      groupNode.eventGroup.loopEnd = bars
+      groupNode.eventGroup.loop = LoopKind.Live
+    })
+
+    fx(({ groupNode }) => {
+      groupNode.eventGroup.onRequestNotes = $.updateMidiEvents
+    })
+
+    fx(({ patterns, groupNode: _ }) =>
       chain(
         patterns.map((pattern) =>
-          pattern.fx(({ midiEvents, numberOfBars }) => {
-            $.updateMidiEvents()
-          })
+          chain(
+            fx(({ bars }) =>
+              pattern.fx(({ value: _ }) => {
+                const turn = ($.audio.$.getTime() / bars) | 0
+                $.updateMidiEvents(turn, true)
+              })
+            ),
+          )
         )
       )
     )

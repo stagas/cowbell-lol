@@ -1,8 +1,8 @@
-import type { Selected } from '../app'
+import type { AppMode, Selected } from '../app'
 
 export const spacer = {
   get: (id: string, fallbackSizes: number[]) => {
-    // return fallback
+    // return fallbackSizes
     const cells: number[] = (localStorage[`spacer-${id}`] ?? '')
       .split(',')
       .filter((s: string) => s !== '')
@@ -38,3 +38,4 @@ function kvStorage<T>(key: string): KvStorage<T> {
 export const selected = kvStorage<Selected>('selected')
 export const project = kvStorage<string>('project')
 export const projects = kvStorage<string[]>('projects')
+export const mode = kvStorage<AppMode>('mode')

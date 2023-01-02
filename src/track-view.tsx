@@ -1,7 +1,8 @@
 /** @jsxImportSource minimal-view */
 
 import { cheapRandomId, checksum } from 'everyday-utils'
-import { web, view, element, event, chain, on } from 'minimal-view'
+import { Rect } from 'geometrik'
+import { web, view, element, event, chain, on, queue } from 'minimal-view'
 import { app, focusMap } from './app'
 import { Audio } from './audio'
 import { EditorBuffer } from './editor-buffer'
@@ -9,8 +10,10 @@ import { Midi } from './midi'
 import { Player } from './player'
 import { Sliders } from './sliders'
 import { Spacer } from './spacer'
+import { Stretchy } from './stretchy'
 import { bgForHue } from './util/bg-for-hue'
 import { get } from './util/list'
+import { observe } from './util/observe'
 
 export type TrackViewHandler = (id: string, meta: any, byClick?: boolean) => void
 
@@ -47,6 +50,7 @@ export const TrackView = web(view('track-view',
 
   class local {
     host = element
+    rect?: Rect
     isDraft: boolean = false
     canvas?: HTMLCanvasElement
     canvasView: JSX.Element = false
@@ -91,6 +95,10 @@ export const TrackView = web(view('track-view',
         e.stopPropagation()
         onDblClick(clickMeta.id, clickMeta, true)
       })
+
+      resize = fn(({ host }) => queue.raf(() => {
+        $.rect = new Rect(host.getBoundingClientRect())
+      }))
     })
   },
 
@@ -170,31 +178,42 @@ export const TrackView = web(view('track-view',
       }
 
       [part=label] {
-        ${leftAlignLabel ? 'margin: 0 8%;' : ''}
         pointer-events: none;
-        align-items: ${alignLabel};
-        justify-content: center;
-        flex-flow: column nowrap;
+        width: 100%;
+        height: 100%;
+        display: flex;
+        flex-wrap: wrap;
+        flex-direction: column;
+        /* justify-content: center; */
+        /* flex-flow: column nowrap; */
         font-family: Mono;
         font-size: 20px;
         color: #fff;
 
-        > span {
-          z-index: 2;
-        }
+        line-height: 40px;
+        text-align: center;
 
-        .shadow {
-          position: absolute;
-          left: 0;
-          top: 0;
+        --outline-color: #000;
+        --outline-width: 8px;
+
+        svg {
+          position: relative;
+          z-index: 1;
+          display: flex;
+          box-sizing: border-box;
           width: 100%;
           height: 100%;
-          display: flex;
-          flex-flow: column nowrap;
-          align-items: ${alignLabel};
-          justify-content: center;
-          -webkit-text-stroke: 6px #000;
-          z-index: 1;
+        }
+
+        [part=outline] {
+          position: absolute;
+          z-index: -1;
+          width: 100%;
+          height: 100%;
+          top: 0;
+          left: 0;
+          color: var(--outline-color);
+          -webkit-text-stroke: var(--outline-width) var(--outline-color);
         }
       }
       `
@@ -254,6 +273,10 @@ export const TrackView = web(view('track-view',
       host.toggleAttribute('padded', padded)
     })
 
+    fx(function listenHostResize({ host }) {
+      return observe.resize.initial(host, $.resize)
+    })
+
     fx(({ host, isDraft, error }) => {
       host.style.cssText = /*css*/`
         background-image: ${isDraft ? bgForHue(error ? 0 :
@@ -263,8 +286,9 @@ export const TrackView = web(view('track-view',
           || $.id!
         )
       ) : 'transparent'};
-        background-size: 45px 45px;
-        background-position: center 12.5px;
+        background-size: 90px 90px;
+        background-repeat: no-repeat;
+        background-position: top right;
       `
     })
 
@@ -293,7 +317,7 @@ export const TrackView = web(view('track-view',
             return player.fx(({ patterns }) => {
               const pats = patterns.map((patternId) =>
                 get(app.patterns, patternId)!
-              )
+              ).filter(Boolean)
               return chain(
                 pats.map((p) =>
                   p.fx(({ midiEvents: _, numberOfBars: __ }) => {
@@ -391,12 +415,16 @@ export const TrackView = web(view('track-view',
     })
 
     fx(({ soundLabel, patternLabel, showLabel }) => {
-      $.labelView = showLabel && <div part="label">
-        {[soundLabel, patternLabel]}
-        <div class="shadow">
-          {[soundLabel, patternLabel]}
-        </div>
-      </div>
+      const name = [soundLabel, patternLabel]
+      // $.labelView = showLabel &&
+      //   <div part="label">
+      //     <Stretchy width={70} height={40} padding={30}>
+      //       {[...name]}
+      //       <div part="outline">
+      //         {[...name]}
+      //       </div>
+      //     </Stretchy>
+      //   </div>
     })
 
     fx(({ host, isDraft, active }) => {
@@ -429,10 +457,10 @@ export const TrackView = web(view('track-view',
         /> || false
     })
 
-    fx(({ sound, sliders, player }) => {
+    fx(({ sound, sliders, rect, player }) => {
       if (!player) return
 
-      if (sound && sliders) {
+      if (sound && sliders && rect.height > 120) {
         $.slidersView = <Spacer
           key={sound.$.id!}
           id={sound.$.id!}

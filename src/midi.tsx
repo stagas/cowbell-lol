@@ -1,6 +1,7 @@
 /** @jsxImportSource minimal-view */
 
 import { Rect } from 'geometrik'
+import { ImmMap } from 'immutable-map-set'
 import { element, view, web } from 'minimal-view'
 import { MidiOp } from 'webaudio-tools'
 import { AudioState } from './audio'
@@ -14,7 +15,7 @@ export const Midi = web(view('midi',
     getTime!: () => number
     offset?: number = 0
     state!: AudioState
-    midiEvents: WebMidi.MIDIMessageEvent[] = []
+    midiEvents = new ImmMap<number, WebMidi.MIDIMessageEvent[]>()
     numberOfBars: number = 1
     timeBars?: number = 1
   },
@@ -22,7 +23,8 @@ export const Midi = web(view('midi',
   class local {
     host = element
     rects?: (readonly [Rect, [WebMidi.MIDIMessageEvent, WebMidi.MIDIMessageEvent]])[]
-    currentTime!: number
+    currentTime?: number
+    turn = 0
   },
 
   function actions({ $, fn, fns }) {
@@ -66,10 +68,17 @@ export const Midi = web(view('midi',
     //   host.setAttribute('state', state)
     // })
 
-    fx(function updateRects({ midiEvents, numberOfBars }) {
-      const events: WebMidi.MIDIMessageEvent[] = midiEvents.filter(x => MidiOps.has(x.data[0]) && x.receivedTime < numberOfBars * 1000)
-      const minNote = Math.min(...events.map(x => x.data[1]))
-      const maxNote = Math.max(...events.map(x => x.data[1]))
+    fx(function updateRects({ midiEvents, numberOfBars, turn }) {
+      const events: WebMidi.MIDIMessageEvent[] = midiEvents.get(turn)?.filter(x => MidiOps.has(x.data[0]) && x.receivedTime < numberOfBars * 1000) ?? []
+
+      const minNote = Math.floor(
+        (Math.min(...events.map(x => x.data[1])) - 1)
+        / 12
+      ) * 12
+      const maxNote = Math.ceil(
+        (Math.max(...events.map(x => x.data[1])) + 1)
+        / 12
+      ) * 12
 
       const heightScale = (maxNote - minNote)
       const fullTime = numberOfBars * 1000
@@ -102,8 +111,10 @@ export const Midi = web(view('midi',
     fx(function updateTimer({ state, getTime, timeBars }) {
       if (state === 'running') {
         const iv = setInterval(() => {
-          $.currentTime = (getTime() % timeBars) * 1000
-        }, 16.666666)
+          const now = getTime()
+          $.currentTime = (now % timeBars) * 1000
+          $.turn = (now / timeBars) | 0
+        }, 12)
         return () => {
           clearInterval(iv)
         }

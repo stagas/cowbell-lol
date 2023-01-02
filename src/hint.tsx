@@ -39,11 +39,13 @@ export const Hint = web(view('hint',
       show = fn(({ host }) => () => {
         if ($.view) {
           host.style.opacity = '1'
+          host.style.pointerEvents = 'all'
         }
       })
 
       hide = fn(({ host }) => () => {
         host.style.opacity = '0'
+        host.style.pointerEvents = 'none'
       })
     })
   },

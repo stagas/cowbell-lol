@@ -37,6 +37,7 @@ export const Audio = reactive('audio',
     startTime = 0
     coeff = 1
     internalTime = 0
+    delayStart = 0.1
 
     waveplot?: Waveplot
     preview?: Preview
@@ -51,11 +52,7 @@ export const Audio = reactive('audio',
 
       start = fn(({ audioContext, schedulerNode }) => () => {
         if ($.state === 'running') return
-        schedulerNode.start().then((startTime) => {
-          $.startTime = startTime
-          $.internalTime = 0
-          lastReceivedTime = audioContext.currentTime
-        })
+
         $.state = 'running'
 
         const shouldStartAll = app.players.every((player) => player.$.state !== 'running')
@@ -65,14 +62,22 @@ export const Audio = reactive('audio',
             player.$.start()
           })
         }
+
+        const now = audioContext.currentTime
+        $.internalTime = -$.delayStart
+        lastReceivedTime = now
+        schedulerNode.start(now + $.delayStart).then((startTime) => {
+          $.startTime = startTime
+        })
       })
 
-      stop = () => {
+      stop = fn(({ schedulerNode }) => () => {
         $.state = 'suspended'
+        schedulerNode.stop()
         app.players.forEach((player) => {
           player.$.stop()
         })
-      }
+      })
 
       toggle = () => {
         if ($.state === 'running') {
@@ -83,9 +88,11 @@ export const Audio = reactive('audio',
       }
 
       getTime = fn(({ audioContext }) => () => {
-        const now = audioContext.currentTime
-        $.internalTime += (now - lastReceivedTime) * $.coeff
-        lastReceivedTime = now
+        if ($.state === 'running') {
+          const now = audioContext.currentTime
+          $.internalTime += (now - lastReceivedTime) * $.coeff
+          lastReceivedTime = now
+        }
         return $.internalTime
       })
 
@@ -98,7 +105,7 @@ export const Audio = reactive('audio',
           })
       )
 
-      setParam = fn(({ audioContext }) => (param: AudioParam, targetValue: number, slope = 0.015) => {
+      setParam = fn(({ audioContext }) => (param: AudioParam, targetValue: number, slope = 0.0015) => {
         attempt(() => {
           param.setTargetAtTime(targetValue, audioContext.currentTime, slope)
         })

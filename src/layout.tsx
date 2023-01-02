@@ -171,7 +171,9 @@ export const Layout = web(view('layout',
     [part=app-inner] {
       display: flex;
       position: relative;
-      flex-flow: column nowrap;
+      flex-flow: row nowrap;
+      width: 100%;
+      height: 100%;
     }
 
     [part=app-mixer] {
