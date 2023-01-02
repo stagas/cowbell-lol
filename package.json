@@ -98,11 +98,11 @@
     "monolang": "^3.1.0",
     "pretty-fast-fft": "^1.1.0",
     "rpc-mini": "^1.1.0",
-    "scheduler-node": "^1.2.0",
+    "scheduler-node": "^2.0.0",
     "serialize-whatever": "^1.1.0",
     "to-fluent": "^2.2.0",
     "urlsafe-lzma": "1.0.4",
-    "webaudio-tools": "^2.0.1",
+    "webaudio-tools": "^2.1.0",
     "x-pianokeys": "^2.1.0"
   }
 }
