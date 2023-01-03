@@ -11,7 +11,7 @@ import { Audio } from './audio'
 import { ButtonIcon } from './button-icon'
 import { ButtonPlay } from './button-play'
 import * as db from './db'
-import { algo1_4, bassCode, beat1_12, beat1_2__1_4, beat1_4, kickCode, monoDefaultEditorValue, snareCode2 } from './demo-code'
+import { demo } from './demo-code'
 import { Editor } from './editor'
 import { EditorBuffer } from './editor-buffer'
 import { Hint } from './hint'
@@ -88,7 +88,10 @@ function unique<T extends { id?: string }>(arr: T[]): T[] {
 
 export const focusMap = new Map<string, HTMLElement>()
 
-export type Selected = { player: number, pattern?: number }
+export type Selected = {
+  player: number,
+  send: number
+}
 
 export let app: App
 
@@ -108,8 +111,8 @@ export const App = web(view('app',
     state: 'idle' | 'deleting' = 'idle'
 
     audio = Audio({
-      vol: 0.5,
-      bpm: 120,
+      vol: 0.35,
+      bpm: 125,
       audioContext: new AudioContext({
         sampleRate: 44100, latencyHint: 0.04
       }),
@@ -119,37 +122,51 @@ export const App = web(view('app',
 
     players: Player[] = [
       Player({
-        id: 'a', vol: 0.5, sound: 'b', pattern: 0, patterns: [
-          'b',
-          // 'b', 'b', 'b', 'c',
+        id: 'kick', vol: 0.45, sound: 'sk', pattern: 0, patterns: [
+          'k', 'k', 'k', 'k2',
         ], audio: this.audio
       }),
-      // Player({
-      //   id: 'b', vol: 0.5, sound: 'a', pattern: 0, patterns: [
-      //     'a', 'a', 'a', 'a',
-      //     // 'a', 'a', 'a', 'a',
-      //   ], audio: this.audio
-      // }),
-      // Player({ vol: 0.5, sound: 'b', pattern: 0, patterns: ['b', 'b', 'b', 'b'], audio: this.audio }),
-      // Player({ vol: 0.5, sound: 'a', pattern: 0, patterns: ['a', 'a', 'a', 'a'], audio: this.audio }),
-      // Player({ vol: 0.5, sound: 'b', pattern: 0, patterns: ['b', 'b', 'b', 'b'], audio: this.audio }),
-      // Player({ vol: 0.5, sound: 'a', pattern: 0, patterns: ['a', 'a', 'a', 'a'], audio: this.audio }),
+
+      Player({
+        id: 'snare', vol: 0.3, sound: 'ss', pattern: 0, patterns: [
+          's', 's', 's', 's2',
+        ], audio: this.audio
+      }),
+
+      Player({
+        id: 'bass', vol: 0.52, sound: 'sb', pattern: 0, patterns: [
+          'b',
+        ], audio: this.audio
+      }),
     ]
 
-    selected: Selected = { player: 0 }
+    selected: Selected = { player: 0, send: 0 }
+
+    focused: 'main' | 'send' | 'sound' | 'pattern' = 'sound'
 
     player: Player = this.players[this.selected.player]
 
     sounds: EditorBuffer[] = [
-      EditorBuffer({ id: 'b', kind: 'sound', value: bassCode, audio: this.audio, isDraft: false, isNew: false, isIntent: true }),
-      // EditorBuffer({ id: 'a', kind: 'sound', value: snareCode2, audio: this.audio, isDraft: false, isNew: false, isIntent: true }),
+      EditorBuffer({ id: 'sk', kind: 'sound', value: demo.kick.sound, audio: this.audio, isDraft: false, isNew: false, isIntent: true }),
+      EditorBuffer({ id: 'ss', kind: 'sound', value: demo.snare.sound, audio: this.audio, isDraft: false, isNew: false, isIntent: true }),
+      EditorBuffer({ id: 'sb', kind: 'sound', value: demo.bass.sound, audio: this.audio, isDraft: false, isNew: false, isIntent: true }),
     ]
 
     patterns: EditorBuffer[] = [
-      EditorBuffer({ id: 'b', kind: 'pattern', value: algo1_4, audio: this.audio, isDraft: false, isNew: false, isIntent: true }),
-      // EditorBuffer({ id: 'c', kind: 'pattern', value: beat1_12, audio: this.audio, isDraft: false, isNew: false, isIntent: true }),
-      // EditorBuffer({ id: 'a', kind: 'pattern', value: beat1_2__1_4, audio: this.audio, isDraft: false, isNew: false, isIntent: true }),
+      EditorBuffer({ id: 'k', kind: 'pattern', value: demo.kick.patterns[0], audio: this.audio, isDraft: false, isNew: false, isIntent: true }),
+      EditorBuffer({ id: 'k2', kind: 'pattern', value: demo.kick.patterns[1], audio: this.audio, isDraft: false, isNew: false, isIntent: true }),
+
+      EditorBuffer({ id: 's', kind: 'pattern', value: demo.snare.patterns[0], audio: this.audio, isDraft: false, isNew: false, isIntent: true }),
+      EditorBuffer({ id: 's2', kind: 'pattern', value: demo.snare.patterns[1], audio: this.audio, isDraft: false, isNew: false, isIntent: true }),
+
+      EditorBuffer({ id: 'b', kind: 'pattern', value: demo.bass.patterns[0], audio: this.audio, isDraft: false, isNew: false, isIntent: true }),
     ]
+
+    sends: EditorBuffer[] = [
+      EditorBuffer({ id: 'reverb', kind: 'sound', value: demo.reverb.sound, audio: this.audio, isDraft: false, isNew: false, isIntent: true })
+    ]
+
+    main = EditorBuffer({ id: 'main', kind: 'main', value: demo.main, audio: this.audio, isDraft: false, isNew: false, isIntent: true })
 
     editor?: InstanceType<typeof Editor.Element>
     editorBuffer?: EditorBuffer
@@ -465,7 +482,7 @@ export const App = web(view('app',
       fromProjectJSON = (id: string, json: ReturnType<this['toProjectJSON']>) => {
         $.project = id
 
-        $.selected = { player: 0 }
+        $.selected = { player: 0, send: 0 }
 
         $.audio.$.bpm = json.bpm
 
@@ -656,23 +673,61 @@ export const App = web(view('app',
       // player
 
       onPlayerSoundSelect = (_: string, { y }: { y: number }) => {
-        $.selected = { player: y }
+        $.selected = { ...$.selected, player: y }
+        $.focused = 'sound'
       }
 
       onPlayerPatternSelect = (id: string, { x, y }: { x: number, y: number }) => {
         const player = $.players[y]
         player.$.pattern = x
-        $.selected = { player: y, pattern: x }
+        $.selected = { ...$.selected, player: y }
+        $.focused = 'pattern'
       }
 
       onPlayerPatternPaste = (id: string, { x, y }: { x: number, y: number }) => {
-        const p = $.selected.pattern
-        if (p != null && x !== p) {
-          const player = $.players[y]
-          const pattern = player.$.patterns[p]
-          player.$.patterns = replaceAtIndex(player.$.patterns, x, pattern)
+        const selectedPlayer = $.players[$.selected.player]
+
+        const p = selectedPlayer.$.pattern
+
+        if (x !== p || y !== $.selected.player) {
+          const targetPlayer = $.players[y]
+
+          const pattern = selectedPlayer.$.patterns[p]
+
+          targetPlayer.$.patterns = replaceAtIndex(
+            targetPlayer.$.patterns,
+            x,
+            pattern
+          )
+
+          // trigger render
           $.selected = { ...$.selected }
         }
+      }
+
+      onPlayerPatternInsert = (id: string, { x, y }: { x: number, y: number }) => {
+        const player = $.players[y]
+        const patterns = [...player.$.patterns]
+        const pattern = patterns[x]
+        patterns.splice(x + 1, 0, pattern)
+        player.$.patterns = patterns
+
+        // trigger render
+        $.selected = { ...$.selected }
+      }
+
+      onPlayerPatternDelete = (id: string, { x, y }: { x: number, y: number }) => {
+        const player = $.players[y]
+        const patterns = player.$.patterns
+
+        if (patterns.length === 1) return
+
+        patterns.splice(x, 1)
+
+        player.$.pattern = Math.min(player.$.pattern, patterns.length - 1)
+
+        // trigger render
+        $.selected = { ...$.selected }
       }
 
       // presets
@@ -695,7 +750,8 @@ export const App = web(view('app',
 
       onSoundSelect = (id: string) => {
         $.player.$.sound = id
-        delete $.selected.pattern
+
+        // trigger render
         $.selected = { ...$.selected }
       }
 
@@ -717,17 +773,14 @@ export const App = web(view('app',
       // pattern
 
       onPatternSelect = (id: string) => {
-        const sel = $.selected
-        const patterns = [...$.player.$.patterns]
-        if (sel.pattern != null) {
-          patterns[sel.pattern] = id
-        } else {
-          const index = $.player.$.pattern
-          patterns[index] = id
-          sel.pattern = index
-        }
-        $.player.$.patterns = patterns
-        $.selected = { ...sel }
+        $.player.$.patterns = replaceAtIndex(
+          $.player.$.patterns,
+          $.player.$.pattern,
+          id
+        )
+
+        // trigger render
+        $.selected = { ...$.selected }
       }
 
       onPatternSave = (id: string) => {
@@ -778,7 +831,7 @@ export const App = web(view('app',
       overflow: hidden;
     }
 
-    [part=app-mixer] {
+    [part=app-toolbar] {
       display: flex;
       flex-flow: row nowrap;
       min-height: 55px;
@@ -796,6 +849,14 @@ export const App = web(view('app',
       overflow-x: scroll;
     }
 
+    [part=app-drafts] {
+      white-space: nowrap;
+      display: flex;
+      flex-flow: row nowrap;
+      overflow-x: scroll;
+      width: 0;
+      flex: 1;
+    }
     `
 
     let didInit = false
@@ -873,35 +934,32 @@ export const App = web(view('app',
             e.preventDefault()
             e.stopPropagation()
 
-            const sel = $.selected
-            const player = $.players[sel.player]
+            const dir = e.shiftKey ? -1 : 1
 
-            const dir = (e.shiftKey ? -1 : 1)
-
-            if (sel.pattern != null) {
-              let x = sel.pattern
-              x = modWrap(x + dir, player.$.patterns.length)
-              player.$.pattern = x
-              $.selected = { player: sel.player, pattern: x }
-
+            if ($.focused === 'pattern') {
+              let x = $.player.$.pattern
+              x = modWrap(x + dir, $.player.$.patterns.length)
+              $.player.$.pattern = x
+              // trigger render
+              $.selected = { ...$.selected }
             } else {
-              let y = sel.player
+              let y = $.selected.player
               y = modWrap(y + dir, $.players.length)
-              $.selected = { player: y }
+              $.selected = { ...$.selected, player: y }
             }
           }
           else if (cmd && e.key === ';') {
+            e.preventDefault()
+            e.stopPropagation()
+
+            const order = ['main', 'send', 'sound', 'pattern'] as const
+            const dir = e.shiftKey ? -1 : 1
+
+            let z = order.indexOf($.focused)
+            z = modWrap(z + dir, order.length)
+            $.focused = order[z]
+
             $.focusEditor()
-
-            const sel = $.selected
-            const player = $.players[sel.player]
-
-            if (sel.pattern == null) {
-              sel.pattern = player.$.pattern
-            } else {
-              delete sel.pattern
-            }
-            $.selected = { ...sel }
           }
         }),
         on(window, 'keyup')((e) => {
@@ -943,11 +1001,13 @@ export const App = web(view('app',
       })
     )
 
-    fx(({ player, selected, sounds, patterns }) =>
-      player.fx(({ sound, patterns: patternIds }) => {
-        $.editorBuffer = selected.pattern != null
-          ? get(patterns, patternIds[selected.pattern!])!
-          : get(sounds, sound)!
+    fx(({ player, focused, selected, sounds, patterns, sends, main }) =>
+      player.fx(({ sound, pattern, patterns: patternIds }) => {
+        $.editorBuffer =
+          focused === 'pattern' ? get(patterns, patternIds[pattern])!
+            : focused === 'sound' ? get(sounds, sound)!
+              : focused === 'send' ? sends[selected.send]
+                : main
       })
     )
 
@@ -1022,7 +1082,7 @@ export const App = web(view('app',
       )
     )
 
-    fx.task(({ state, mode, project, projects, remoteProjects, audio, players, selected, sounds, patterns, editorBuffer, mainWaveform }) => {
+    fx.task(({ state, mode, project, projects, remoteProjects, audio, players, selected, focused, sounds, patterns, sends, main, editorBuffer, mainWaveform }) => {
       $.autoSave()
 
       const player = players[selected.player]
@@ -1051,14 +1111,13 @@ export const App = web(view('app',
             />
           )}
 
-          <div style="position: absolute;left:0;top:0;width:100%;height:100%;">
+          <div style="position: absolute; left:0; top:0; width:100%; height:100%;">
             {mainWaveform}
           </div>
 
+          <div style="width:100%; height:100%; display: flex; flex-flow: column nowrap;">
 
-          <div style="width:100%;height:100%;display: flex; flex-flow: column nowrap;">
-
-            <div style="height:45px; z-index:999999999;display:flex;flex-flow:row nowrap;">
+            <div style="height:45px; z-index:999999999; display: flex; flex-flow: row nowrap;">
               <ButtonIcon
                 part="app-mixer-button" onClick={() => {
                   $.mode = APP_MODE.NORMAL
@@ -1079,7 +1138,7 @@ export const App = web(view('app',
               } />
             </div>
 
-            <div style="width:100%;height:70%;display:flex; flex-flow: row nowrap;">
+            <div style="width:100%; height:70%; display:flex; flex-flow: row nowrap;">
               <Editor
                 ref={refs.editor}
                 style="width:50%;height:100%;"
@@ -1099,7 +1158,7 @@ export const App = web(view('app',
               />
             </div>
 
-            <div style="width:100%;height:30%;display:flex; flex-flow: row nowrap;">
+            <div style="width:100%; height:30%; display:flex; flex-flow: row nowrap;">
               <TrackView
                 active={false}
                 getTime={audio.$.getTime}
@@ -1137,56 +1196,14 @@ export const App = web(view('app',
       }
 
       if (mode === APP_MODE.NORMAL) {
-        const soundId = selected.pattern == null ? player.$.sound : null
-        const patternId = selected.pattern != null ? player.$.patterns[selected.pattern] : null
+        const soundId = focused === 'sound' ? player.$.sound : null
+        const patternId = focused === 'pattern' ? player.$.patterns[player.$.pattern] : null
 
         const sound = soundId ? get(sounds, soundId)! : false
         const pattern = patternId ? get(patterns, patternId)! : false
 
-        const mixerMain =
-          <div part="app-mixer">
-
-            <div style="display: flex; flex-flow: row nowrap; width: 35%;">
-              <ButtonPlay
-                part="app-mixer-button"
-                target={audio as any}
-                running={iconStop}
-                suspended={iconPlay}
-              />
-
-              <ButtonIcon part="app-mixer-button" onClick={() => {
-                $.players.push(Player(player.$.derive()))
-                $.players = [...$.players]
-              }}>
-                <IconSvg
-                  set="feather"
-                  icon="plus-circle"
-                />
-              </ButtonIcon>
-
-              <VolSlider id="main" running={
-                audio.$.state === 'running'
-              } />
-
-              <NumberInput
-                part="app-bpm"
-                min={1}
-                max={666}
-                value={audio.deps.bpm}
-                step={1}
-                align="x"
-              />
-            </div>
-
-            <ButtonIcon part="app-mixer-button" onClick={() => {
-              $.mode = APP_MODE.SOLO
-            }}>
-              <IconSvg
-                set="feather"
-                icon="cpu"
-              />
-            </ButtonIcon>
-
+        const toolbarView =
+          <div part="app-toolbar">
             <div part="app-projects">
               {filterMap(remoteProjects, (long) => {
                 const [, icon, date, short, checksum] = long.split(DELIMITERS.SHORT_ID)
@@ -1294,6 +1311,57 @@ export const App = web(view('app',
             </ButtonIcon>
           </div>
 
+        const mixerView =
+          <div part="app-mixer">
+
+            <div style="display: flex; flex-flow: row wrap; align-items: center; justify-content: center;">
+              <NumberInput
+                style="height:30px"
+                part="app-bpm"
+                min={1}
+                max={666}
+                value={audio.deps.bpm}
+                step={1}
+                align="x"
+              />
+
+              <div style="display: flex; flex-flow: row wrap; align-items: center; justify-content: center">
+                <ButtonPlay
+                  kind="big"
+                  target={audio as any}
+                  running={iconStop}
+                  suspended={iconPlay}
+                />
+
+                <ButtonIcon part="app-mixer-button" onClick={() => {
+                  $.players.push(Player(player.$.derive()))
+                  $.players = [...$.players]
+                }}>
+                  <IconSvg
+                    set="feather"
+                    icon="plus-circle"
+                  />
+                </ButtonIcon>
+              </div>
+
+              <div style="width:100%;height:30px">
+                <VolSlider id="main" running={
+                  audio.$.state === 'running'
+                } />
+              </div>
+            </div>
+
+            {/* <ButtonIcon part="app-mixer-button" onClick={() => {
+              $.mode = APP_MODE.SOLO
+            }}>
+              <IconSvg
+                set="feather"
+                icon="cpu"
+              />
+            </ButtonIcon> */}
+
+          </div>
+
         const soundPresets = <div part="app-presets">
           {sounds.map((sound) =>
             <TrackView
@@ -1334,13 +1402,14 @@ export const App = web(view('app',
             part="app-players"
             align="x"
             shifted
-            initial={[0, 0.125, 0.25, 0.40]}
+            initial={[0, 0.09, 0.225, 0.325, 0.5]}
           >
-
             {editorBuffer.$.kind === 'sound'
               ? soundPresets
               : patternPresets
             }
+
+            {mixerView}
 
             <div part="app-players-mixer">
               {players.map((player, y) =>
@@ -1391,7 +1460,7 @@ export const App = web(view('app',
                       const pattern = get(patterns, id)!
                       return <TrackView
                         part="app-player-pattern"
-                        active={selected.player === y && selected.pattern === x && id === patternId}
+                        active={selected.player === y && player.$.pattern === x && id === patternId}
                         live={player.$.pattern === x}
                         xPos={x}
                         audio={audio}
@@ -1401,7 +1470,11 @@ export const App = web(view('app',
                         clickMeta={{ id, x, y }}
                         onClick={$.onPlayerPatternSelect}
                         onDblClick={$.onPatternSave}
-                        onAltClick={selected.pattern != null && player.$.pattern !== x && $.onPlayerPatternPaste}
+                        onAltClick={
+                          (y !== selected.player || player.$.pattern !== x)
+                          && $.onPlayerPatternPaste}
+                        onCtrlAltClick={$.onPlayerPatternInsert}
+                        onCtrlShiftClick={$.onPlayerPatternDelete}
                       />
                     })
                   }
@@ -1422,10 +1495,7 @@ export const App = web(view('app',
             />
           )}
 
-
           <div part="app-inner">
-            {mixerMain}
-
             <div part="app-main-outer">
               <Spacer
                 id="app-main"
@@ -1439,7 +1509,7 @@ export const App = web(view('app',
                   id="app-bottom"
                   part="app-bottom"
                   align="y"
-                  initial={[0, 0.7]}
+                  initial={[0, 0.85]}
                 >
                   <div style="width: 100%; height: 100%; display:flex; flex-flow: column nowrap; position:relative">
                     {mainWaveform}
@@ -1463,7 +1533,7 @@ export const App = web(view('app',
                         active={false}
                         // showLabel={false}
                         padded
-                        leftAlignLabel={selected.pattern == null}
+                        leftAlignLabel={focused === 'sound'}
                         sliders
                         player={player}
                         audio={audio}

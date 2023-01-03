@@ -6,6 +6,7 @@ import { ButtonIcon } from './button-icon'
 
 export const ButtonPlay = web(view('button-play',
   class props {
+    kind?: string = 'normal'
     target!: Reactive<any, { state: AudioState, toggle: () => void }, void>
     // TODO: for all states
     running!: JSX.Element
@@ -30,10 +31,11 @@ export const ButtonPlay = web(view('button-play',
   },
 
   function effects({ $, fx }) {
-    fx(({ target, running, suspended }) =>
+    fx(({ kind, target, running, suspended }) =>
       target.fx(({ state }) => {
         $.view =
           <ButtonIcon
+            class={kind}
             onTap={$.handleClick}
             onCtrlShiftClick={$.handleClick}
             color={state === 'running'

@@ -16,7 +16,7 @@ export type EditorBuffer = typeof EditorBuffer.State
 export const EditorBuffer = reactive('editor-buffer',
   class props {
     audio!: Audio
-    kind!: 'sound' | 'pattern'
+    kind!: 'sound' | 'pattern' | 'main'
     id?= cheapRandomId()
 
     value!: string
@@ -36,6 +36,8 @@ export const EditorBuffer = reactive('editor-buffer',
 
   class local {
     title?: string
+
+    didDisplay?: boolean = false
 
     compiledValue?: string
 
@@ -160,8 +162,8 @@ export const EditorBuffer = reactive('editor-buffer',
         })
       )
 
-      fx(async ({ id, waveplot, noDraw }) => {
-        if (!noDraw && !$.canvas) {
+      fx(async ({ id, waveplot, noDraw, didDisplay }) => {
+        if (didDisplay && !noDraw && !$.canvas) {
           const { canvas } = await waveplot.create(id)
           $.canvas = canvas
         }
@@ -189,13 +191,18 @@ export const EditorBuffer = reactive('editor-buffer',
         }
       })
 
-      fx.raf(({ canvas: _, value }) => {
-        $.draw()
+      fx.raf(({ didDisplay, canvas: _, value: __ }) => {
+        if (didDisplay) {
+          $.draw()
+        }
       })
     }
     else if ($.kind === 'pattern') {
-      fx.once(({ value }) => {
-        $.compilePattern(0)
+      const off = fx(({ didDisplay, value: _ }) => {
+        if (didDisplay) {
+          off()
+          $.compilePattern(0)
+        }
       })
     }
   }
