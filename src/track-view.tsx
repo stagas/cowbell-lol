@@ -44,6 +44,7 @@ export const TrackView = web(view('track-view',
     onDblClick?: TrackViewHandler
     onCtrlShiftClick?: TrackViewHandler
     onCtrlClick?: TrackViewHandler
+    onCtrlAltClick?: TrackViewHandler
     onAltClick?: TrackViewHandler | false
     onRearrange?: TrackViewHandler
   },
@@ -51,13 +52,18 @@ export const TrackView = web(view('track-view',
   class local {
     host = element
     rect?: Rect
-    isDraft: boolean = false
+
+    didDisplay = false
+
+    isDraft = false
+
     canvas?: HTMLCanvasElement
     canvasView: JSX.Element = false
     midiView: JSX.Element = false
     buttonView: JSX.Element = false
     slidersView: JSX.Element = false
     labelView: JSX.Element = false
+
     soundLabel: JSX.Element = false
     patternLabel: JSX.Element = false
     error: Error | false = false
@@ -71,6 +77,8 @@ export const TrackView = web(view('track-view',
         let fn: TrackViewHandler | false | void
         if ((e.ctrlKey || e.metaKey) && e.shiftKey) {
           fn = $.onCtrlShiftClick
+        } else if ((e.ctrlKey || e.metaKey) && e.altKey) {
+          fn = $.onCtrlAltClick
         } else if (e.ctrlKey || e.metaKey) {
           fn = $.onCtrlClick
         } else if (e.altKey) {
@@ -95,6 +103,12 @@ export const TrackView = web(view('track-view',
         e.stopPropagation()
         onDblClick(clickMeta.id, clickMeta, true)
       })
+
+      intersects = ([entry]: IntersectionObserverEntry[]) => {
+        if (entry.isIntersecting) {
+          $.didDisplay = true
+        }
+      }
 
       resize = fn(({ host }) => queue.raf(() => {
         $.rect = new Rect(host.getBoundingClientRect())
@@ -273,9 +287,13 @@ export const TrackView = web(view('track-view',
       host.toggleAttribute('padded', padded)
     })
 
-    fx(function listenHostResize({ host }) {
-      return observe.resize.initial(host, $.resize)
-    })
+    fx(({ host }) =>
+      observe.intersection.root(host.offsetParent)(host, $.intersects)
+    )
+
+    fx(({ host }) =>
+      observe.resize.initial(host, $.resize)
+    )
 
     fx(({ host, isDraft, error }) => {
       host.style.cssText = /*css*/`
@@ -310,7 +328,21 @@ export const TrackView = web(view('track-view',
     fx(({ pattern }) => pattern && pattern.fx(maybeError) || void 0)
     fx(({ sound }) => sound && sound.fx(maybeError) || void 0)
 
-    fx(({ getTime, pattern, xPos }) => {
+    fx(({ didDisplay, pattern }) => {
+      if (didDisplay && pattern) {
+        pattern.$.didDisplay = true
+      }
+    })
+
+    fx(({ didDisplay, sound }) => {
+      if (didDisplay && sound) {
+        sound.$.didDisplay = true
+      }
+    })
+
+    fx(({ didDisplay, getTime, pattern, xPos }) => {
+      if (!didDisplay) return
+
       if (pattern) {
         return fx(({ player }) => {
           if (player) {
@@ -363,8 +395,8 @@ export const TrackView = web(view('track-view',
       $.midiView = false
     })
 
-    fx(({ audio }) =>
-      audio.fx(({ waveplot }) =>
+    fx(({ audio, didDisplay }) =>
+      !didDisplay ? void 0 : audio.fx(({ waveplot }) =>
         fx(async ({ id, sound }, prev) => {
 
           if (prev.sound && (!sound || prev.sound.$.id !== sound.$.id)) {
@@ -438,6 +470,7 @@ export const TrackView = web(view('track-view',
           }}
           title={isDraft ? [
             $.onDblClick && 'Double click to Save.',
+            $.onCtrlAltClick && 'Ctrl+Alt+Click to Dupe Right.',
             $.onCtrlShiftClick && (
               'Ctrl+Shift+Click to Delete.' +
               (active ? '\n  (cannot delete the active one,\n  you need to select another first).'
@@ -460,13 +493,13 @@ export const TrackView = web(view('track-view',
     fx(({ sound, sliders, rect, player }) => {
       if (!player) return
 
-      if (sound && sliders && rect.height > 120) {
+      if (sound && sliders && rect.height > 150 && rect.width > 250) {
         $.slidersView = <Spacer
           key={sound.$.id!}
           id={sound.$.id!}
           part="sliders"
           align="x"
-          initial={[0, 0.35]}
+          initial={[0, 0.45]}
         >
           <div></div>
           <Sliders player={player} sound={sound} />

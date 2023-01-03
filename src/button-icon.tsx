@@ -102,6 +102,18 @@ export const ButtonIcon = web(view('button-icon',
       width: 30px;
     }
 
+    &(.big) {
+      width: 100%;
+      height: 60px;
+      min-height: 100%;
+      max-height: 100%;
+
+      button {
+        width: 100%;
+        height: 100%;
+      }
+    }
+
     ${IconSvg} {
       width: 100%;
       height: 100%;

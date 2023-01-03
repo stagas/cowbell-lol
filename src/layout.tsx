@@ -164,10 +164,6 @@ export const Layout = web(view('layout',
       }
     }
 
-    [part=app-bpm] {
-      flex: 0.2;
-    }
-
     [part=app-inner] {
       display: flex;
       position: relative;
@@ -178,11 +174,15 @@ export const Layout = web(view('layout',
 
     [part=app-mixer] {
       display: flex;
-      flex-flow: row nowrap;
-      min-height: 55px;
-      max-height: 55px;
+      flex-flow: column nowrap;
       align-items: stretch;
-      justify-content: space-between;
+      justify-content: flex-start;
+      overflow: hidden;
+
+      > * {
+        justify-content: center;
+        align-items: stretch;
+      }
     }
 
     [part=app-controls] {

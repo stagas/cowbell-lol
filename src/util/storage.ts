@@ -2,7 +2,7 @@ import type { AppMode, Selected } from '../app'
 
 export const spacer = {
   get: (id: string, fallbackSizes: number[]) => {
-    // return fallbackSizes
+    return fallbackSizes
     const cells: number[] = (localStorage[`spacer-${id}`] ?? '')
       .split(',')
       .filter((s: string) => s !== '')
