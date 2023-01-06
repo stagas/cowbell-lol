@@ -34,6 +34,7 @@ export const TrackView = web(view('track-view',
     player?: Player | false = false
     sound?: EditorBuffer | false
     pattern?: EditorBuffer | false
+    main?: EditorBuffer | false
 
     xPos?: number = 0
 
@@ -493,7 +494,7 @@ export const TrackView = web(view('track-view',
     fx(({ sound, sliders, rect, player }) => {
       if (!player) return
 
-      if (sound && sliders && rect.height > 150 && rect.width > 250) {
+      if (sound && sliders && rect.height > 150 && rect.width > 220) {
         $.slidersView = <Spacer
           key={sound.$.id!}
           id={sound.$.id!}

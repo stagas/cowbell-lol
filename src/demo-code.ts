@@ -371,17 +371,20 @@ euc(1/16,4,
   },
 
   reverb: {
-    sound: String.raw`\\\ reverb \\\
-fx(
-  x,
-  'mix[0..1f]=0.5
-)=(
-  daverb(
-    x*mix
-  )
-);
-f()=fx(#i(0));
+    sound: String.raw`\\\
+f()=sine(1);
 `
+    //     sound: String.raw`\\\ reverb \\\
+    // fx(
+    //   x,
+    //   'mix[0..1f]=0.5
+    // )=(
+    //   daverb(
+    //     x*mix
+    //   )
+    // );
+    // f()=fx(#i(0));
+    // `
   },
 
   main: String.raw`\\\ main \\\

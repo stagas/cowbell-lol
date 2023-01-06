@@ -18,6 +18,7 @@ export const Audio = reactive('audio',
     bpm!: number
   },
   class local {
+    id = 'audio'
     state: AudioState = 'init'
 
     connectedPlayers = new Set<string>()

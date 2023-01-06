@@ -76,10 +76,10 @@ export const ButtonIcon = web(view('button-icon',
     button {
       all: unset;
       display: inline;
-      width: 45px;
+      width: 100%;
+      max-width: 55px;
       height: 45px;
       padding: 0 5px;
-      min-height: 100%;
       max-height: 100%;
       text-align: center;
       color: var(--color);

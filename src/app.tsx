@@ -18,7 +18,6 @@ import { Hint } from './hint'
 import { NumberInput } from './number-input'
 import { Player } from './player'
 import { PlayerView } from './player-view'
-import { Slider, SliderView } from './slider-view'
 import { Spacer } from './spacer'
 import { TrackView } from './track-view'
 import { classes } from './util/classes'
@@ -160,10 +159,6 @@ export const App = web(view('app',
       EditorBuffer({ id: 's2', kind: 'pattern', value: demo.snare.patterns[1], audio: this.audio, isDraft: false, isNew: false, isIntent: true }),
 
       EditorBuffer({ id: 'b', kind: 'pattern', value: demo.bass.patterns[0], audio: this.audio, isDraft: false, isNew: false, isIntent: true }),
-    ]
-
-    sends: EditorBuffer[] = [
-      EditorBuffer({ id: 'reverb', kind: 'sound', value: demo.reverb.sound, audio: this.audio, isDraft: false, isNew: false, isIntent: true })
     ]
 
     main = EditorBuffer({ id: 'main', kind: 'main', value: demo.main, audio: this.audio, isDraft: false, isNew: false, isIntent: true })
@@ -1001,40 +996,14 @@ export const App = web(view('app',
       })
     )
 
-    fx(({ player, focused, selected, sounds, patterns, sends, main }) =>
+    fx(({ player, focused, selected, sounds, patterns, main }) =>
       player.fx(({ sound, pattern, patterns: patternIds }) => {
         $.editorBuffer =
           focused === 'pattern' ? get(patterns, patternIds[pattern])!
             : focused === 'sound' ? get(sounds, sound)!
-              : focused === 'send' ? sends[selected.send]
-                : main
+              : main
       })
     )
-
-    const VolSlider = (
-      { id, running }: { id: string | number, running: boolean }
-    ) => {
-      const target = isFinite(+id)
-        ? $.players[+id]
-        : $.audio
-
-      const slider = Slider({
-        value: target.$.vol!,
-        min: 0,
-        max: 1,
-        hue: 100,
-        id: `${id}`,
-        name: '',
-      })
-
-      return <SliderView
-        id={`${id}`}
-        slider={slider}
-        vol={target.deps.vol}
-        running={running}
-        showBg={true}
-      />
-    }
 
     const iconPlay = <IconSvg
       set="feather"
@@ -1059,7 +1028,7 @@ export const App = web(view('app',
       }
     }
 
-    fx(({ project }) => {
+    fx(({ project: _ }) => {
       setTimeout(() => {
         maybeFocusProjectButton(projectButtonRefs)
       }, 100)
@@ -1082,7 +1051,7 @@ export const App = web(view('app',
       )
     )
 
-    fx.task(({ state, mode, project, projects, remoteProjects, audio, players, selected, focused, sounds, patterns, sends, main, editorBuffer, mainWaveform }) => {
+    fx.task(({ state, mode, project, projects, remoteProjects, audio, players, selected, focused, sounds, patterns, main, editorBuffer, mainWaveform }) => {
       $.autoSave()
 
       const player = players[selected.player]
@@ -1133,9 +1102,6 @@ export const App = web(view('app',
                 running={iconStop}
                 suspended={iconPlay}
               />
-              <VolSlider id={0} running={
-                player.$.state === 'running'
-              } />
             </div>
 
             <div style="width:100%; height:70%; display:flex; flex-flow: row nowrap;">
@@ -1311,57 +1277,6 @@ export const App = web(view('app',
             </ButtonIcon>
           </div>
 
-        const mixerView =
-          <div part="app-mixer">
-
-            <div style="display: flex; flex-flow: row wrap; align-items: center; justify-content: center;">
-              <NumberInput
-                style="height:30px"
-                part="app-bpm"
-                min={1}
-                max={666}
-                value={audio.deps.bpm}
-                step={1}
-                align="x"
-              />
-
-              <div style="display: flex; flex-flow: row wrap; align-items: center; justify-content: center">
-                <ButtonPlay
-                  kind="big"
-                  target={audio as any}
-                  running={iconStop}
-                  suspended={iconPlay}
-                />
-
-                <ButtonIcon part="app-mixer-button" onClick={() => {
-                  $.players.push(Player(player.$.derive()))
-                  $.players = [...$.players]
-                }}>
-                  <IconSvg
-                    set="feather"
-                    icon="plus-circle"
-                  />
-                </ButtonIcon>
-              </div>
-
-              <div style="width:100%;height:30px">
-                <VolSlider id="main" running={
-                  audio.$.state === 'running'
-                } />
-              </div>
-            </div>
-
-            {/* <ButtonIcon part="app-mixer-button" onClick={() => {
-              $.mode = APP_MODE.SOLO
-            }}>
-              <IconSvg
-                set="feather"
-                icon="cpu"
-              />
-            </ButtonIcon> */}
-
-          </div>
-
         const soundPresets = <div part="app-presets">
           {sounds.map((sound) =>
             <TrackView
@@ -1396,24 +1311,95 @@ export const App = web(view('app',
           )}
         </div>
 
+        const mixerView =
+          <div part="app-mixer" style="display: flex; flex-direction: column; align-items: flex-start; justify-content: center; position: relative; overflow: hidden;">
+
+            <div class="fit-width" style="flex: 0 0 auto; display: flex; flex-flow: row wrap;">
+              <NumberInput
+                style="height:30px"
+                part="app-bpm"
+                min={1}
+                max={666}
+                value={audio.deps.bpm}
+                step={1}
+                align="x"
+              />
+
+              <ButtonPlay
+                kind="big"
+                target={audio as any}
+                running={iconStop}
+                suspended={iconPlay}
+              />
+            </div>
+
+            <div style="flex: 1 1 auto; display: flex; flex-flow: column wrap; width: 100%; height: 0;">
+              {editorBuffer.$.kind === 'sound'
+                ? soundPresets
+                : patternPresets
+              }
+            </div>
+            {/* <ButtonIcon part="app-mixer-button" onClick={() => {
+              $.mode = APP_MODE.SOLO
+            }}>
+              <IconSvg
+                set="feather"
+                icon="cpu"
+              />
+            </ButtonIcon> */}
+
+
+          </div>
+
+        const editorView = <div style="width: 100%; height: 100%; display:flex; flex-flow: column nowrap; position:relative">
+          {mainWaveform}
+
+          <Spacer
+            id="app-selected"
+            part="app-selected"
+            align="x"
+            reverse={true}
+            initial={[0, 0.555]}
+          >
+            <Editor
+              ref={refs.editor}
+              part="app-editor"
+              name="editor"
+              player={player}
+              buffer={editorBuffer}
+            />
+
+            <TrackView
+              active={false}
+              // showLabel={false}
+              padded
+              leftAlignLabel={focused === 'sound'}
+              sliders
+              player={(focused === 'sound' || focused === 'pattern') && player}
+              audio={audio}
+              main={focused === 'main' && main}
+              sound={focused === 'sound' && sound}
+              pattern={focused === 'pattern' && pattern}
+              getTime={audio.$.getTime}
+              clickMeta={editorBuffer.$}
+              onDblClick={$.onBufferSave}
+            />
+
+          </Spacer>
+        </div>
+
         const playersView =
           <Spacer
             id="app-players"
             part="app-players"
+            style={`max-height:${players.length * 70}px`}
             align="x"
             shifted
-            initial={[0, 0.09, 0.225, 0.325, 0.5]}
+            initial={[0, 0.1325, 0.445]}
           >
-            {editorBuffer.$.kind === 'sound'
-              ? soundPresets
-              : patternPresets
-            }
-
-            {mixerView}
-
-            <div part="app-players-mixer">
+            <div>
               {players.map((player, y) =>
-                <div part="app-player-controls">
+                <div part="app-players-row" class="app-player-controls">
                   <ButtonPlay
                     part="app-player-play"
                     target={player as any}
@@ -1428,17 +1414,17 @@ export const App = web(view('app',
                       }
                     }}
                   />
-                  <VolSlider id={y} running={
-                    player.$.state === 'running'
-                  } />
                 </div>
               )}
+
+
             </div>
 
-            <div part="app-player-sounds">
+            <div>
               {players.map((player, y) => {
                 return <TrackView
-                  part="app-player-sound"
+                  part="app-players-row"
+                  class={classes({ big: selected.player === y })}
                   leftAlignLabel
                   sliders
                   active={selected.player === y && player.$.sound === soundId}
@@ -1452,9 +1438,11 @@ export const App = web(view('app',
               })}
             </div>
 
-            <div part="app-player-patterns">
+            <div>
               {players.map((player, y) => {
-                return <div style="height:0">
+                return <div part="app-players-row" style="display: flex; flex-flow: row nowrap;"
+                  class={classes({ big: selected.player === y })}
+                >
                   {
                     player.$.patterns.map((id, x) => {
                       const pattern = get(patterns, id)!
@@ -1495,78 +1483,65 @@ export const App = web(view('app',
             />
           )}
 
-          <div part="app-inner">
-            <div part="app-main-outer">
+          <Spacer
+            id="app-outer"
+            align="y"
+            initial={[0, 0.95]}
+          >
+            <Spacer
+              id="app"
+              align="x"
+              style="width:100%;height:100%;"
+              initial={[0, 0.125]}
+            >
+              {mixerView}
+
               <Spacer
-                id="app-main"
-                part="app-main"
+                id="app-right"
                 align="y"
-                initial={[0, 0.5]}
+                initial={[0, .62]}
               >
-                {playersView}
-
-                <Spacer
-                  id="app-bottom"
-                  part="app-bottom"
-                  align="y"
-                  initial={[0, 0.85]}
-                >
-                  <div style="width: 100%; height: 100%; display:flex; flex-flow: column nowrap; position:relative">
-                    {mainWaveform}
-
-                    <Spacer
-                      id="app-selected"
-                      part="app-selected"
-                      align="x"
-                      reverse={true}
-                      initial={[0, 0.5]}
-                    >
-                      <Editor
-                        ref={refs.editor}
-                        part="app-editor"
-                        name="editor"
-                        player={player}
-                        buffer={editorBuffer}
-                      />
-
-                      <TrackView
-                        active={false}
-                        // showLabel={false}
-                        padded
-                        leftAlignLabel={focused === 'sound'}
-                        sliders
-                        player={player}
-                        audio={audio}
-                        sound={sound}
-                        pattern={pattern}
-                        getTime={audio.$.getTime}
-                        clickMeta={editorBuffer.$}
-                        onDblClick={$.onBufferSave}
-                      />
-
-                    </Spacer>
+                <div style="height:100%;overflow-y:scroll;">
+                  <div style="position:relative">
+                    {playersView}
                   </div>
 
-                  <PianoKeys
-                    invertColors
-                    halfOctaves={7}
-                    startOctave={2}
-                    audioContext={audio.$.audioContext}
-                    onmidimessage={e => {
-                      if (!$.player.$.preview) {
-                        $.player.$.startPreview()
-                      }
-                      $.player.$.view?.monoNode?.processMidiEvent(e)
-                    }}
-                    style="pointer-events: all"
-                  />
-                </Spacer>
+                  <div part="app-players-row">
+
+                    <ButtonIcon class="normal" part="app-mixer-button" onClick={() => {
+                      $.players.push(Player(player.$.derive()))
+                      $.players = [...$.players]
+                    }}>
+                      <IconSvg
+                        set="feather"
+                        icon="plus-circle"
+                      />
+                    </ButtonIcon>
+
+                  </div>
+                </div>
+
+                {editorView}
 
 
               </Spacer>
-            </div>
-          </div>
+            </Spacer>
 
+            <PianoKeys
+              invertColors
+              halfOctaves={7}
+              startOctave={2}
+              audioContext={audio.$.audioContext}
+              onmidimessage={e => {
+                if (!$.player.$.preview) {
+                  $.player.$.startPreview()
+                }
+                $.player.$.view?.monoNode?.processMidiEvent(e)
+              }}
+              style="pointer-events: all"
+            />
+
+          </Spacer>
         </>
 
       }

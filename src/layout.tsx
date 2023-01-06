@@ -77,7 +77,15 @@ export const Layout = web(view('layout',
     }
 
     [part=app] {
-      height: calc(100% - 70px);
+    }
+
+    .fit-width {
+      width: 100%;
+
+      > * {
+        width: 100%;
+        max-width: 100%;
+      }
     }
 
     [part=app-tabs] {
@@ -109,24 +117,42 @@ export const Layout = web(view('layout',
     [part=app-players] {
       display: flex;
       flex-flow: row nowrap;
+      flex: 1;
+      width: 100%;
+      height: 100%;
+      overflow-y: scroll;
     }
 
-    [part=app-players-mixer] {
+    [part=app-players-row] {
       display: flex;
       flex-flow: column nowrap;
-      flex: 1;
+      height: 70px;
+      width: 100%;
+
+      > * {
+        display: flex;
+        flex-flow: row nowrap;
+        width: 100%;
+      }
     }
 
-    [part=app-player-controls] {
+    .app-player-controls {
       display: flex;
       flex: 1;
-      align-items: stretch;
+      flex-flow: row nowrap;
+      align-items: center;
+      overflow: hidden;
       > * {
         height: 0;
         min-height: 100%;
       }
     }
 
+    [part=app-player-play] {
+      display: flex;
+      width: 100%;
+      flex: 0;
+    }
     [part=app-player-sounds] {
       display: flex;
       flex: 1;
@@ -173,15 +199,21 @@ export const Layout = web(view('layout',
     }
 
     [part=app-mixer] {
+      width: 100%;
+      height: 100%;
+      flex: 1;
+    }
+
+
+    [part=app-mixer-sends] {
       display: flex;
       flex-flow: column nowrap;
-      align-items: stretch;
-      justify-content: flex-start;
-      overflow: hidden;
+      width: 100%;
+      height: 100%;
+      overflow-y: scroll;
 
-      > * {
-        justify-content: center;
-        align-items: stretch;
+      ${TrackView} {
+        height: 70px;
       }
     }
 
@@ -209,7 +241,7 @@ export const Layout = web(view('layout',
     }
 
     [part=app-presets] {
-      height: 100%;
+      /* height: 100%; */
       overflow-y: scroll;
       ${TrackView} {
         height: 70px;
