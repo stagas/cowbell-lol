@@ -192,6 +192,7 @@ if (!g.didSetup) {
     return result
   }
 
+  g.i = 0
   g.seed = 42
   g.maxNotes = 512
 

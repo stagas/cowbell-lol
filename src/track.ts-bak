@@ -48,8 +48,8 @@ export const Track = reactive('track',
   function effects({ $, fx }) {
     fx(({ sound, pattern }) => {
       $.buffers = {
-        sound: get(app.sounds, sound),
-        pattern: get(app.patterns, pattern),
+        sound: get(app.$.sounds, sound),
+        pattern: get(app.$.patterns, pattern),
       }
     })
   }

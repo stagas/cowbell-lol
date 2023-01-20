@@ -1,18 +1,16 @@
 /** @jsxImportSource minimal-view */
 
-import { cheapRandomId, checksum } from 'everyday-utils'
+import { cheapRandomId } from 'everyday-utils'
 import { Rect } from 'geometrik'
-import { web, view, element, event, chain, on, queue } from 'minimal-view'
-import { app, focusMap } from './app'
-import { Audio } from './audio'
+import { chain, element, event, on, queue, view, web } from 'minimal-view'
+import { app, cachedRef, focusMap } from './app'
 import { EditorBuffer } from './editor-buffer'
 import { Midi } from './midi'
 import { Player } from './player'
+import { Services } from './services'
 import { Sliders } from './sliders'
 import { Spacer } from './spacer'
-import { Stretchy } from './stretchy'
-import { bgForHue } from './util/bg-for-hue'
-import { get } from './util/list'
+import { services } from './services'
 import { observe } from './util/observe'
 
 export type TrackViewHandler = (id: string, meta: any, byClick?: boolean) => void
@@ -20,15 +18,17 @@ export type TrackViewHandler = (id: string, meta: any, byClick?: boolean) => voi
 export const TrackView = web(view('track-view',
   class props {
     id?: string = cheapRandomId()
-    audio?: Audio
+
+    services?: Services
 
     active!: boolean
+    hoverable?: boolean = true
     live?: boolean
     padded?: boolean = false
     sliders?: boolean = false
     autoscroll?: boolean = false
     showLabel?: boolean = true
-    leftAlignLabel?: boolean = false
+    showNotes?: boolean = false
     canFocus?: boolean = false
 
     player?: Player | false = false
@@ -38,7 +38,6 @@ export const TrackView = web(view('track-view',
 
     xPos?: number = 0
 
-    getTime?: () => number
     clickMeta?: any
     onClick?: TrackViewHandler
     onRightClick?: TrackViewHandler
@@ -48,13 +47,13 @@ export const TrackView = web(view('track-view',
     onCtrlAltClick?: TrackViewHandler
     onAltClick?: TrackViewHandler | false
     onRearrange?: TrackViewHandler
+
+    didDisplay?= false
   },
 
   class local {
     host = element
-    rect?: Rect
-
-    didDisplay = false
+    rect: Rect = new Rect()
 
     isDraft = false
 
@@ -72,7 +71,7 @@ export const TrackView = web(view('track-view',
 
   function actions({ $, fns, fn }) {
     return fns(new class actions {
-      handleClick = fn(({ host, clickMeta, onClick }) => (e: PointerEvent) => {
+      handleClick = fn(({ host, clickMeta }) => (e: PointerEvent) => {
         e.preventDefault()
         e.stopPropagation()
         let fn: TrackViewHandler | false | void
@@ -80,14 +79,14 @@ export const TrackView = web(view('track-view',
           fn = $.onCtrlShiftClick
         } else if ((e.ctrlKey || e.metaKey) && e.altKey) {
           fn = $.onCtrlAltClick
-        } else if (e.ctrlKey || e.metaKey) {
+        } else if (e.ctrlKey || e.metaKey || (!e.shiftKey && !e.altKey && !e.ctrlKey && !e.metaKey && (e.buttons & 4))) {
           fn = $.onCtrlClick
         } else if (e.altKey) {
           fn = $.onAltClick
         } else if (e.buttons & 2) {
           fn = $.onRightClick
         } else {
-          fn = onClick
+          fn = $.onClick
         }
         if (fn) fn(clickMeta.id, clickMeta, true)
         host.focus()
@@ -118,122 +117,6 @@ export const TrackView = web(view('track-view',
   },
 
   function effects({ $, fx, refs }) {
-    fx(({ leftAlignLabel }) => {
-      const alignLabel = leftAlignLabel ? 'flex-start' : 'center'
-      $.css = /*css*/`
-      & {
-        box-sizing: border-box;
-        position: relative;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        border-bottom: 1px solid #333;
-        outline: none;
-        outline-offset: -8px;
-      }
-
-      &(:focus),
-      &(:hover) {
-        outline: 8px solid #fff2;
-      }
-
-      &([active]) {
-        outline: 8px solid #34f;
-      }
-
-      &([live]) {
-        background: #bcf3;
-      }
-
-      &([active][error]) {
-        outline: 8px solid #f21;
-      }
-
-      &([active]:focus) {
-        outline-color: #67f;
-      }
-
-      [part=button] {
-        all: unset;
-      }
-
-      > [part] {
-        box-sizing: border-box;
-        position: absolute;
-        display: flex;
-        left: 0;
-        top: 0;
-        width: 100%;
-        height: 100%;
-      }
-
-      ${Midi} {
-        pointer-events: none;
-      }
-
-      [part=sliders] {
-        pointer-events: none;
-        flex-flow: row nowrap;
-      }
-
-      [part=canvas] {
-        image-rendering: pixelated;
-        pointer-events: none;
-        box-sizing: border-box;
-      }
-
-      &([padded]) {
-        [part=canvas] {
-          padding: 0 8px;
-        }
-      }
-
-      [part=button] {
-        cursor: pointer;
-      }
-
-      [part=label] {
-        pointer-events: none;
-        width: 100%;
-        height: 100%;
-        display: flex;
-        flex-wrap: wrap;
-        flex-direction: column;
-        /* justify-content: center; */
-        /* flex-flow: column nowrap; */
-        font-family: Mono;
-        font-size: 20px;
-        color: #fff;
-
-        line-height: 40px;
-        text-align: center;
-
-        --outline-color: #000;
-        --outline-width: 8px;
-
-        svg {
-          position: relative;
-          z-index: 1;
-          display: flex;
-          box-sizing: border-box;
-          width: 100%;
-          height: 100%;
-        }
-
-        [part=outline] {
-          position: absolute;
-          z-index: -1;
-          width: 100%;
-          height: 100%;
-          top: 0;
-          left: 0;
-          color: var(--outline-color);
-          -webkit-text-stroke: var(--outline-width) var(--outline-color);
-        }
-      }
-      `
-    })
-
     fx(({ host, canFocus, clickMeta }) => {
       if (canFocus) {
         host.tabIndex = 0
@@ -243,7 +126,6 @@ export const TrackView = web(view('track-view',
 
         return chain(
           on(host, 'keydown')((e) => {
-            console.log(e.key)
             if (e.key === 'Enter') {
               $.handleClick(e as any)
             }
@@ -267,13 +149,21 @@ export const TrackView = web(view('track-view',
     fx.raf(({ host, active }) => {
       host.toggleAttribute('active', active)
       if (active) {
-        try {
-          // @ts-ignore
-          host.scrollIntoViewIfNeeded()
-        } catch {
-          host.scrollIntoView()
+        // try {
+        //   // @ts-ignore
+        //   host.scrollIntoViewIfNeeded(true)
+        // } catch {
+        if (host.offsetParent) {
+          const diff = (host.offsetParent.clientHeight - host.offsetHeight)
+          host.offsetParent.scrollTop = host.offsetTop - diff / 2
         }
+        // host.scrollIntoView({ block: 'center', behavior: 'smooth' })
+        // }
       }
+    })
+
+    fx.raf(({ host, hoverable }) => {
+      host.toggleAttribute('hoverable', hoverable)
     })
 
     fx.raf(({ host, live }) => {
@@ -288,6 +178,10 @@ export const TrackView = web(view('track-view',
       host.toggleAttribute('padded', padded)
     })
 
+    fx.raf(({ host, isDraft }) => {
+      host.toggleAttribute('draft', isDraft)
+    })
+
     fx(({ host }) =>
       observe.intersection.root(host.offsetParent)(host, $.intersects)
     )
@@ -295,21 +189,6 @@ export const TrackView = web(view('track-view',
     fx(({ host }) =>
       observe.resize.initial(host, $.resize)
     )
-
-    fx(({ host, isDraft, error }) => {
-      host.style.cssText = /*css*/`
-        background-image: ${isDraft ? bgForHue(error ? 0 :
-        checksum(
-          ($.sound && $.sound?.$.id)
-          || ($.pattern && $.pattern?.$.id)
-          || $.id!
-        )
-      ) : 'transparent'};
-        background-size: 90px 90px;
-        background-repeat: no-repeat;
-        background-position: top right;
-      `
-    })
 
     const maybeDraft = ({ isDraft }: any) => {
       $.isDraft =
@@ -341,54 +220,35 @@ export const TrackView = web(view('track-view',
       }
     })
 
-    fx(({ didDisplay, getTime, pattern, xPos }) => {
-      if (!didDisplay) return
+    fx(({ didDisplay, pattern, xPos, showNotes }) => {
+      if (!didDisplay) {
+        if (pattern) {
+          $.midiView = <Midi
+            part="midi"
+            pattern={pattern}
+            showNotes={showNotes}
+          />
+        }
+        return
+      }
 
       if (pattern) {
         return fx(({ player }) => {
           if (player) {
-            return player.fx(({ patterns }) => {
-              const pats = patterns.map((patternId) =>
-                get(app.patterns, patternId)!
-              ).filter(Boolean)
-              return chain(
-                pats.map((p) =>
-                  p.fx(({ midiEvents: _, numberOfBars: __ }) => {
-                    let offset = 0
-                    let i = 0
-                    for (const pat of pats) {
-                      if (i++ === xPos) break
-                      offset += pat.$.numberOfBars!
-                    }
-                    let bars = 0
-                    for (const pat of pats) {
-                      bars += pat.$.numberOfBars!
-                    }
-                    return player.fx(({ state }) => {
-                      $.midiView = <Midi
-                        part="midi"
-                        state={state}
-                        offset={offset}
-                        getTime={getTime}
-                        timeBars={bars}
-                        midiEvents={pattern.$.midiEvents!}
-                        numberOfBars={pattern.$.numberOfBars!}
-                      />
-                    })
-                  })
-                )
-              )
-            })
+            $.midiView = <Midi
+              part="midi"
+              player={player}
+              pattern={pattern}
+              xPos={xPos}
+              showNotes={showNotes}
+            />
           } else {
-            return pattern.fx(({ midiEvents, numberOfBars }) => {
-              $.midiView = <Midi
-                part="midi"
-                state="init"
-                getTime={getTime}
-                midiEvents={midiEvents!}
-                numberOfBars={numberOfBars!}
-              />
-            })
+            $.midiView = <Midi
+              part="midi"
+              pattern={pattern}
+              xPos={xPos}
+              showNotes={showNotes}
+            />
           }
         })
       }
@@ -396,8 +256,8 @@ export const TrackView = web(view('track-view',
       $.midiView = false
     })
 
-    fx(({ audio, didDisplay }) =>
-      !didDisplay ? void 0 : audio.fx(({ waveplot }) =>
+    fx(({ services, didDisplay }) =>
+      !didDisplay ? void 0 : services.fx(({ waveplot }) =>
         fx(async ({ id, sound }, prev) => {
 
           if (prev.sound && (!sound || prev.sound.$.id !== sound.$.id)) {
@@ -447,18 +307,18 @@ export const TrackView = web(view('track-view',
       $.patternLabel = false
     })
 
-    fx(({ soundLabel, patternLabel, showLabel }) => {
-      const name = [soundLabel, patternLabel]
-      // $.labelView = showLabel &&
-      //   <div part="label">
-      //     <Stretchy width={70} height={40} padding={30}>
-      //       {[...name]}
-      //       <div part="outline">
-      //         {[...name]}
-      //       </div>
-      //     </Stretchy>
-      //   </div>
-    })
+    // fx(({ soundLabel, patternLabel, showLabel }) => {
+    //   const name = [soundLabel, patternLabel]
+    //   // $.labelView = showLabel &&
+    //   //   <div part="label">
+    //   //     <Stretchy width={70} height={40} padding={30}>
+    //   //       {[...name]}
+    //   //       <div part="outline">
+    //   //         {[...name]}
+    //   //       </div>
+    //   //     </Stretchy>
+    //   //   </div>
+    // })
 
     fx(({ host, isDraft, active }) => {
       $.buttonView = ($.onClick || $.onDblClick) &&
@@ -484,33 +344,134 @@ export const TrackView = web(view('track-view',
           oncontextmenu={prevent}
           ondblclick={$.handleDblClick}
           onpointerenter={() => {
-            app.hint = ($.error ? $.error.message : '') || ''
+            app.$.hint = ($.error ? $.error.message : '') || ''
           }} onpointerleave={() => {
-            app.hint = ''
+            app.$.hint = ''
           }}
         /> || false
     })
 
     fx(({ sound, sliders, rect, player }) => {
-      if (!player) return
-
-      if (sound && sliders && rect.height > 150 && rect.width > 220) {
-        $.slidersView = <Spacer
-          key={sound.$.id!}
-          id={sound.$.id!}
-          part="sliders"
-          align="x"
-          initial={[0, 0.45]}
-        >
-          <div></div>
-          <Sliders player={player} sound={sound} />
-        </Spacer>
+      if (player && sound && sliders && rect.height > 150 && rect.width > 220) {
+        $.slidersView =
+          <Spacer
+            key={player.$.id!}
+            ref={cachedRef(`sliders-outer-${player.$.id}`)}
+            id={sound.$.id + 'outer'}
+            class="sliders-outer"
+            align="y"
+            initial={[0, 0.5]}
+          >
+            <div />
+            <Spacer
+              ref={cachedRef(`sliders-${player.$.id}`)}
+              id={sound.$.id!}
+              class="sliders"
+              align="x"
+              initial={[0, 0.45]}
+            >
+              <div />
+              <Sliders player={player} sound={sound} />
+            </Spacer>
+          </Spacer>
       } else {
         $.slidersView = false
       }
     })
 
     const prevent = event.prevent.stop()
+    services.fx(({ skin }) => {
+      $.css = /*css*/`
+      & {
+        box-sizing: border-box;
+        position: relative;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        /* border-bottom: 1px solid #333; */
+        outline: none;
+        /* outline-offset: -8px; */
+      }
+
+      &([hoverable]:focus),
+      &([hoverable]:hover) {
+        /* outline: 8px solid #fff2; */
+        background: ${skin.colors.bgLight};
+      }
+
+      &([live]) {
+        background: ${skin.colors.bgLight} !important;
+        /* background: #bcf3; */
+      }
+
+      &([live][hoverable]:focus),
+      &([live][hoverable]:hover) {
+        /* outline: 8px solid #fff2; */
+        background: ${skin.colors.bgLighter} !important;
+      }
+
+      &([active]) {
+        background: ${skin.colors.bgLighter} !important;
+        /* outline: 8px solid #34f; */
+      }
+
+      &([error]) {
+        outline: 8px solid #f21;
+      }
+
+      &([draft]):before {
+        content: ' ';
+        position: absolute;
+        right: 5px;
+        top: 5px;
+        width: 10px;
+        height: 10px;
+        background: ${skin.colors.brightYellow} !important;
+        border-radius: 100%;
+        z-index: 9999;
+        pointer-events: none;
+      }
+
+      &([active]:focus) {
+        /* outline-color: #67f; */
+      }
+
+      [part=button] {
+        all: unset;
+      }
+
+      > [part] {
+        box-sizing: border-box;
+        position: absolute;
+        display: flex;
+        left: 0;
+        top: 0;
+        width: 100%;
+        height: 100%;
+      }
+
+      ${Midi} {
+        pointer-events: none;
+      }
+
+      [part=sliders] {
+        pointer-events: none;
+        flex-flow: row nowrap;
+      }
+
+      [part=canvas] {
+        image-rendering: pixelated;
+        pointer-events: none;
+        box-sizing: border-box;
+      }
+
+      &([padded]) {
+        [part=canvas] {
+          padding: 0 8px;
+        }
+      }
+      `
+    })
 
     fx(function drawTrackButton({
       canvasView,

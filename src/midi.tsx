@@ -1,30 +1,37 @@
 /** @jsxImportSource minimal-view */
 
+import { modWrap } from 'everyday-utils'
 import { Rect } from 'geometrik'
-import { ImmMap } from 'immutable-map-set'
 import { element, view, web } from 'minimal-view'
 import { MidiOp } from 'webaudio-tools'
-import { AudioState } from './audio'
-// import { AppContext } from './app'
+import { EditorBuffer } from './editor-buffer'
+import { Player } from './player'
+import { services } from './services'
+import { classes } from './util/classes'
 
 const MidiOps = new Set(Object.values(MidiOp))
 
+// chatgpt
+function midiToPitchClass(midi: number): string {
+  const pitchClasses = 'c c# d d# e f f# g g# a a# b'.split(' ')
+  const octave = Math.floor(midi / 12) - 1;
+  return pitchClasses[midi % 12] + octave;
+}
+
+type MidiRect = readonly [Rect, [WebMidi.MIDIMessageEvent, WebMidi.MIDIMessageEvent | undefined]]
+
 export const Midi = web(view('midi',
   class props {
-    // app!: AppContext
-    getTime!: () => number
-    offset?: number = 0
-    state!: AudioState
-    midiEvents = new ImmMap<number, WebMidi.MIDIMessageEvent[]>()
-    numberOfBars: number = 1
-    timeBars?: number = 1
+    player?: Player
+    pattern!: EditorBuffer
+    xPos?: number
+    showNotes = false
   },
 
   class local {
     host = element
-    rects?: (readonly [Rect, [WebMidi.MIDIMessageEvent, WebMidi.MIDIMessageEvent]])[]
-    currentTime?: number
     turn = 0
+    rects: MidiRect[] = []
   },
 
   function actions({ $, fn, fns }) {
@@ -34,126 +41,220 @@ export const Midi = web(view('midi',
   },
 
   function effects({ $, fx }) {
-    $.css = /*css*/`
-    & {
-      --note-color: #c30;
-      contain: size layout style paint;
-      display: inline-flex;
-      pointer-events: none;
+    services.fx(({ skin }) => {
+      $.css = /*css*/`
+      & {
+        --note-color: ${skin.colors.brightGreen};
+        contain: size layout style paint;
+        pointer-events: none;
+        font-family: 'Barlow Semi Condensed', sans-serif;
 
-      /* &(:not([state=running])) {
-        --note-color: #666c;
-      } */
-    }
-
-    [part=svg] {
-      z-index: -1;
-      width: 100%;
-      height: 100%;
-      shape-rendering: optimizeSpeed;
-    }
-
-    [part=note] {
-      shape-rendering: optimizeSpeed;
-      fill: var(--note-color);
-      /* stroke: #000; */
-      /* stroke-width: 1px; */
-      &.lit {
-        fill: #03f;
+        font-size: 13px;
+        /* &(:not([state=running])) {
+          --note-color: #666c;
+        } */
       }
-    }
-    `
 
-    // fx.raf(function updateAttrState({ host, state }) {
-    //   host.setAttribute('state', state)
-    // })
+      .notes {
+        position: absolute;
+        left: 0;
+        top: 0;
+        right: 0;
+        bottom: 0;
+      }
 
-    fx(function updateRects({ midiEvents, numberOfBars, turn }) {
-      const events: WebMidi.MIDIMessageEvent[] = midiEvents.get(turn)?.filter(x => MidiOps.has(x.data[0]) && x.receivedTime < numberOfBars * 1000) ?? []
+      &([padded]) {
+        .notes {
+          left: 2px;
+        }
+      }
 
-      const minNote = Math.floor(
-        (Math.min(...events.map(x => x.data[1])) - 1)
-        / 12
-      ) * 12
-      const maxNote = Math.ceil(
-        (Math.max(...events.map(x => x.data[1])) + 1)
-        / 12
-      ) * 12
+      &(:not([padded])) {
+        .vol {
+          opacity: 0.5;
+        }
+      }
 
-      const heightScale = (maxNote - minNote)
-      const fullTime = numberOfBars * 1000
+      .rows {
+        position: absolute;
+        left: 0;
+        top: 0;
+        right: 0;
+        bottom: 0;
+        display: flex;
+        flex-flow: column nowrap;
+        align-items: stretch;
+        justify-content: stretch;
+      }
 
-      const width = 100 / numberOfBars
-      const height = 100 / (heightScale + 1)
+      .row {
+        flex: 1;
+        &:not(.black) {
+          background: ${skin.colors.shadeSoftest};
+        }
+      }
 
-      const noteOns = events.filter(x => x.data[0] === MidiOp.NoteOn)
-      const noteOffs = events.filter(x => x.data[0] === MidiOp.NoteOff)
+      .note {
+        z-index: 1;
+        position: absolute;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background-color: var(--note-color);
+        text-shadow: 1px 1px #000;
 
-      const rects = noteOns.map(noteOn => {
-        const noteOff = noteOffs.find(y => noteOn.data[1] === y.data[1] && (y.receivedTime >= noteOn.receivedTime))
-        if (noteOff) noteOffs.splice(noteOffs.indexOf(noteOff), 1)
-        return [
-          new Rect(
-            (noteOn.receivedTime / 1000) * width,
-            (heightScale - (noteOn.data[1] - minNote)) * height,
-            (((noteOff?.receivedTime ?? fullTime) - noteOn.receivedTime) / 1000) * width,
-            height
-          ),
-          [noteOn, noteOff],
-        ] as readonly [Rect, [WebMidi.MIDIMessageEvent, WebMidi.MIDIMessageEvent]]
+        box-sizing: border-box;
+        border: 1px solid #fff7;
+        border-bottom-color: #0003;
+        border-right-color: #0003;
+        border-radius: 1.17px;
+        box-shadow: 1px 0px 1px ${skin.colors.shadeBlackHalf};
+
+        &.lit {
+          background-color: #03f;
+        }
+
+        span {
+          position: absolute;
+          top: -20px;
+          white-space: nowrap;
+          word-wrap: nowrap;
+        }
+      }
+
+      .vol {
+        position: absolute;
+        background-color: ${skin.colors.shadeSoft};
+        z-index: 0;
+      }
+      `
+    })
+
+    fx.raf(({ host, showNotes }) => {
+      host.toggleAttribute('padded', showNotes)
+    })
+
+    fx(({ pattern }) =>
+      pattern.fx(({ midiRange, midiEvents, numberOfBars }) =>
+        fx(({ turn }) => {
+          const events: WebMidi.MIDIMessageEvent[] =
+            (midiEvents.get(turn) ?? midiEvents.get(0) ?? [])
+              ?.filter(x =>
+                MidiOps.has(x.data[0]) && x.receivedTime < numberOfBars * 1000
+              )
+
+          let [minNote, maxNote] = midiRange
+
+          minNote -= 1
+          maxNote -= 1
+
+          const heightScale = (maxNote - minNote)
+          const fullTime = numberOfBars * 1000
+
+          const width = 1 / numberOfBars
+          const height = 1 / heightScale
+
+          const noteOns = events.filter(x => x.data[0] === MidiOp.NoteOn)
+          const noteOffs = events.filter(x => x.data[0] === MidiOp.NoteOff)
+
+          const rects = noteOns
+            .map((noteOn): MidiRect => {
+              const noteOff = noteOffs.find(y => noteOn.data[1] === y.data[1] && (y.receivedTime >= noteOn.receivedTime))
+
+              if (noteOff) noteOffs.splice(noteOffs.indexOf(noteOff), 1)
+
+              return [
+                new Rect(
+                  (noteOn.receivedTime / 1000) * width,
+                  (heightScale - (noteOn.data[1] - minNote)) * height,
+                  (((noteOff?.receivedTime ?? fullTime) - noteOn.receivedTime) / 1000) * width,
+                  height
+                ),
+                [noteOn, noteOff],
+              ]
+            })
+
+          $.rects = rects
+        })
+      )
+    )
+
+    const notesMap = new Map<SVGRectElement, MidiRect>()
+
+    fx(({ player, pattern, xPos }) =>
+      player.fx.raf(({ patternOffsets, patternBuffers, currentTime, turn }) => {
+        if (!patternBuffers.includes(pattern)) return
+
+        $.turn = turn
+
+        const offset = patternOffsets[xPos]
+        const time = currentTime - offset * 1000
+
+        for (const [el, [, [noteOn, noteOff]]] of notesMap) {
+          if (!noteOn || !noteOff) continue
+
+          if (time >= noteOn.receivedTime
+            && time < noteOff.receivedTime) {
+            el.classList.add('lit')
+          } else {
+            el.classList.remove('lit')
+          }
+        }
       })
+    )
 
-      $.rects = rects
-    })
+    const blacks = new Set([1, 3, 6, 8, 10])
 
-    const notesMap = new Map<SVGRectElement, readonly [Rect, [WebMidi.MIDIMessageEvent, WebMidi.MIDIMessageEvent]]>()
+    fx(({ pattern, rects, showNotes }) =>
+      pattern.fx(({ midiRange }) => {
+        // const midiRange = pattern.$.midiRange!
 
-    fx(function updateTimer({ state, getTime, timeBars }) {
-      if (state === 'running') {
-        const iv = setInterval(() => {
-          const now = getTime()
-          $.currentTime = (now % timeBars) * 1000
-          $.turn = (now / timeBars) | 0
-        }, 12)
-        return () => {
-          clearInterval(iv)
-        }
-      }
-    })
+        $.view = <div class="notes">
+          {showNotes && <div class="rows">
+            {Array.from({ length: midiRange[1] - midiRange[0] }, (_, i) => {
+              const note = modWrap(midiRange[0] + i, 12)
+              return <div class={classes({
+                row: true,
+                black: blacks.has(note),
+                octave: note === 0
+              })} />
+            }).reverse()}
+          </div>}
 
-    fx.raf(function updateLitNotes({ currentTime, offset }) {
-      currentTime -= offset * 1000
-      for (const [
-        el, [, [noteOnEvent, noteOffEvent]]
-      ] of notesMap) {
-        if (!noteOnEvent || !noteOffEvent) continue
-        if (currentTime >= noteOnEvent.receivedTime
-          && currentTime < noteOffEvent.receivedTime) {
-          el.classList.add('lit')
-        } else {
-          el.classList.remove('lit')
-        }
-      }
-    })
+          {rects.map((item, i) => {
+            const [rect, [{ data: [, note, vel] }]] = item
+            const volHeight = vel / 127
+            const volRect = new Rect(rect.x, 1 - volHeight, rect.width + 0.0001, volHeight)
 
-    fx(function drawMidi({ rects }) {
-      $.view =
-        <svg part="svg" viewBox="0 0 100 100" preserveAspectRatio="none">
-          {rects.map((item) => {
-            const [rect, [{ data: [, , vel] }]] = item
-            return <rect
-              onref={el => {
-                notesMap.set(el, item)
-              }}
-              onunref={el => {
-                notesMap.delete(el)
-              }}
-              part="note"
-              {...rect.toJSON()}
-              opacity={((vel / 127) ** 0.3) * 0.9 + 0.1}
-            />
+            return <>
+              <div
+                onref={el => {
+                  notesMap.set(el, item)
+                }}
+                onunref={el => {
+                  notesMap.delete(el)
+                }}
+                class="note"
+                style={{
+                  ...rect.toStylePct(),
+                  opacity: `${((vel / 127) ** 0.3) * 0.9 + 0.1}`,
+                  zIndex: `${999 - i}`
+                }}
+              >
+                {showNotes && <span>{
+                  midiToPitchClass(note).toUpperCase()
+                }</span>}
+              </div>
+
+              <div
+                class="vol"
+                style={{
+                  ...volRect.toStylePct(),
+                }}
+              />
+            </>
           })}
-        </svg>
-    })
+        </div>
+      }))
   })
 )

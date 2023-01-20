@@ -1,31 +1,34 @@
 /** @jsxImportSource minimal-view */
 
 import { EditorScene } from 'canvy'
-import { cheapRandomId, checksum, filterMap, modWrap, pick, sortCompare } from 'everyday-utils'
+import { diffChars } from 'diff'
+import { checksum, modWrap } from 'everyday-utils'
 import { Matrix, Point, Rect } from 'geometrik'
-import { IconSvg } from 'icon-svg'
+import memoize from 'memoize-pure'
 import { chain, element, on, queue, ValuesOf, view, web } from 'minimal-view'
-import { compressUrlSafe, decompressUrlSafe } from 'urlsafe-lzma'
+import { MIDIMessageEvent } from 'webaudio-tools'
 import { PianoKeys } from 'x-pianokeys'
-import { Audio } from './audio'
-import { ButtonIcon } from './button-icon'
-import { ButtonPlay } from './button-play'
+import { AudioPlayer } from './audio'
+import { Button } from './button'
 import * as db from './db'
 import { demo } from './demo-code'
+import { DoomScroll } from './doom-scroll'
 import { Editor } from './editor'
 import { EditorBuffer } from './editor-buffer'
 import { Hint } from './hint'
-import { NumberInput } from './number-input'
 import { Player } from './player'
 import { PlayerView } from './player-view'
+import { getNewDraftProjectId, Project } from './project'
+import { ProjectView } from './project-view'
+import { services } from './services'
 import { Spacer } from './spacer'
+import { Toolbar } from './toolbar'
 import { TrackView } from './track-view'
 import { classes } from './util/classes'
-import { delById, findEqual, get, replaceAtIndex } from './util/list'
-import { emoji, randomName } from './util/random-name'
-import * as storage from './util/storage'
+import { delById, get, replaceAtIndex } from './util/list'
+import { storage } from './util/storage'
+import { Vertical } from './vertical'
 import { Wavetracer } from './wavetracer'
-import { diffChars } from 'diff'
 
 export const PROJECT_KINDS = {
   SAVED: '0',
@@ -40,31 +43,13 @@ export const DELIMITERS = {
 
 export const APP_MODE = {
   NORMAL: 'normal',
-  SOLO: 'solo'
+  SOLO: 'solo',
+  BROWSE: 'browse',
 } as const
 export type AppMode = ValuesOf<typeof APP_MODE>
 
-function getNewDraftProjectId() {
-  return `${randomName(emoji)},${new Date().toISOString()},1`
-}
+// const projectButtonRefs = new Map<string, HTMLElement>()
 
-const projectButtonRefs = new Map<string, HTMLElement>()
-
-// credits: chat-gpt
-function unique<T extends { id?: string }>(arr: T[]): T[] {
-  const uniqueIds = new Set();
-
-  return arr.reduce((acc, obj) => {
-    // Check if the object's id is in the Set of unique ids
-    if (!uniqueIds.has(obj.id)) {
-      // If it is not, add the object to the accumulator array
-      // and add its id to the Set of unique ids
-      acc.push(obj);
-      uniqueIds.add(obj.id);
-    }
-    return acc;
-  }, [] as T[]);
-}
 
 // function deepObj(o: any) {
 //   return Object.assign(o, { equals: isEqual })
@@ -85,16 +70,30 @@ function unique<T extends { id?: string }>(arr: T[]): T[] {
 //   })
 // }
 
+
 export const focusMap = new Map<string, HTMLElement>()
+
+export const cachedRefs = new Map<string, HTMLElement>()
+
+export const cachedRef = memoize((id: string) => ({
+  get current() {
+    return cachedRefs.get(id)
+  },
+  set current(el) {
+    if (el) {
+      cachedRefs.set(id, el)
+    }
+  }
+}))
 
 export type Selected = {
   player: number,
-  send: number
+  preset: string
 }
 
 export let app: App
 
-export type App = typeof App.Context
+export type App = typeof App.State
 
 export const App = web(view('app',
   class props {
@@ -109,61 +108,36 @@ export const App = web(view('app',
 
     state: 'idle' | 'deleting' = 'idle'
 
-    audio = Audio({
-      vol: 0.35,
-      bpm: 125,
-      audioContext: new AudioContext({
-        sampleRate: 44100, latencyHint: 0.04
-      }),
-    })
-
     hint: JSX.Element = false
 
-    players: Player[] = [
-      Player({
-        id: 'kick', vol: 0.45, sound: 'sk', pattern: 0, patterns: [
-          'k', 'k', 'k', 'k2',
-        ], audio: this.audio
-      }),
+    selected: Selected = { player: 0, preset: 'sound-kick' }
 
-      Player({
-        id: 'snare', vol: 0.3, sound: 'ss', pattern: 0, patterns: [
-          's', 's', 's', 's2',
-        ], audio: this.audio
-      }),
+    focused: 'main' | 'sound' | 'sounds' | 'pattern' | 'patterns' = 'sound'
 
-      Player({
-        id: 'bass', vol: 0.52, sound: 'sb', pattern: 0, patterns: [
-          'b',
-        ], audio: this.audio
-      }),
-    ]
+    players: Player[] = []
+    player?: Player
 
-    selected: Selected = { player: 0, send: 0 }
+    previewAudioPlayer = AudioPlayer({})
+    previewPlayer = Player({
+      vol: 0.45,
+      sound: 'sk',
+      pattern: 0,
+      patterns: ['k'],
+      isPreview: true,
+      audioPlayer: this.previewAudioPlayer
+    })
 
-    focused: 'main' | 'send' | 'sound' | 'pattern' = 'sound'
+    sounds: EditorBuffer[] = []
+    sound?: EditorBuffer
 
-    player: Player = this.players[this.selected.player]
+    patterns: EditorBuffer[] = []
+    pattern?: EditorBuffer
 
-    sounds: EditorBuffer[] = [
-      EditorBuffer({ id: 'sk', kind: 'sound', value: demo.kick.sound, audio: this.audio, isDraft: false, isNew: false, isIntent: true }),
-      EditorBuffer({ id: 'ss', kind: 'sound', value: demo.snare.sound, audio: this.audio, isDraft: false, isNew: false, isIntent: true }),
-      EditorBuffer({ id: 'sb', kind: 'sound', value: demo.bass.sound, audio: this.audio, isDraft: false, isNew: false, isIntent: true }),
-    ]
-
-    patterns: EditorBuffer[] = [
-      EditorBuffer({ id: 'k', kind: 'pattern', value: demo.kick.patterns[0], audio: this.audio, isDraft: false, isNew: false, isIntent: true }),
-      EditorBuffer({ id: 'k2', kind: 'pattern', value: demo.kick.patterns[1], audio: this.audio, isDraft: false, isNew: false, isIntent: true }),
-
-      EditorBuffer({ id: 's', kind: 'pattern', value: demo.snare.patterns[0], audio: this.audio, isDraft: false, isNew: false, isIntent: true }),
-      EditorBuffer({ id: 's2', kind: 'pattern', value: demo.snare.patterns[1], audio: this.audio, isDraft: false, isNew: false, isIntent: true }),
-
-      EditorBuffer({ id: 'b', kind: 'pattern', value: demo.bass.patterns[0], audio: this.audio, isDraft: false, isNew: false, isIntent: true }),
-    ]
-
-    main = EditorBuffer({ id: 'main', kind: 'main', value: demo.main, audio: this.audio, isDraft: false, isNew: false, isIntent: true })
+    main = EditorBuffer({ id: 'main', kind: 'main', value: demo.main, isDraft: false, isNew: false, isIntent: true })
 
     editor?: InstanceType<typeof Editor.Element>
+    editorVisible = false
+    editorEl?: HTMLElement
     editorBuffer?: EditorBuffer
     editorScene = new EditorScene({
       isValidTarget: (el) => {
@@ -181,16 +155,30 @@ export const App = web(view('app',
       }
     })
 
-    project = storage.project.get(getNewDraftProjectId())
-    projects: string[] = storage.projects.get([this.project])
+    project: Project = Project({ id: storage.project.get(getNewDraftProjectId()) })
+    projects: string[] = storage.projects.get([this.project.$.id])
     remoteProjects: string[] = []
+    allProjects: {
+      drafts: string[],
+      liked: string[],
+      recent: string[],
+    } = makeProjects(this.projects, storage.likes.get([]))
 
-    mode = storage.mode.get('normal')
 
-    mainWaveform: JSX.Element = false
+    mode: AppMode = 'normal' //storage.mode.get('normal')
+
+    presetsScrollEl?: HTMLDivElement
+
+    playersView: JSX.Element = false
+    editorView: JSX.Element = false
+    pianoView: JSX.Element = false
   },
 
   function actions({ $, fns, fn }) {
+    // let lastSaveJson: any = {}
+
+    let presetsSmoothScrollTimeout: any
+
     return fns(new class actions {
       fromRemoteProject = async (short: string, long: string) => {
         // const [icon, date, id, checksum] = short.split(DELIMITERS.SHORT_ID)
@@ -211,104 +199,30 @@ export const App = web(view('app',
         // this.fromURL(url)
       }
 
-      toURL = (
-        id: string,
-        serialized: string,
-        isFromUrl?: boolean
-      ) => {
-        const url = new URL(location.href)
-
-        const [icon, date, , checksum] = id.split(DELIMITERS.SAVE_ID)
-
-        let hash: string | void
-
-        if (!isFromUrl) {
-          if (serialized) {
-            const compressed = compressUrlSafe(
-              serialized, { mode: 9, enableEndMark: false }
-            )
-            hash = `s=${[icon, date, checksum, compressed].join(DELIMITERS.SAVE_ID)}`
-            url.hash = hash
-            console.log('hash length:', hash.length)
-          } else {
-            // unreachable?
-            url.hash = ''
-          }
-
-          history.pushState({}, '', url)
-        }
-
-        // TODO: change favicon, change save button background
-        document.title = `${icon} - ${new Date(date).toLocaleString()}`
-
-        return hash
-      }
-
-      fromURL = (
-        url: URL | Location
-      ) => {
-        try {
-          let hash = url.hash
-          if (!hash.startsWith('#')) hash = '#' + hash
-
-          if (hash.startsWith('#s=')) {
-            hash = decodeURI(hash).split('#s=')[1] ?? ''
-            if (!hash.length) return false
-
-            const [icon, date, checksum, compressed] = hash.split(DELIMITERS.SAVE_ID)
-
-            const equalItem = $.projects.find((project) =>
-              project.split(',').at(-1) === checksum
-            )
-
-            if (equalItem) {
-              console.log('found project from url in our own projects: ' + equalItem)
-              this.fromProjectJSON(equalItem, JSON.parse(localStorage[equalItem]))
-              return true
-            }
-
-            const id = [icon, date, '2', checksum].join(DELIMITERS.SAVE_ID)
-            const serialized = decompressUrlSafe(compressed)
-
-            localStorage[id] = serialized
-
-            const json = JSON.parse(serialized)
-
-            console.log('parsed url json:', json)
-
-            $.projects = [...$.projects, id]
-            this.fromProjectJSON(id, json)
-            return true
-          } else if (hash.startsWith('#p=')) {
-            const id = decodeURI(hash).split('#p=')[1] ?? ''
-            if (!id.length) return false
-            this.fromProjectJSON(id, JSON.parse(localStorage[id]))
-            return true
-          } else {
-            return false
-          }
-        } catch (error) {
-          console.warn(error)
-          return false
-        }
-      }
-
       onWindowPopState = () => {
-        this.fromURL(location)
+        const result = $.project.$.fromURL(location, $.projects)
+        if (result.success) {
+          $.projects = result.projects
+        }
       }
 
       // working state
       save = () => {
         if ($.mode === APP_MODE.NORMAL) {
           try {
-            console.time('save')
-            const json = this.toJSON(true)
-            const res = JSON.stringify(json)
-            localStorage.autoSave = res
-            console.timeEnd('save')
-            console.log('save:', res.length, json)
+            console.time('Autosave')
+            // const json = this.toJSON(true)
+            // if (!isEqual(json, lastSaveJson)) {
+            //   lastSaveJson = json
+            //   const res = JSON.stringify(json)
+            //   localStorage.autoSave = res
+            //   console.log('Autosave:', res.length) //, json)
+            // } else {
+            //   console.log('Did not autosave as no changes were made.')
+            // }
+            console.timeEnd('Autosave')
           } catch (error) {
-            console.warn('Error while saving')
+            console.warn('Error while saving.')
             console.warn(error)
           }
 
@@ -318,73 +232,67 @@ export const App = web(view('app',
 
       autoSave = queue.debounce(5000)(this.save)
 
-      fromJSON = (json: ReturnType<typeof this.toJSON>) => {
-        Object.assign($.audio.$, json.audio)
+      // fromJSON = (json: ReturnType<typeof this.toJSON>) => {
+      //   // Object.assign($.audio.$, json.audio)
 
-        $.players = json.players.map((player) => Player({
-          ...player,
-          audio: $.audio,
-          state: $.audio.$.state
-        }))
+      //   // TODO: disposable(arr, x => x.dispose())
+      //   $.players.forEach((player) => {
+      //     player.dispose()
+      //   })
+      //   // TODO: this is temporarily set to return 'any' because of TS infinite loop
+      //   $.players = json.players.map((player: any) => Player({
+      //     ...player,
+      //     audio: $.audio,
+      //     state: $.audio.$.state
+      //   }))
 
-        $.sounds = unique<EditorBuffer['$']>(json.sounds).map((props) => EditorBuffer({ ...props, kind: 'sound', audio: $.audio, isNew: false, isIntent: true }))
+      //   $.library.$.sounds = unique(json.sounds).map((props) => EditorBuffer({ ...props, kind: 'sound', services: $.services, isNew: false, isIntent: true }))
 
-        $.patterns = unique<EditorBuffer['$']>(json.patterns).map((props) => EditorBuffer({ ...props, kind: 'pattern', audio: $.audio, isNew: false, isIntent: true }))
-      }
+      //   $.library.$.patterns = unique(json.patterns).map((props) => EditorBuffer({ ...props, kind: 'pattern', services: $.services, isNew: false, isIntent: true }))
+      // }
 
-      toJSON = (compact?: boolean) => {
-        const bufferKeys: (keyof EditorBuffer['$'])[] = [
-          'id',
-          'value',
-          'isDraft',
-          // 'createdAt',
-          'fallbackTitle',
-          ...(compact ? [] : ['snapshot'] as const)
-        ]
+      // TODO: this is temporarily set to return 'any' because of TS infinite loop
+      // toJSON = (compact?: boolean) => {
+      //   const bufferKeys: (keyof EditorBuffer['$'])[] = [
+      //     'id',
+      //     'value',
+      //     'isDraft',
+      //     // 'createdAt',
+      //     'fallbackTitle',
+      //     ...(compact ? [] : ['snapshot'] as const)
+      //   ]
 
-        return {
-          audio: $.audio.$.toJSON(),
+      //   return {
+      //     audio: $.audio.$.toJSON(),
 
-          players: $.players.map((player) =>
-            pick(player.$, [
-              'vol',
-              'sound',
-              'pattern',
-              'patterns',
-            ])
-          ),
+      //     players: $.players.map((player) =>
+      //       pick(player.$, [
+      //         'vol',
+      //         'sound',
+      //         'pattern',
+      //         'patterns',
+      //       ])
+      //     ),
 
-          sounds: $.sounds.map((sound) =>
-            pick(sound.$, bufferKeys)
-          ),
+      //     sounds: $.sounds.map((sound) =>
+      //       pick(sound.$, bufferKeys)
+      //     ),
 
-          patterns: $.patterns.map((pattern) =>
-            pick(pattern.$, [
-              ...bufferKeys,
-              'numberOfBars'
-            ])
-          ),
-        }
-      }
+      //     patterns: $.patterns.map((pattern) =>
+      //       pick(pattern.$, [
+      //         ...bufferKeys,
+      //         'numberOfBars'
+      //       ])
+      //     ),
+      //   } as {
+      //     audio: ReturnType<Audio['$']['toJSON']>,
+      //     players: Pick<Player['$'], 'vol' | 'sound' | 'pattern' | 'patterns'>[],
+      //     sounds: Pick<EditorBuffer['$'], 'id' | 'value' | 'isDraft' | 'fallbackTitle'>[],
+      //     patterns: Pick<EditorBuffer['$'], 'id' | 'value' | 'isDraft' | 'fallbackTitle'>[],
+      //   }
+      // }
 
       // projects
-
-      publishCurrent = () => {
-        this.publish($.project, localStorage[$.project])
-      }
-
-      // publish
-      publish = (id: string, serialized: string) => {
-        const hash = this.toURL(id, serialized)
-        if (hash != null) {
-          db.createShort(id, hash).then((short) => {
-            prompt(
-              'Here is your short url:\n(copy it and store it, click Ok when you\'re done)',
-              `https://play.${location.hostname}/v2/${short.split(DELIMITERS.SHORT_ID)[3]}`
-            )
-          })
-        }
-      }
 
       // There are 3 cases saving a project.
       // - user has selected a project and made changes to it
@@ -395,265 +303,87 @@ export const App = web(view('app',
       //   -> draft becomes not a draft and is saved in projects
       onProjectSave = (fromAutoSave?: boolean) => {
         try {
-          console.time('save')
+          // console.time('save')
 
           // eslint-disable-next-line prefer-const
-          let [icon, date, kind] = $.project.split(DELIMITERS.SAVE_ID)
+          let [icon, date, kind] = $.project.$.id.split(DELIMITERS.SAVE_ID)
 
           const draft = kind == PROJECT_KINDS.DRAFT
 
-          const json = this.toProjectJSON()
-          const res = JSON.stringify(json)
+          const json = $.project.$.toProjectJSON()
+          // const res = JSON.stringify(json)
 
-          const chk = checksum(res).toString()
-          console.log('checksum:', chk, $.projects)
+          const chk = json.checksum // checksum(res).toString()
+          console.log('checksum:', chk) //, $.projects)
 
-          if (fromAutoSave && $.projects.some((project) =>
-            project.split(',').at(-1) === chk
-          )) {
-            console.timeEnd('save')
-            console.warn('Did not save as it already exists. Make some changes first.')
-            return
-          }
+          //   if (fromAutoSave && $.projects.some((project) =>
+          //     project.split(',').at(-1) === chk
+          //   )) {
+          //     console.timeEnd('save')
+          //     console.warn('Did not save as it already exists. Make some changes first.')
+          //     return
+          //   }
 
-          // NOTE: uncomment to debug why a save occured, what changed
-          if (!draft) {
-            const result = diffChars(localStorage[$.project], res)
-            console.log(result)
-          }
+          //   // NOTE: uncomment to debug why a save occured, to see what changed
+          //   if (!draft) {
+          //     const result = diffChars(localStorage[$.project.$.id], res)
+          //     console.log(result)
+          //   }
 
-          let id: string
+          //   let id: string
 
-          if (!draft) {
-            id = `${getNewDraftProjectId()},${chk}`
-          } else {
-            id = `${icon},${date},${!fromAutoSave ? '0' : '1'},${chk}`
-          }
+          //   if (!draft) {
+          //     id = `${getNewDraftProjectId()},${chk}`
+          //   } else {
+          //     id = `${icon},${date},${!fromAutoSave ? '0' : '1'},${chk}`
+          //   }
 
-          localStorage[id] = res
-          console.timeEnd('save')
-          console.log('save:', id, res.length, json)
+          //   localStorage[id] = res
+          //   console.timeEnd('save')
+          //   console.log('save:', id, res.length, json)
 
-          // on explicit save
-          if (!fromAutoSave) {
-            if (draft) {
-              // add to our projects
-              $.projects = [
-                // removing the draft id
-                ...$.projects.filter((id) => id !== $.project),
-                // and pushing the new saved project's id
-                id
-              ]
-              this.publish(id, res)
-            } else {
-              // TODO: unreachable?
-              $.projects = [...$.projects, id]
-            }
+          //   // on explicit save
+          //   if (!fromAutoSave) {
+          //     if (draft) {
+          //       const prevId = $.project.$.id
+          //       // add to our projects
+          //       $.projects = [
+          //         // removing the draft id
+          //         ...$.projects.filter((id) => id !== prevId),
+          //         // and pushing the new saved project's id
+          //         id
+          //       ]
+          //       // this.publish(id, res)
+          //     } else {
+          //       // TODO: unreachable?
+          //       $.projects = [...$.projects, id]
+          //     }
 
-            // then select it
-            $.project = id
-          }
-          // on autosave
-          else {
-            // if it's a draft, replace the id
-            if (draft) {
-              if (id !== $.project) {
-                const index = $.projects.indexOf($.project)
-                $.projects.splice(index, 1, id)
-                $.projects = [...$.projects]
-                $.project = id
-              }
-            } else {
-              $.projects = [...$.projects, id]
-              $.project = id
-            }
-          }
+          //     // then select it
+          //     $.project.$.id = id
+          //     $.project.$.publish(res)
+          //   }
+          //   // on autosave
+          //   else {
+          //     // if it's a draft, replace the id
+          //     if (draft) {
+          //       if (id !== $.project.$.id) {
+          //         const index = $.projects.indexOf($.project.$.id)
+          //         $.projects.splice(index, 1, id)
+          //         $.projects = [...$.projects]
+          //         $.project.$.id = id
+          //       }
+          //     } else {
+          //       $.projects = [...$.projects, id]
+          //       $.project.$.id = id
+          //     }
+          //   }
         } catch (error) {
           console.warn('Error while saving project')
           console.warn(error)
         }
       }
 
-      fromProjectJSON = (id: string, json: ReturnType<this['toProjectJSON']>) => {
-        $.project = id
-
-        $.selected = { player: 0, send: 0 }
-
-        $.audio.$.bpm = json.bpm
-
-        // denormalize ids by making them all unique
-
-        const idsMap = new Map<string, string>()
-
-        for (const sound of json.sounds) {
-          const newId = cheapRandomId()
-          idsMap.set(`sound-${sound.id}`, newId)
-          sound.id = newId
-        }
-        for (const pattern of json.patterns) {
-          const newId = cheapRandomId()
-          idsMap.set(`pattern-${pattern.id}`, newId)
-          pattern.id = newId
-        }
-
-        // let y = 0
-        for (const player of json.players) {
-
-          // TODO: disabled temporarily until we resolve memory overlap
-          // issues in monolang
-          // if (y < $.players.length) {
-          //   // @ts-ignore
-          //   player.id = $.players[y].$.id!
-          //   y++
-          // }
-
-          player.sound = idsMap.get(`sound-${player.sound}`) ?? json.sounds[0].id!
-          player.patterns = player.patterns.map((p) =>
-            idsMap.get(`pattern-${p}`) ?? json.patterns[0].id!
-          )
-        }
-
-        const newSounds: EditorBuffer[] = []
-
-        // if the sound exists in our own collection, use that and
-        // replace the id with our own sound id,
-        // otherwise add the sound with `isImport=true`
-        for (const sound of unique(json.sounds)) {
-          const equalItem = findEqual($.sounds, '-', sound)
-          if (equalItem) {
-            for (const player of json.players) {
-              if (player.sound === sound.id) {
-                player.sound = equalItem.$.id!
-              }
-            }
-          } else {
-            delete sound.fallbackTitle
-            newSounds.push(EditorBuffer({
-              ...sound,
-              kind: 'sound',
-              audio: $.audio,
-              isNew: false,
-              isDraft: false,
-              isIntent: true,
-              isImport: true
-            }))
-          }
-        }
-
-        $.sounds = [...$.sounds, ...newSounds]
-
-        const newPatterns: EditorBuffer[] = []
-
-        // if the pattern exists in our own collection, use that and
-        // replace the id with our own pattern id,
-        // otherwise add the pattern with `isImport=true`
-        for (const pattern of unique(json.patterns)) {
-          const equalItem = findEqual($.patterns, '-', pattern)
-          if (equalItem) {
-            for (const player of json.players) {
-              player.patterns = player.patterns
-                .join(',')
-                .replaceAll(pattern.id!, equalItem.$.id!)
-                .split(',')
-            }
-          } else {
-            delete pattern.fallbackTitle
-            newPatterns.push(EditorBuffer({
-              ...pattern,
-              kind: 'pattern',
-              audio: $.audio,
-              isNew: false,
-              isDraft: false,
-              isIntent: true,
-              isImport: true
-            }))
-          }
-        }
-
-        $.patterns = [...$.patterns, ...newPatterns]
-
-        $.players = json.players.map((player) => Player({
-          ...player,
-          pattern: 0,
-          audio: $.audio,
-          state: $.audio.$.state
-        }))
-      }
-
-      toProjectJSON = () => {
-        const bufferKeys: (keyof EditorBuffer['$'])[] = [
-          'id',
-          'value',
-          // 'fallbackTitle',
-        ]
-
-        const usedSounds = new Set(
-          $.players
-            .map((player) =>
-              player.$.sound)
-        )
-
-        const usedPatterns = new Set(
-          $.players
-            .flatMap((player) =>
-              player.$.patterns)
-        )
-
-        const sounds = $.sounds.filter((sound) => usedSounds.has(sound.$.id!)).map((sound) =>
-          pick(sound.$, bufferKeys)
-        )
-
-        const patterns = $.patterns.filter((pattern) => usedPatterns.has(pattern.$.id!)).map((pattern) =>
-          pick(pattern.$, bufferKeys)
-        )
-
-        const players = $.players.map((player) =>
-          pick(player.$, [
-            'vol',
-            'sound',
-            'patterns',
-          ])
-        )
-
-        // Normalize ids by their value checksum so that the overall
-        // project checksum computes the same for every same project.
-        // By normalizing the ids on save and denormalizing/assigning unique
-        // when loading, we avoid conflicts, and the checksum computes
-        // the same.
-        const idsMap = new Map<string, string>()
-
-        for (const sound of sounds) {
-          const newId = `${checksum(sound.value)}`
-          idsMap.set(`sound-${sound.id}`, newId)
-          sound.id = newId
-        }
-        for (const pattern of patterns) {
-          const newId = `${checksum(pattern.value)}`
-          idsMap.set(`pattern-${pattern.id}`, newId)
-          pattern.id = newId
-        }
-
-        // we sort buffers by their checksum id so that it's consistent
-        // because we might have used buffers we already have so they will
-        // not be in the same order (as new buffers go to the bottom)
-        sounds.sort((a, b) => sortCompare(a.id!, b.id!))
-
-        patterns.sort((a, b) => sortCompare(a.id!, b.id!))
-
-        for (const player of players) {
-          player.sound = idsMap.get(`sound-${player.sound}`)!
-          player.patterns = player.patterns.map((p) =>
-            idsMap.get(`pattern-${p}`)!
-          )
-        }
-
-        return {
-          bpm: $.audio.$.bpm,
-          players,
-          sounds,
-          patterns,
-        }
-      }
 
       // buffers
 
@@ -663,20 +393,33 @@ export const App = web(view('app',
         } else if (kind === 'pattern') {
           this.onPatternSave(id)
         }
+        // trigger render
+        $.selected = { ...$.selected }
       }
 
       // player
 
       onPlayerSoundSelect = (_: string, { y }: { y: number }) => {
-        $.selected = { ...$.selected, player: y }
-        $.focused = 'sound'
+        if ($.editorVisible && $.focused === 'sound' && $.selected.player === y) {
+          $.editorVisible = false
+        } else {
+          $.editorVisible = true
+          $.selected = { ...$.selected, player: y }
+          $.focused = 'sound'
+        }
       }
 
       onPlayerPatternSelect = (id: string, { x, y }: { x: number, y: number }) => {
         const player = $.players[y]
-        player.$.pattern = x
-        $.selected = { ...$.selected, player: y }
-        $.focused = 'pattern'
+
+        if ($.editorVisible && $.focused === 'pattern' && $.selected.player === y && player.$.pattern === x) {
+          $.editorVisible = false
+        } else {
+          $.editorVisible = true
+          player.$.pattern = x
+          $.selected = { ...$.selected, player: y }
+          $.focused = 'pattern'
+        }
       }
 
       onPlayerPatternPaste = (id: string, { x, y }: { x: number, y: number }) => {
@@ -727,7 +470,7 @@ export const App = web(view('app',
 
       // presets
 
-      onPresetsRearrange = (id: string, { dir, kinds }: { dir: 1 | -1, kinds: 'sounds' | 'patterns' }) => {
+      onPresetsRearrange = services.fn(({ library }) => (id: string, { dir, kinds }: { dir: 1 | -1, kinds: 'sounds' | 'patterns' }) => {
         const buffers = $[kinds]
 
         const index = buffers.findIndex((buffer) => buffer.$.id === id)
@@ -737,29 +480,77 @@ export const App = web(view('app',
           const bufs = [...buffers]
           const [buffer] = bufs.splice(index, 1)
           bufs.splice(dest, 0, buffer)
-          $[kinds] = [...bufs]
+          library.$[kinds] = [...bufs]
         }
-      }
+      })
 
       // sound
 
-      onSoundSelect = (id: string) => {
-        $.player.$.sound = id
+      sendTestNote = () => {
+        let delay = 0
 
-        // trigger render
-        $.selected = { ...$.selected }
+        if (!$.previewPlayer.$.preview) delay = 50
+
+        const off = $.previewPlayer.fx(({ compileState, preview }) => {
+          if (compileState === 'compiled' && preview) {
+            setTimeout(() => {
+              this.onMidiEvent(Object.assign(
+                new MIDIMessageEvent('message', {
+                  data: new Uint8Array([144, 40, 127])
+                }),
+                { receivedTime: 0 }
+              ) as any)
+            }, delay)
+            off()
+          }
+        })
+        $.previewPlayer.$.startPreview()
       }
+
+      startTemporaryPresetsSmoothScroll = () => {
+        if ($.presetsScrollEl) {
+          $.presetsScrollEl.style.scrollBehavior = 'smooth'
+          clearTimeout(presetsSmoothScrollTimeout)
+          presetsSmoothScrollTimeout = setTimeout(() => {
+            $.presetsScrollEl!.style.scrollBehavior = 'auto'
+          }, 100)
+        }
+      }
+
+      onSoundSelect = (id: string, { noPreview }: { noPreview?: boolean } = {}) => {
+        this.startTemporaryPresetsSmoothScroll()
+        $.focused = 'sounds'
+        $.selected = { ...$.selected, preset: id }
+
+        if (noPreview) return
+
+        if (id !== $.previewPlayer.$.sound) {
+          queueMicrotask(() => {
+            this.sendTestNote()
+          })
+        } else {
+          this.sendTestNote()
+        }
+      }
+
+      onSoundUse = fn(({ player }) => (id: string) => {
+        player.$.sound = id
+        this.onSoundSelect(id, { noPreview: true })
+        queueMicrotask(() => {
+          $.focused = 'sound'
+        })
+      })
 
       onSoundSave = (id: string) => {
         get($.sounds, id)!.$.isDraft = false
       }
 
-      onSoundDelete = (id: string) => {
+      onSoundDelete = services.fn(({ library }) => (id: string) => {
         const index = $.players.map((player) => player.$.sound).indexOf(id)
         if (!~index) {
-          $.sounds = delById($.sounds, id)
+          library.$.sounds = delById($.sounds, id)
         }
-      }
+      })
 
       onSoundRearrange = (id: string, { dir }: { dir: 1 | -1 }) => {
         this.onPresetsRearrange(id, { dir, kinds: 'sounds' })
@@ -768,26 +559,35 @@ export const App = web(view('app',
       // pattern
 
       onPatternSelect = (id: string) => {
-        $.player.$.patterns = replaceAtIndex(
-          $.player.$.patterns,
-          $.player.$.pattern,
+        this.startTemporaryPresetsSmoothScroll()
+        $.focused = 'patterns'
+        $.selected = { ...$.selected, preset: id }
+      }
+
+      onPatternUse = fn(({ player }) => (id: string) => {
+        player.$.patterns = replaceAtIndex(
+          player.$.patterns,
+          player.$.pattern,
           id
         )
 
-        // trigger render
-        $.selected = { ...$.selected }
-      }
+        this.onPatternSelect(id)
+
+        queueMicrotask(() => {
+          $.focused = 'pattern'
+        })
+      })
 
       onPatternSave = (id: string) => {
         get($.patterns, id)!.$.isDraft = false
       }
 
-      onPatternDelete = (id: string) => {
+      onPatternDelete = services.fn(({ library }) => (id: string) => {
         const index = $.players.flatMap((player) => player.$.patterns).indexOf(id)
         if (!~index) {
-          $.patterns = delById($.patterns, id)
+          library.$.patterns = delById($.patterns, id)
         }
-      }
+      })
 
       onPatternRearrange = (id: string, { dir }: { dir: 1 | -1 }) => {
         this.onPresetsRearrange(id, { dir, kinds: 'patterns' })
@@ -798,180 +598,192 @@ export const App = web(view('app',
       focusEditor = fn(({ editor }) => () => {
         editor.$.editor?.focus()
       })
+
+      // midi
+
+      onMidiEvent = (e: WebMidi.MIDIMessageEvent) => {
+        $.previewPlayer.$.startPreview()
+        $.previewPlayer.$.monoNode!.processMidiEvent(e)
+      }
+
+      // song
+
+      onKeyDown = fn(({ player }) => (e: KeyboardEvent) => {
+        const cmd = (e.ctrlKey || e.metaKey)
+
+        if (cmd && e.shiftKey) {
+          $.state = 'deleting'
+        } else {
+          $.state = 'idle'
+        }
+
+        if (cmd && e.code === 'Backquote') {
+          e.preventDefault()
+          e.stopPropagation()
+
+          const dir = e.shiftKey ? -1 : 1
+
+          if ($.focused === 'pattern') {
+            let x = player.$.pattern
+            x = modWrap(x + dir, player.$.patterns.length)
+            player.$.pattern = x
+            // trigger render
+            $.selected = { ...$.selected }
+          } else {
+            let y = $.selected.player
+            y = modWrap(y + dir, $.players.length)
+            $.selected = { ...$.selected, player: y }
+          }
+        }
+        else if (cmd && (e.key === ';' || e.key === ':')) {
+          e.preventDefault()
+          e.stopPropagation()
+
+          const order = ['main', 'sound', 'sounds', 'pattern', 'patterns'] as const
+          const dir = e.shiftKey ? -1 : 1
+
+          let z = order.indexOf($.focused)
+          z = modWrap(z + dir, order.length)
+          $.focused = order[z]
+
+          this.focusEditor()
+        }
+      })
+
+      onKeyUp = (e: KeyboardEvent) => {
+        const cmd = (e.ctrlKey || e.metaKey)
+
+        if (cmd && e.shiftKey) {
+          $.state = 'deleting'
+        } else {
+          $.state = 'idle'
+        }
+      }
+
+      onProjectSelect = (project: Project) => {
+        $.project = project
+        $.mode = APP_MODE.NORMAL
+      }
     })
   },
 
   function effects({ $, fx, deps, refs }) {
-    app = $
+    app = $.self
 
-    $.css = /*css*/`
-    & {
-      width: 100%;
-      height: 100%;
-      display: flex;
-    }
-
-    [part=app-inner] {
-      display: flex;
-      position: relative;
-      flex-flow: column nowrap;
-      width: 100%;
-      height: 100%;
-    }
-
-    [part=app-main-outer] {
-      position: relative;
-      display: flex;
-      flex: 1;
-      overflow: hidden;
-    }
-
-    [part=app-toolbar] {
-      display: flex;
-      flex-flow: row nowrap;
-      min-height: 55px;
-      max-height: 55px;
-      align-items: stretch;
-      justify-content: space-between;
-    }
-
-    [part=app-projects] {
-      white-space: nowrap;
-      width: 0;
-      display: flex;
-      flex: 1;
-      margin: 0 20px;
-      overflow-x: scroll;
-    }
-
-    [part=app-drafts] {
-      white-space: nowrap;
-      display: flex;
-      flex-flow: row nowrap;
-      overflow-x: scroll;
-      width: 0;
-      flex: 1;
-    }
-    `
+    services.fx(({ library }) =>
+      chain(
+        library.fx(({ sounds }) => {
+          $.sounds = sounds
+        }),
+        library.fx(({ patterns }) => {
+          $.patterns = patterns
+        })
+      )
+    )
 
     let didInit = false
-    fx(({ mode }) => {
-      if (mode === APP_MODE.NORMAL) {
-        if (didInit) return
+    fx(() => {
+      if (didInit) return
 
-        didInit = true
+      didInit = true
 
-        try {
-          $.fromJSON(JSON.parse(localStorage.autoSave))
-        } catch (error) {
-          console.warn('autoload failed:')
-          console.warn(error)
+      let didLoad = false
+
+      // try {
+      //   $.fromJSON(JSON.parse(localStorage.autoSave))
+      // } catch (error) {
+      //   console.warn('autoload failed:')
+      //   console.warn(error)
+      // }
+
+      try {
+        $.save()
+      } catch (error) {
+        console.warn('initial autosave failed:')
+        console.warn(error)
+      }
+
+      try {
+        const result = $.project.$.fromURL(location, $.projects)
+        if (result.success) {
+          $.projects = result.projects
+          didLoad = true
+        } else {
+          throw (result.error ?? new Error('Could not load URL'))
         }
+      } catch (error) {
+        console.warn('load url failed:')
+        console.warn(error)
+      }
 
-        try {
-          $.save()
-        } catch (error) {
-          console.warn('initial autosave failed:')
-          console.warn(error)
-        }
-
-        try {
-          $.fromURL(location)
-        } catch (error) {
-          console.warn('load url failed:')
-          console.warn(error)
-        }
-
-        db.getShortList().then((result) => {
-          $.remoteProjects = result.sort((a, b) => {
-            const [, , aDate] = a.split(',')
-            const [, , bDate] = b.split(',')
-            const aTime = new Date(aDate).getTime()
-            const bTime = new Date(bDate).getTime()
-            return aTime - bTime
-          })
+      db.getShortList().then((result) => {
+        $.remoteProjects = result.sort((a, b) => {
+          const [, , aDate] = a.split(',')
+          const [, , bDate] = b.split(',')
+          const aTime = new Date(aDate).getTime()
+          const bTime = new Date(bDate).getTime()
+          return aTime - bTime
         })
-      }
+      })
     })
 
-    fx(({ distRoot, monospaceFont }) => {
-      const bodyStyle = document.createElement('style')
-      bodyStyle.textContent = /*css*/`
-      @font-face {
-        font-family: Mono;
-        src: url("${distRoot}/fonts/${monospaceFont}") format("woff2");
-      }
-      html, body {
-        margin: 0;
-        padding: 0;
-        width: 100%;
-        height: 100%;
-        background: #000;
-        overflow: hidden;
-      }
-      `
-
-      document.head.appendChild(bodyStyle)
-    })
-
-    fx(({ host }) =>
+    fx(() =>
       chain(
-        on(window, 'keydown')((e) => {
-          const cmd = (e.ctrlKey || e.metaKey)
-
-          if (cmd && e.shiftKey) {
-            $.state = 'deleting'
-          } else {
-            $.state = 'idle'
-          }
-
-          if (cmd && e.code === 'Backquote') {
-            e.preventDefault()
-            e.stopPropagation()
-
-            const dir = e.shiftKey ? -1 : 1
-
-            if ($.focused === 'pattern') {
-              let x = $.player.$.pattern
-              x = modWrap(x + dir, $.player.$.patterns.length)
-              $.player.$.pattern = x
-              // trigger render
-              $.selected = { ...$.selected }
-            } else {
-              let y = $.selected.player
-              y = modWrap(y + dir, $.players.length)
-              $.selected = { ...$.selected, player: y }
-            }
-          }
-          else if (cmd && e.key === ';') {
-            e.preventDefault()
-            e.stopPropagation()
-
-            const order = ['main', 'send', 'sound', 'pattern'] as const
-            const dir = e.shiftKey ? -1 : 1
-
-            let z = order.indexOf($.focused)
-            z = modWrap(z + dir, order.length)
-            $.focused = order[z]
-
-            $.focusEditor()
-          }
-        }),
-        on(window, 'keyup')((e) => {
-          const cmd = (e.ctrlKey || e.metaKey)
-
-          if (cmd && e.shiftKey) {
-            $.state = 'deleting'
-          } else {
-            $.state = 'idle'
-          }
-        }),
+        on(window, 'keydown')($.onKeyDown),
+        on(window, 'keyup')($.onKeyUp),
         on(window, 'popstate')($.onWindowPopState),
       )
     )
 
+    fx(({ project }) => {
+      project.$.load()
+    })
+
+    fx(({ project }) =>
+      project.fx(({ players }) => {
+        $.players = players
+      })
+    )
+
     fx(({ players, selected }) => {
       $.player = players[selected.player]
+    })
+
+    services.fx(({ audio }) =>
+      fx(({ previewPlayer }) => {
+        previewPlayer.$.audio = audio
+        previewPlayer.$.audioPlayer!.$.audio = audio
+      })
+    )
+
+    fx(({ previewPlayer, player, selected, focused }) => {
+      if (focused === 'sounds') {
+        previewPlayer.$.sound = selected.preset
+      } else {
+        previewPlayer.$.sound = player.$.sound
+      }
+    })
+
+    fx(({ player, previewPlayer }) =>
+      player.fx(({ vol }) => {
+        previewPlayer.$.vol = vol
+      })
+    )
+
+    fx(({ player, sounds, selected, focused }) => {
+      $.sound = focused === 'sounds'
+        ? get(sounds, selected.preset)!
+        : get(sounds, player.$.sound)!
+    })
+
+    fx(({ player, patterns, selected, focused }) => {
+      if (focused === 'patterns') {
+        $.pattern = get(patterns, selected.preset)!
+      } else {
+        return player.fx(({ pattern, patternBuffers }) => {
+          $.pattern = patternBuffers[pattern]
+        })
+      }
     })
 
     fx(({ selected }) => {
@@ -982,587 +794,462 @@ export const App = web(view('app',
       storage.projects.set(projects)
     })
 
-    fx(({ project }) => {
-      storage.project.set(project)
-    })
-
-    fx(({ mode }) => {
-      storage.mode.set(mode)
-    })
-
-    fx(({ audio }) =>
-      audio.fx(({ bpm: _ }) => {
-        $.autoSave()
+    fx(({ project }) =>
+      project.fx(({ id }) => {
+        storage.project.set(id)
       })
     )
 
-    fx(({ player, focused, selected, sounds, patterns, main }) =>
-      player.fx(({ sound, pattern, patterns: patternIds }) => {
-        $.editorBuffer =
-          focused === 'pattern' ? get(patterns, patternIds[pattern])!
-            : focused === 'sound' ? get(sounds, sound)!
-              : main
-      })
-    )
+    // fx(({ mode }) => {
+    //   storage.mode.set(mode)
+    // })
 
-    const iconPlay = <IconSvg
-      set="feather"
-      icon="play-circle"
-    />
+    // fx(({ audio }) =>
+    //   audio.fx(({ bpm: _ }) => {
+    //     $.autoSave()
+    //   })
+    // )
 
-    const iconStop = <IconSvg
-      set="feather"
-      icon="stop-circle"
-    />
-
-    const iconDelete = <IconSvg
-      style="color:#f21;"
-      set="feather"
-      icon="x-circle"
-    />
-
-    const maybeFocusProjectButton = (refs: Map<string, HTMLElement>) => {
-      const el = refs.get($.project)
-      if (el) {
-        el.scrollIntoView()
-      }
-    }
-
-    fx(({ project: _ }) => {
-      setTimeout(() => {
-        maybeFocusProjectButton(projectButtonRefs)
-      }, 100)
+    fx(({ focused, sound, pattern, main }) => {
+      $.editorBuffer = (
+        (focused === 'pattern' || focused === 'patterns')
+          ? pattern
+          : (focused === 'sound' || focused === 'sounds')
+            ? sound
+            : main)
+        || $.editorBuffer!
     })
 
-    fx(({ player }) =>
-      player.fx(({ view }) =>
-        view.self.fx(({ workerBytes, workerFreqs }) =>
-          player.fx(({ state, preview }) => {
-            $.mainWaveform = <Wavetracer
-              part="app-scroller"
-              id="app-scroller"
-              kind="scroller"
-              running={state === 'running' || preview}
-              workerBytes={workerBytes}
-              workerFreqs={workerFreqs}
-            />
-          })
+    fx(() =>
+      services.fx(({ audio }) =>
+        audio.fx(({ audioContext }) =>
+          fx(({ pattern }) =>
+            pattern.fx(({ midiRange }) => {
+              const hasRange = isFinite(midiRange[0]) && isFinite(midiRange[1])
+              const halfOctaves = !hasRange
+                ? 3
+                : Math.round(
+                  (midiRange[1] - midiRange[0]) / 6
+                )
+
+              const startHalfOctave = !hasRange ? 8 : Math.round(pattern.$.midiRange![0] / 6)
+
+              $.pianoView =
+                <PianoKeys
+                  halfOctaves={halfOctaves}
+                  startHalfOctave={startHalfOctave}
+                  audioContext={audioContext}
+                  onMidiEvent={$.onMidiEvent}
+                  vertical
+                />
+            })
+          )
         )
       )
     )
 
-    fx.task(({ state, mode, project, projects, remoteProjects, audio, players, selected, focused, sounds, patterns, main, editorBuffer, mainWaveform }) => {
-      $.autoSave()
+    services.fx(({ skin }) =>
+      fx(({ distRoot, monospaceFont }) => {
+        const bodyStyle = document.createElement('style')
+        bodyStyle.textContent = /*css*/`
+        @font-face {
+          font-family: Mono;
+          src: url("${distRoot}/fonts/${monospaceFont}") format("woff2");
+        }
+        html, body {
+          margin: 0;
+          padding: 0;
+          width: 100%;
+          height: 100%;
+        }
 
-      const player = players[selected.player]
-      if (mode === APP_MODE.SOLO) {
-        const sound = get(sounds, player.$.sound)!
-        const pattern = get(patterns, player.$.patterns[0])!
+        @font-face {
+          font-family: icon;
+          src: url("${distRoot}/iconfont.woff2") format("woff2");
+          font-weight: normal;
+          font-style: normal;
+        }
 
-        player.$.pattern = 0
+        html, body {
+          margin: 0;
+          padding: 0;
+          width: 100%;
+          height: 100%;
+          background: ${skin.colors.bgDarker};
+          color: ${skin.colors.fg};
+          font-size: 13px;
+        }
+        `
 
-        $.view = <>
-          <style>{`
-            ${TrackView} {
-              width: 50%;
-              height: 100%;
+        document.head.appendChild(bodyStyle)
+      })
+    )
+
+    services.fx(({ skin }) => {
+      $.css = /*css*/`
+      ${skin.css}
+
+      & {
+        width: 100%;
+        display: flex;
+        flex-flow: column nowrap;
+      }
+
+      [part=app-scroller] {
+        position: absolute;
+        top: 0;
+        left: 0;
+        z-index: 0;
+      }
+
+      [part=app-editor] {
+        flex: 1;
+        width: 100%;
+        height: 100%;
+      }
+
+      [part=app-selected] {
+        position: relative;
+        height: 290px;
+        background: ${skin.colors.bgDarky};
+
+        &:before {
+          content: ' ';
+          position: absolute;
+          left: 0;
+          top: 0;
+          width: 100%;
+          height: calc(100% + 1px);
+          z-index: 999;
+          pointer-events: none;
+          ${skin.styles.deep}
+        }
+
+        &:focus-within {
+        }
+
+        &[state=errored] {
+          &:focus-within {
+            &::before {
+              box-shadow: inset 0 0 0 8px #f21;
             }
-          `}</style>
-
-          <Hint message={deps.hint} />
-
-          {players.map((player, y) =>
-            <PlayerView
-              key={player.$.id!}
-              id={player.$.id!}
-              audio={$.audio}
-              player={player}
-            />
-          )}
-
-          <div style="position: absolute; left:0; top:0; width:100%; height:100%;">
-            {mainWaveform}
-          </div>
-
-          <div style="width:100%; height:100%; display: flex; flex-flow: column nowrap;">
-
-            <div style="height:45px; z-index:999999999; display: flex; flex-flow: row nowrap;">
-              <ButtonIcon
-                part="app-mixer-button" onClick={() => {
-                  $.mode = APP_MODE.NORMAL
-                }}>
-                <IconSvg
-                  set="feather"
-                  icon="cpu"
-                />
-              </ButtonIcon>
-              <ButtonPlay
-                part="app-player-play"
-                target={player as any}
-                running={iconStop}
-                suspended={iconPlay}
-              />
-            </div>
-
-            <div style="width:100%; height:70%; display:flex; flex-flow: row nowrap;">
-              <Editor
-                ref={refs.editor}
-                style="width:50%;height:100%;"
-                part="app-editor"
-                name="sound-editor"
-                player={player}
-                buffer={editorBuffer}
-              />
-              <TrackView
-                active={false}
-                audio={audio}
-                sliders
-                player={player}
-                sound={sound}
-                clickMeta={sound.$}
-                onClick={() => { }}
-              />
-            </div>
-
-            <div style="width:100%; height:30%; display:flex; flex-flow: row nowrap;">
-              <TrackView
-                active={false}
-                getTime={audio.$.getTime}
-                audio={audio}
-                player={player}
-                pattern={pattern}
-                clickMeta={pattern.$}
-                onClick={() => { }}
-              />
-              <Editor
-                style="width:50%;height:100%;"
-                part="app-editor"
-                name="pattern-editor"
-                player={player}
-                buffer={pattern}
-              />
-            </div>
-
-            <PianoKeys
-              invertColors
-              halfOctaves={7}
-              startOctave={2}
-              audioContext={audio.$.audioContext}
-              onmidimessage={e => {
-                if (!$.player.$.preview) {
-                  $.player.$.startPreview()
-                }
-                $.player.$.view?.monoNode?.processMidiEvent(e)
-              }}
-              style="max-height: 100px; pointer-events: all"
-            />
-          </div>
-
-        </>
+          }
+        }
       }
 
-      if (mode === APP_MODE.NORMAL) {
-        const soundId = focused === 'sound' ? player.$.sound : null
-        const patternId = focused === 'pattern' ? player.$.patterns[player.$.pattern] : null
+      main {
+        position: relative;
+        max-width: 800px;
+        width: 100%;
+        align-self: center;
 
-        const sound = soundId ? get(sounds, soundId)! : false
-        const pattern = patternId ? get(patterns, patternId)! : false
+        .light {
+          background: ${skin.colors.bg};
+          box-shadow: 0 0 24px 10px ${skin.colors.shadeBlack};
+        }
+      }
 
-        const toolbarView =
-          <div part="app-toolbar">
-            <div part="app-projects">
-              {filterMap(remoteProjects, (long) => {
-                const [, icon, date, short, checksum] = long.split(DELIMITERS.SHORT_ID)
-                const [pIcon, pDate, , pChecksum] = project.split(DELIMITERS.SAVE_ID)
-                const a = [icon, date, checksum].join()
-                const b = [pIcon, pDate, pChecksum].join()
-                return <ButtonIcon
-                  key={long}
-                  part="app-mixer-button"
-                  onref={el => {
-                    projectButtonRefs.set(long, el)
-                  }}
-                  title={[
-                    `Click to Open ${icon}.`,
-                    `Saved on: ${new Date(date).toLocaleString()}`,
-                  ].filter(Boolean).join('\n')}
-                  class={classes({
-                    save: true,
-                    selected: a === b
-                  })}
-                  onClick={() => {
-                    $.fromRemoteProject(short, long)
-                  }}
-                >
-                  {icon}
-                </ButtonIcon>
-              })}
-            </div>
+      footer {
+        position: relative;
+        max-width: 800px;
+        width: 100%;
+        align-self: center;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 22px;
+        min-height: 150px;
+        pointer-events: none;
+      }
 
-            <div part="app-projects">
-              {filterMap(projects, (p) => {
-                const [icon, date, kind] = p.split(DELIMITERS.SAVE_ID)
-                if (kind != PROJECT_KINDS.SAVED) return
+      h2 {
+        font-family: Jost;
+        font-weight: normal;
+        font-size: 36px;
+      }
+      `
+    })
 
-                return <ButtonIcon
-                  key={p}
-                  part="app-mixer-button"
-                  onref={el => {
-                    projectButtonRefs.set(p, el)
-                  }}
-                  title={[
-                    `Click to Open ${icon}.`,
-                    `Saved on: ${new Date(date).toLocaleString()}`,
-                    'Ctrl+Shift+Click to Delete.',
-                  ].filter(Boolean).join('\n')}
-                  class={classes({
-                    save: true,
-                    selected: p === project
-                  })}
-                  onClick={() => {
-                    $.fromProjectJSON(p, JSON.parse(localStorage[p]))
-                    location.hash = `p=${p}`
-                  }}
-                  onCtrlShiftClick={() => {
-                    $.projects = $.projects.filter((id) => id !== p)
-                  }}
-                >
-                  {icon}
-                </ButtonIcon>
-              })}
-            </div>
+    fx(({ player, main, sounds, sound, patterns, pattern, focused, selected, editorBuffer, pianoView }) => {
+      const soundPresets = <div key="sounds" part="app-presets" ref={cachedRef('sounds')} style={focused !== 'sound' && focused !== 'sounds' && 'display:none'}>
+        {sounds.map((s) =>
+          <TrackView
+            key={s.$.id!}
+            ref={cachedRef(`sound-${s.$.id}`)}
+            canFocus
+            active={
+              (focused === 'sound' || focused === 'sounds')
+              && s.$.id === sound.$.id
+            }
+            live={player.$.sound === s.$.id}
+            services={services}
+            sound={s}
+            clickMeta={s.$}
+            onClick={$.onSoundSelect}
+            // onDblClick={$.onSoundSave}
+            onCtrlClick={$.onSoundUse}
+            onCtrlShiftClick={$.onSoundDelete}
+            onRearrange={$.onSoundRearrange}
+          />
+        )}
+      </div>
 
-            <div part="app-drafts">
-              {filterMap(projects, (p) => {
-                const [icon, , isDraft] = p.split(DELIMITERS.SAVE_ID)
-                if (isDraft != '1') return
+      const patternPresets = <div key="presets" part="app-presets" ref={cachedRef('presets')} style={focused !== 'pattern' && focused !== 'patterns' && 'display:none'}>
+        {patterns.map((p) =>
+          <TrackView
+            key={p.$.id!}
+            ref={cachedRef(`pattern-${p.$.id}`)}
+            canFocus
+            active={
+              (focused === 'pattern' || focused === 'patterns')
+              && p.$.id === pattern.$.id
+            }
+            live={player.$.patterns[player.$.pattern] === p.$.id}
+            pattern={p}
+            clickMeta={p.$}
+            onClick={$.onPatternSelect}
+            // onDblClick={$.onPatternSave}
+            onCtrlClick={$.onPatternUse}
+            onCtrlShiftClick={$.onPatternDelete}
+            onRearrange={$.onPatternRearrange}
+          />
+        )}
+      </div>
 
-                return <ButtonIcon
-                  key={p}
-                  part="app-mixer-button"
-                  onref={el => {
-                    projectButtonRefs.set(p, el)
-                  }}
-                  title={[
-                    p === project && 'Double click to Save.',
-                    p !== project && 'Ctrl+Shift+Click to Delete.',
-                  ].filter(Boolean).join('\n')}
-                  class={classes({
-                    draft: true,
-                    selected: p === project
-                  })}
-                  onClick={p !== project && (() => {
-                    $.fromProjectJSON(p, JSON.parse(localStorage[p]))
-                    location.hash = `p=${p}`
-                  })}
-                  onDblClick={p === project && (() => {
-                    $.onProjectSave()
-                  })}
-                  onCtrlShiftClick={p !== project && (() => {
-                    $.projects = $.projects.filter((id) => id !== p)
-                  })}
-                >
-                  {icon}
-                </ButtonIcon>
-              })}
-            </div>
+      const readableOnly = (focused === 'sounds' && editorBuffer.$.id !== player.$.sound)
+        || (focused === 'patterns' && player.$.patterns[player.$.pattern] !== editorBuffer.$.id!)
 
-            <ButtonIcon
-              key="share"
-              part="app-mixer-button"
-              title="Get short URL to Share"
-              onClick={$.publishCurrent}
-            >
-              <IconSvg set="feather" icon="send" />
-            </ButtonIcon>
-          </div>
+      $.editorView = <Spacer
+        id="app-selected"
+        part="app-selected"
+        align="x"
+        initial={[
+          0,
+          .0825,
+          .225,
+          .60
+        ]}
+      >
+        {pianoView}
 
-        const soundPresets = <div part="app-presets">
-          {sounds.map((sound) =>
-            <TrackView
-              key={sound.$.id!}
-              canFocus
-              active={sound.$.id === soundId}
-              audio={audio}
-              sound={sound}
-              clickMeta={sound.$}
-              onClick={$.onSoundSelect}
-              onDblClick={$.onSoundSave}
-              onCtrlShiftClick={$.onSoundDelete}
-              onRearrange={$.onSoundRearrange}
-            />
-          )}
+        <div ref={refs.presetsScrollEl} style="height:100%; position:relative; overflow-y: scroll; overscroll-behavior: contain;">
+          {soundPresets}
+          {patternPresets}
         </div>
 
-        const patternPresets = <div part="app-presets">
-          {patterns.map((pattern) =>
-            <TrackView
-              key={pattern.$.id!}
-              canFocus
-              active={pattern.$.id === patternId}
-              getTime={audio.$.getTime}
-              pattern={pattern}
-              clickMeta={pattern.$}
-              onClick={$.onPatternSelect}
-              onDblClick={$.onPatternSave}
-              onCtrlShiftClick={$.onPatternDelete}
-              onRearrange={$.onPatternRearrange}
-            />
-          )}
-        </div>
+        <div class="wrapper">
+          <TrackView
+            active={false}
+            hoverable={false}
+            showNotes={true}
+            sliders
+            player={(focused === 'sound' || focused === 'pattern' || (focused === 'sounds' && selected.preset === player.$.sound)) && player}
+            services={services}
+            main={focused === 'main' && main}
+            sound={(focused === 'sound' || focused === 'sounds') && sound}
+            pattern={(focused === 'pattern' || focused === 'patterns') && pattern}
+            xPos={focused === 'pattern' || focused === 'patterns' ? player.$.pattern : 0}
+            clickMeta={editorBuffer.$}
+          // onDblClick={$.onBufferSave}
+          />
 
-        const mixerView =
-          <div part="app-mixer" style="display: flex; flex-direction: column; align-items: flex-start; justify-content: center; position: relative; overflow: hidden;">
-
-            <div class="fit-width" style="flex: 0 0 auto; display: flex; flex-flow: row wrap;">
-              <NumberInput
-                style="height:30px"
-                part="app-bpm"
-                min={1}
-                max={666}
-                value={audio.deps.bpm}
-                step={1}
-                align="x"
-              />
-
-              <ButtonPlay
-                kind="big"
-                target={audio as any}
-                running={iconStop}
-                suspended={iconPlay}
-              />
-            </div>
-
-            <div style="flex: 1 1 auto; display: flex; flex-flow: column wrap; width: 100%; height: 0;">
-              {editorBuffer.$.kind === 'sound'
-                ? soundPresets
-                : patternPresets
+          {(readableOnly || editorBuffer.$.isDraft) && <div style="position: absolute; top: 0; left: 0; width: 100%; display: flex; align-items: center; justify-content:center; padding: 15px 0; box-sizing: border-box; gap: 9px">
+            {readableOnly && <Button rounded onClick={() => {
+              if (focused === 'sounds') {
+                $.onSoundUse(selected.preset)
+              } else if (focused === 'patterns') {
+                $.onPatternUse(selected.preset)
               }
-            </div>
-            {/* <ButtonIcon part="app-mixer-button" onClick={() => {
-              $.mode = APP_MODE.SOLO
             }}>
-              <IconSvg
-                set="feather"
-                icon="cpu"
-              />
-            </ButtonIcon> */}
+              <span class="i mdi-light-chevron-up" style="font-size:32px; position: relative; left: 1px; top: -1px;" />
+            </Button>}
 
-
-          </div>
-
-        const editorView = <div style="width: 100%; height: 100%; display:flex; flex-flow: column nowrap; position:relative">
-          {mainWaveform}
-
-          <Spacer
-            id="app-selected"
-            part="app-selected"
-            align="x"
-            reverse={true}
-            initial={[0, 0.555]}
-          >
-            <Editor
-              ref={refs.editor}
-              part="app-editor"
-              name="editor"
-              player={player}
-              buffer={editorBuffer}
-            />
-
-            <TrackView
-              active={false}
-              // showLabel={false}
-              padded
-              leftAlignLabel={focused === 'sound'}
-              sliders
-              player={(focused === 'sound' || focused === 'pattern') && player}
-              audio={audio}
-              main={focused === 'main' && main}
-              sound={focused === 'sound' && sound}
-              pattern={focused === 'pattern' && pattern}
-              getTime={audio.$.getTime}
-              clickMeta={editorBuffer.$}
-              onDblClick={$.onBufferSave}
-            />
-
-          </Spacer>
+            {editorBuffer.$.isDraft && <Button rounded onClick={() => {
+              $.onBufferSave(editorBuffer.$.id!, editorBuffer.$)
+            }}>
+              <span class="i la-save" style="font-size:23px; position: relative; left: 0.5px; top: -1px;" />
+            </Button>}
+          </div>}
         </div>
 
-        const playersView =
-          <Spacer
-            id="app-players"
-            part="app-players"
-            style={`max-height:${players.length * 70}px`}
-            align="x"
-            shifted
-            initial={[0, 0.1325, 0.445]}
-          >
-            <div>
-              {players.map((player, y) =>
-                <div part="app-players-row" class="app-player-controls">
-                  <ButtonPlay
-                    part="app-player-play"
-                    target={player as any}
-                    running={state === 'deleting' ? iconDelete : iconStop}
-                    suspended={state === 'deleting' ? iconDelete : iconPlay}
-                    onDelete={() => {
-                      if ($.players.length > 1 && $.selected.player !== y) {
-                        if ($.selected.player > y) $.selected.player--
-                        $.players.splice(y, 1)
-                        $.players = [...$.players]
-                        $.selected = { ...$.selected }
-                      }
-                    }}
-                  />
-                </div>
-              )}
+        <Editor
+          ref={refs.editor}
+          part="app-editor"
+          name="editor"
+          player={player}
+          buffer={editorBuffer}
+          readableOnly={readableOnly}
+        />
 
+      </Spacer>
+    })
 
-            </div>
+    fx(({ players, editorVisible, selected, editorView }) => {
+      $.playersView = players.map((player, y) => <>
+        <PlayerView
+          key={player.$.id!}
+          id={player.$.id!}
+          services={services}
+          player={player}
+          active={editorVisible && selected.player === y}
+        />
 
-            <div>
-              {players.map((player, y) => {
-                return <TrackView
-                  part="app-players-row"
-                  class={classes({ big: selected.player === y })}
-                  leftAlignLabel
-                  sliders
-                  active={selected.player === y && player.$.sound === soundId}
-                  audio={audio}
-                  player={player}
-                  sound={get(sounds, player.$.sound)!}
-                  clickMeta={{ id: player.$.sound, y }}
-                  onClick={$.onPlayerSoundSelect}
-                  onDblClick={$.onSoundSave}
-                />
-              })}
-            </div>
+        {selected.player === y && <div
+          ref={refs.editorEl}
+          class={classes({
+            // TODO: this should work with 'none'
+            // but something isn't playing well
+            hidden: !editorVisible
+          })}
+        >
+          {editorView}
+          {editorView && <Vertical
+            align='y'
+            id='editor'
+            size={290}
+          />}
+        </div>}
+      </>)
+    })
 
-            <div>
-              {players.map((player, y) => {
-                return <div part="app-players-row" style="display: flex; flex-flow: row nowrap;"
-                  class={classes({ big: selected.player === y })}
-                >
-                  {
-                    player.$.patterns.map((id, x) => {
-                      const pattern = get(patterns, id)!
-                      return <TrackView
-                        part="app-player-pattern"
-                        active={selected.player === y && player.$.pattern === x && id === patternId}
-                        live={player.$.pattern === x}
-                        xPos={x}
-                        audio={audio}
-                        getTime={audio.$.getTime}
-                        player={player}
-                        pattern={pattern}
-                        clickMeta={{ id, x, y }}
-                        onClick={$.onPlayerPatternSelect}
-                        onDblClick={$.onPatternSave}
-                        onAltClick={
-                          (y !== selected.player || player.$.pattern !== x)
-                          && $.onPlayerPatternPaste}
-                        onCtrlAltClick={$.onPlayerPatternInsert}
-                        onCtrlShiftClick={$.onPlayerPatternDelete}
-                      />
-                    })
-                  }
-                </div>
-              })}
-            </div>
-          </Spacer>
+    services.fx(({ likes, loggedIn }) =>
+      fx(({ mode, project, projects, allProjects, playersView }) => {
+        $.autoSave()
+
+        function notCurrentProject(id: string) {
+          return id !== project.$.id
+        }
 
         $.view = <>
+          <Toolbar project={project} />
+
           <Hint message={deps.hint} />
 
-          {players.map((player, y) =>
-            <PlayerView
-              key={player.$.id!}
-              id={player.$.id!}
-              audio={$.audio}
-              player={player}
-            />
-          )}
+          <main>
+            <ProjectView
+              key={project.$.id}
+              id={project.$.id}
+              primary={true}
+              project={project}
+              controlsView={<>
+                {!loggedIn && <Button
+                  pill
+                  onClick={() => {
+                    const h = 700
+                    const w = 500
+                    const x = window.outerWidth / 2 + window.screenX - (w / 2)
+                    const y = window.outerHeight / 2 + window.screenY - (h / 2)
 
-          <Spacer
-            id="app-outer"
-            align="y"
-            initial={[0, 0.95]}
-          >
-            <Spacer
-              id="app"
-              align="x"
-              style="width:100%;height:100%;"
-              initial={[0, 0.125]}
-            >
-              {mixerView}
+                    const popup = window.open('/example/login.html', 'oauth', `width=${w}, height=${h}, top=${y}, left=${x}`)!
 
-              <Spacer
-                id="app-right"
-                align="y"
-                initial={[0, .62]}
-              >
-                <div style="height:100%;overflow-y:scroll;">
-                  <div style="position:relative">
-                    {playersView}
-                  </div>
-
-                  <div part="app-players-row">
-
-                    <ButtonIcon class="normal" part="app-mixer-button" onClick={() => {
-                      $.players.push(Player(player.$.derive()))
-                      $.players = [...$.players]
-                    }}>
-                      <IconSvg
-                        set="feather"
-                        icon="plus-circle"
-                      />
-                    </ButtonIcon>
-
-                  </div>
-                </div>
-
-                {editorView}
-
-
-              </Spacer>
-            </Spacer>
-
-            <PianoKeys
-              invertColors
-              halfOctaves={7}
-              startOctave={2}
-              audioContext={audio.$.audioContext}
-              onmidimessage={e => {
-                if (!$.player.$.preview) {
-                  $.player.$.startPreview()
-                }
-                $.player.$.view?.monoNode?.processMidiEvent(e)
-              }}
-              style="pointer-events: all"
+                    const off = on(window, 'storage')(() => {
+                      off()
+                      popup.close()
+                      services.$.tryLogin()
+                    })
+                  }}
+                  title={"No spam, no email, no messages and no tracking!\nWe only use your username to sign you in and that's it.\nClicking opens in a popup."}
+                >
+                  Login with GitHub <span class="i la-github" />
+                </Button>}
+                {loggedIn && <Button round onClick={() => { }}>
+                  <img crossorigin={'anonymous'} src={`https://avatars.githubusercontent.com/${services.$.username}?s=42&v=4`} />
+                </Button>}
+                <Button round onClick={() => {
+                  if ($.mode === APP_MODE.NORMAL) {
+                    $.mode = APP_MODE.BROWSE
+                    $.allProjects = makeProjects(projects, likes)
+                  } else {
+                    $.mode = APP_MODE.NORMAL
+                  }
+                }}>
+                  <span class={`i ${$.mode === APP_MODE.NORMAL
+                    ? 'la-list'
+                    : 'mdi-light-chevron-up'
+                    }`} />
+                </Button>
+              </>}
             />
 
-          </Spacer>
+            <div class={classes(({ light: true, hidden: mode !== 'normal' }))}>
+              {playersView}
+            </div>
+
+            <div class={classes(({ hidden: mode !== 'browse' }))}>
+              <DoomScroll prompt initial={3} items={allProjects.drafts.filter(notCurrentProject)} factory={(id: string) =>
+                <ProjectView
+                  key={id}
+                  id={id}
+                  primary={false}
+                  onSelect={$.onProjectSelect}
+                />
+              } />
+
+              <h2>Liked:</h2>
+
+              <DoomScroll prompt initial={3} items={allProjects.liked.filter(notCurrentProject)} factory={(id: string) =>
+                <ProjectView
+                  key={id}
+                  id={id}
+                  primary={false}
+                  onSelect={$.onProjectSelect}
+                />
+              } />
+
+              <h2>Latest:</h2>
+
+              <DoomScroll prompt initial={3} items={allProjects.recent.filter(notCurrentProject)} factory={(id: string) =>
+                <ProjectView
+                  key={id}
+                  id={id}
+                  primary={false}
+                  onSelect={$.onProjectSelect}
+                />
+              } />
+            </div>
+          </main>
+
+          <footer>🔔</footer>
         </>
-
-      }
-    })
+      }))
   }
 ))
 
+function isDraft(id: string) {
+  const [, , kind] = id.split(DELIMITERS.SAVE_ID)
+  return kind === PROJECT_KINDS.DRAFT
+}
+
+function getDateTime(id: string) {
+  const [, date] = id.split(DELIMITERS.SAVE_ID)
+  return new Date(date).getTime()
+}
+
+function byDateDescending(a: string, b: string) {
+  return getDateTime(b) - getDateTime(a)
+}
+
+function makeProjects(projects: string[], likes: string[]) {
+  return {
+    drafts: projects.filter((id) => isDraft(id)).sort(byDateDescending),
+    liked: projects.filter((id) => !isDraft(id) && likes.includes(id)).sort(byDateDescending),
+    recent: projects.filter((id) => !isDraft(id) && !likes.includes(id)).sort(byDateDescending)
+  }
+}
 ////////////////
 
-export const Skeleton = view('skeleton',
-  class props {
+// export const Skeleton = view('skeleton',
+//   class props {
 
-  },
-  class local { },
-  function actions({ $, fns, fn }) {
-    return fns(new class actions {
+//   },
+//   class local { },
+//   function actions({ $, fns, fn }) {
+//     return fns(new class actions {
 
-    })
-  },
-  function effects({ $, fx, deps, refs }) {
+//     })
+//   },
+//   function effects({ $, fx, deps, refs }) {
 
-  }
-)
-type Skeleton = typeof Skeleton.Hook
+//   }
+// )
+// type Skeleton = typeof Skeleton.Hook

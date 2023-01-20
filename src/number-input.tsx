@@ -2,6 +2,7 @@
 
 import { view, web, Dep, effect, on } from 'minimal-view'
 import { Scalar } from 'geometrik'
+import { services } from './services'
 
 const { clamp } = Scalar
 
@@ -19,6 +20,11 @@ export const NumberInput = web(view('number-input',
   },
 
   function actions({ fn, fns }) {
+    let iv: any
+    let timeout: any
+
+    let activeFn: () => any
+
     return fns(new class actions {
       inc = fn(({ min, max, step, value }) => () => {
         value.value = +clamp(min, max, (value.value ?? 0) + step).toFixed(1)
@@ -28,14 +34,28 @@ export const NumberInput = web(view('number-input',
         value.value = +clamp(min, max, (value.value ?? 0) - step).toFixed(1)
       })
 
-      onPointerDown = (fn: () => void) => (e: PointerEvent) => {
+      onPointerEnter = (valueFn: any) => (e: PointerEvent) => {
+        if (e.buttons & 1) {
+          activeFn = valueFn
+        }
+      }
+
+      onPointerDown = (valueFn: any) => (e: PointerEvent) => {
         e.preventDefault()
         e.stopPropagation()
-        fn()
-        let iv: any
-        const timeout = setTimeout(() => {
-          iv = setInterval(fn, 50)
-        }, 300)
+
+        valueFn()
+        activeFn = valueFn
+
+        clearTimeout(timeout)
+        clearInterval(iv)
+
+        timeout = setTimeout(() => {
+          iv = setInterval(() => {
+            activeFn()
+          }, 40)
+        }, 200)
+
         on(window, 'pointerup').once(() => {
           clearTimeout(timeout)
           clearInterval(iv)
@@ -45,54 +65,56 @@ export const NumberInput = web(view('number-input',
   },
 
   function effects({ $, fx }) {
-    fx(({ align }) => {
-      $.css = /*css*/`
-      & {
-        position: relative;
-        display: flex;
-        flex-flow: ${align === 'y' ? 'column' : 'row'} nowrap;
-        font-family: Mono;
-        align-items: center;
-        justify-content: center;
-        text-align: center;
-        user-select: none;
-        cursor: default;
-      }
+    services.fx(({ skin }) =>
+      fx(({ align }) => {
+        $.css = /*css*/`
+        ${skin.css}
 
-      button {
-        all: unset;
-        width: 25px;
-        height: 100%;
-        cursor: pointer;
-
-        &:hover {
-          background: #aaf2;
+        & {
+          position: relative;
+          display: flex;
+          flex-flow: ${align === 'y' ? 'column' : 'row'} nowrap;
+          align-items: center;
+          justify-content: center;
+          text-align: center;
+          user-select: none;
+          cursor: default;
         }
-      }
 
-      [part=left] {
-        padding-right: 12.5px;
-      }
+        button {
+          all: unset;
+          width: 25px;
+          height: 100%;
+          cursor: pointer;
 
-      [part=right] {
-        padding-left: 12.5px;
-      }
+          &:hover {
+            background: ${skin.colors.shadeSofter};
+          }
+        }
 
-      [part=value] {
-        position: absolute;
-        left: 0;
-        width: 100%;
-        height: 100%;
-        display: inline-flex;
-        pointer-events: none;
-        flex: 1;
-        font-size: 18px;
-        flex-flow: ${align === 'y' ? 'column' : 'row'} nowrap;
-        align-items: center;
-        justify-content: center;
-      }
-      `
-    })
+        [part=left] {
+          padding-right: 12.5px;
+        }
+
+        [part=right] {
+          padding-left: 12.5px;
+        }
+
+        [part=value] {
+          position: absolute;
+          left: 0;
+          width: 100%;
+          height: 100%;
+          display: inline-flex;
+          pointer-events: none;
+          flex: 1;
+          flex-flow: ${align === 'y' ? 'column' : 'row'} nowrap;
+          align-items: center;
+          justify-content: center;
+        }
+        `
+      })
+    )
 
     fx(({ value }) =>
       effect({ value }, function updateValue({ value }) {
@@ -109,9 +131,21 @@ export const NumberInput = web(view('number-input',
         </>
       } else {
         $.view = <>
-          <button onpointerdown={$.onPointerDown($.dec)} part="left">-</button>
+          <button
+            part="left"
+            onpointerdown={$.onPointerDown($.dec)}
+            onpointerenter={$.onPointerEnter($.dec)}
+          >
+            <span class="dec bpm-control i mdi-light-chevron-left"></span>
+          </button>
           <span part="value">{valueView}</span>
-          <button onpointerdown={$.onPointerDown($.inc)} part="right">+</button>
+          <button
+            part="right"
+            onpointerdown={$.onPointerDown($.inc)}
+            onpointerenter={$.onPointerEnter($.inc)}
+          >
+            <span class="inc bpm-control i mdi-light-chevron-right"></span>
+          </button>
         </>
       }
     })

@@ -1,0 +1,7 @@
+<body style="background:#222;color:#888;justify-content:center;align-items:center;display:flex;font-family:sans-serif">
+  <h2>success, you can close this window now</h2>
+  <script>
+    localStorage.login_callback = Date.now()
+    setTimeout(() => window.close(), 500)
+  </script>
+</body>

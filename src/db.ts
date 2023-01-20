@@ -2,7 +2,7 @@ import { cheapRandomId } from 'everyday-utils'
 import { app, DELIMITERS } from './app'
 
 export async function getHash(short: string, long: string) {
-  if (app.dev) {
+  if (app.$.dev) {
     try {
       const res = await fetch(`${location.origin}/store?key=${long}`, {
         method: 'GET'
@@ -13,7 +13,7 @@ export async function getHash(short: string, long: string) {
       console.warn(error)
     }
   } else {
-    const res = await fetch(`${app.apiUrl!}/v2/${short}?`, {
+    const res = await fetch(`${app.$.apiUrl!}/v2/${short}?`, {
       method: 'GET',
     })
     const hash = await res.text()
@@ -24,7 +24,7 @@ export async function getHash(short: string, long: string) {
 export async function createShort(id: string, body: string = location.hash) {
   const [icon, date, , checksum] = id.split(DELIMITERS.SAVE_ID)
 
-  if (app.dev) {
+  if (app.$.dev) {
     const short = ['v2', icon, date, cheapRandomId(), checksum].join(DELIMITERS.SHORT_ID)
     await fetch(`${location.origin}/store?key=${short}`, {
       method: 'POST',
@@ -52,7 +52,7 @@ export async function createShort(id: string, body: string = location.hash) {
     console.log('short', short)
     return short
   } else {
-    const res = await fetch(`${app.apiUrl!}/v2`, {
+    const res = await fetch(`${app.$.apiUrl!}/v2`, {
       method: 'POST',
       body: JSON.stringify({ icon, date, checksum, body }),
     })
@@ -63,7 +63,7 @@ export async function createShort(id: string, body: string = location.hash) {
 }
 
 export async function getShortList() {
-  if (app.dev) {
+  if (app.$.dev) {
     try {
       const res = await fetch(`${location.origin}/store?key=short-list`, {
         method: 'GET'
@@ -76,7 +76,7 @@ export async function getShortList() {
     }
   }
   try {
-    const res = await fetch(`${app.apiUrl!}/v2`, {
+    const res = await fetch(`${app.$.apiUrl!}/v2`, {
       method: 'GET',
     })
     const data = await res.json()

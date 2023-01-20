@@ -23,9 +23,11 @@ export const Sliders = web(view('sliders',
       pointer-events: none;
       flex-flow: row nowrap;
       box-sizing: border-box;
-      padding: 15px;
+      padding: 15px 0 15px 15px;
       width: 100%;
-      height: 100%;
+      position: absolute;
+      bottom: 0;
+      opacity: 0.85;
     }
 
     ${SliderView} {
@@ -43,7 +45,7 @@ export const Sliders = web(view('sliders',
             player={player}
             running={true}
             vertical={false}
-            showBg={true}
+            showBg={false}
           />)
       })
     )

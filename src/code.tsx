@@ -11,7 +11,8 @@ export interface EditorDetailData {
 export const Code = web(view('code',
   class props {
     name!: string
-    font!: string
+    font?: string
+    fontName?: string
     fontSize!: number
     scene!: EditorScene
     value!: Dep<string>
@@ -95,14 +96,15 @@ export const Code = web(view('code',
       })
     )
 
-    fx(function drawCode({ name, value, font, fontSize, scene, onMarkerEnter, onMarkerLeave }) {
+    fx(function drawCode({ name, value, fontSize, scene, onMarkerEnter, onMarkerLeave }) {
       $.view = <Canvy
         key="text"
         ref={refs.waitingEditor}
         part="canvy"
         scene={scene}
-        font={font}
-        fontSize={+localStorage[`editor-fontSize-${name}`] || fontSize}
+        font={$.font}
+        fontName={$.fontName}
+        fontSize={fontSize} //+localStorage[`editor-fontSize-${name}`] || fontSize}
         // padding={0}
         onevent={$.onEvent}
         onentermarker={onMarkerEnter}

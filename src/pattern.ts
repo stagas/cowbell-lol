@@ -1,6 +1,7 @@
-import { getMidiEventsForNotes, NoteEvent } from 'scheduler-node'
 import defineFunction from 'define-function'
 import { Deferred } from 'everyday-utils'
+import memoize from 'memoize-pure'
+import { getMidiEventsForNotes, NoteEvent } from 'scheduler-node'
 
 // @ts-ignore
 const url = new URL('./pattern-processor.js', import.meta.url)
@@ -10,7 +11,6 @@ const processorSetupPromise = (async function getSetupSource() {
   const text = await res.text()
   return text
 })()
-
 
 type SandboxFn = (src: string) => readonly [
   NoteEvent[],
@@ -22,9 +22,9 @@ let sandboxTimeout: any
   ; (async function create() {
     const setup = await processorSetupPromise
     const fn = await defineFunction(`
-      const [src] = arguments
+      const [src] = arguments;
 
-      ${setup}
+      ${setup};
 
       return new Function(src)();
     `) as any
@@ -36,7 +36,7 @@ let sandboxTimeout: any
     sandbox.resolve(fn)
   })()
 
-export async function compilePattern(codeValue: string, numberOfBars: number, turn?: number): Promise<
+export const compilePattern = memoize(async function compilePattern(codeValue: string, numberOfBars: number, turn?: number): Promise<
   {
     success: false,
     error: Error,
@@ -74,7 +74,7 @@ export async function compilePattern(codeValue: string, numberOfBars: number, tu
       new Promise<void>((_, reject) => setTimeout(reject, 10000, new Error('timeout'))),
     ]) || []
 
-    const midiEvents = getMidiEventsForNotes(notes)
+    const midiEvents = getMidiEventsForNotes(notes, bars)
 
     return {
       success: true,
@@ -88,4 +88,4 @@ export async function compilePattern(codeValue: string, numberOfBars: number, tu
       sandboxCode,
     }
   }
-}
+})

@@ -16,6 +16,7 @@ export const Editor = web(view('editor',
     name!: string
     player!: Player
     buffer!: EditorBuffer
+    readableOnly?= false
   },
 
   class local {
@@ -47,13 +48,13 @@ export const Editor = web(view('editor',
 
       onMarkerEnter = ({ detail: { marker, markerIndex } }: { detail: { marker: Marker, markerIndex: number } }) => {
         $.hoveringMarker = marker
-        app.hint = marker?.message
+        app.$.hint = marker?.message
       }
 
       onMarkerLeave = ({ detail: { marker } }: { detail: { marker: Marker, markerIndex: number } }) => {
         // if (marker === $.activeMarker) {
         $.hoveringMarker = false
-        app.hint = false
+        app.$.hint = false
         // }
       }
     })
@@ -87,6 +88,10 @@ export const Editor = web(view('editor',
           noDraw: true
         })[1]
       )
+    })
+
+    fx(({ editor, readableOnly }) => {
+      editor.setReadableOnly(readableOnly)
     })
 
     let prevCodeNoArgs: string
@@ -199,11 +204,12 @@ export const Editor = web(view('editor',
                 $.lenses = [...errorLenses]
               }),
 
-              buffer.fx(({ value, error }) => {
+              buffer.fx(({ error }) => {
                 if (!error) {
                   $.errorMarkers = []
                   $.errorLenses = []
                 } else {
+                  const value = buffer.$.value
                   const message = error.message
                   const key = message.split(':')[0]
 
@@ -278,17 +284,18 @@ export const Editor = web(view('editor',
       })
     )
 
-    const initialFontSize = window.innerWidth > 800 ? 20 : 18
+    const initialFontSize = window.innerWidth > 800 ? 15.5 : 14
 
     fx(function $view({ name, editorBuffer }) {
       $.view = <div style="width:100%; height: 100%; display: flex;">
         <Code
           style="width: 100%; height: 100%; flex: 1;"
           name={name}
-          font={`${app.distRoot}/fonts/${app.monospaceFont}`}
+          font={`${app.$.distRoot}/fonts/JetBrainsMono-Light.ttf`}
+          // fontName="JetBrains Mono"
           fontSize={initialFontSize}
           singleComment="\"
-          scene={app.editorScene}
+          scene={app.$.editorScene}
           editor={deps.editor}
           value={editorBuffer.deps.value}
           markers={deps.markers}

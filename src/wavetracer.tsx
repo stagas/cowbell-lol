@@ -1,9 +1,9 @@
 /** @jsxImportSource minimal-view */
 
 import { element, view, web } from 'minimal-view'
-import { app } from './app'
+import { services } from './services'
 
-import type { WavetracerWorkerBytes, WavetracerWorkerCurrentTime, WavetracerWorkerInit, WavetracerWorkerLoopTime, WavetracerWorkerResize, WavetracerWorkerStart, WavetracerWorkerStop } from './wavetracer-worker'
+import type { WavetracerWorkerBytes, WavetracerWorkerColors, WavetracerWorkerCurrentTime, WavetracerWorkerInit, WavetracerWorkerLoopTime, WavetracerWorkerResize, WavetracerWorkerStart, WavetracerWorkerStop } from './wavetracer-worker'
 
 function post<T>(target: MessagePort | Worker, message: T, transfer?: StructuredSerializeOptions) {
   return target.postMessage(message, transfer)
@@ -25,10 +25,11 @@ const getWavetracerPort = () => {
 export const Wavetracer = web(view('wavetracer',
   class props {
     id!: string
-    kind!: 'tracer' | 'scroller'
+    kind!: 'tracer' | 'scroller' | 'detailed'
     running = false
     workerBytes!: Uint8Array
     workerFreqs!: Uint8Array
+    colors?: { bg: string }
     width?= 100
     height?= 50
     loopTime?= 1
@@ -82,7 +83,7 @@ export const Wavetracer = web(view('wavetracer',
           postCurrentTimeIv = setInterval(() => {
             post<WavetracerWorkerCurrentTime>(worker, {
               id,
-              currentTime: app.audio.$.getTime(),
+              currentTime: services.$.audio!.$.getTime(),
             })
           }, 1000)
           if (kind === 'tracer') {
@@ -91,9 +92,9 @@ export const Wavetracer = web(view('wavetracer',
               kind,
               start: true,
               loopTime,
-              currentTime: app.audio.$.getTime(),
+              currentTime: services.$.audio!.$.getTime(),
             })
-          } else if (kind === 'scroller') {
+          } else if (kind === 'scroller' || kind === 'detailed') {
             post<WavetracerWorkerStart>(worker, {
               id,
               kind,
@@ -108,7 +109,6 @@ export const Wavetracer = web(view('wavetracer',
 
   function effects({ $, fx, refs }) {
     $.css = /*css*/`
-
     & {
       display: block;
       width: 100%;
@@ -117,7 +117,7 @@ export const Wavetracer = web(view('wavetracer',
       z-index: 0;
     }
     canvas {
-      background: #000;
+      background: transparent;
       display: flex;
       image-rendering: pixelated;
       height: 0;
@@ -158,6 +158,14 @@ export const Wavetracer = web(view('wavetracer',
         width,
         height,
         pixelRatio: pr
+      })
+    })
+
+    fx(function postColors({ id, colors, worker, sentCanvas }) {
+      if (!sentCanvas) return
+      post<WavetracerWorkerColors>(worker, {
+        id,
+        bg: colors.bg
       })
     })
 

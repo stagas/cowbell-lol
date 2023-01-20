@@ -134,5 +134,5 @@ export function getSliders(
 }
 
 export function getCodeWithoutArgs(code: string) {
-  return code.replace(parseArgsRegExp, '')
+  return code.replace(parseArgsRegExp, '').replace(/\s/gi, '')
 }

@@ -1,6 +1,6 @@
 import { Scalar } from 'geometrik'
 import { reactive } from 'minimal-view/reactive'
-import { pick, isEqual } from 'everyday-utils'
+import { pick, isEqual, cheapRandomId } from 'everyday-utils'
 import type { Marker } from 'canvy'
 import { app } from './app'
 // import { Dep } from 'minimal-view'
@@ -15,7 +15,7 @@ export const fixed = (value: number) => {
 }
 
 export const markerForSlider = (slider: Slider): Marker => ({
-  key: slider.$.id,
+  key: slider.$.id!,
   index: slider.$.sourceIndex!,
   size: slider.$.source!.arg.length,
   kind: 'param',
@@ -29,7 +29,7 @@ export const markerForSlider = (slider: Slider): Marker => ({
 export type Slider = typeof Slider.State
 export const Slider = reactive('slider',
   class props {
-    id!: string
+    id?: string = cheapRandomId()
     name!: string
     value!: number
     min!: number
@@ -112,7 +112,7 @@ export const Slider = reactive('slider',
 
     fx(({ normal, scale, min }) => {
       $.value = fixed(normal * scale + min)
-      app.autoSave()
+      app?.$.autoSave()
     })
 
     //   fx(({ vol, normal }) => {

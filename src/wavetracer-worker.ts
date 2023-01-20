@@ -1,9 +1,9 @@
 // import { hslToRgb, rgbToHsl } from 'everyday-utils'
-import { animRemoveSchedule, animSchedule } from './anim'
+import { anim } from './anim'
 
 export interface WavetracerWorkerInit {
   id: string
-  kind: 'tracer' | 'scroller'
+  kind: 'tracer' | 'scroller' | 'detailed'
   canvas: HTMLCanvasElement
 }
 
@@ -12,6 +12,11 @@ export interface WavetracerWorkerResize {
   pixelRatio: number
   width: number
   height: number
+}
+
+export interface WavetracerWorkerColors {
+  id: string
+  bg: string
 }
 
 export type WavetracerWorkerStart = {
@@ -23,6 +28,8 @@ export type WavetracerWorkerStart = {
   currentTime: number
 } | {
   kind: 'scroller'
+} | {
+  kind: 'detailed'
 })
 
 export interface WavetracerWorkerStop {
@@ -54,10 +61,11 @@ export type WavetracerWorkerMessage =
   | WavetracerWorkerBytes
   | WavetracerWorkerLoopTime
   | WavetracerWorkerCurrentTime
+  | WavetracerWorkerColors
 
 function createWorkerTask(id: string, kind: WavetracerWorkerInit['kind'], canvas: HTMLCanvasElement): Task {
   const c = canvas.getContext('2d', {
-    alpha: false,
+    alpha: true,
     desynchronized: false
   })!
 
@@ -70,6 +78,9 @@ function createWorkerTask(id: string, kind: WavetracerWorkerInit['kind'], canvas
   let offsetTime: number
   let width: number
   let height: number
+
+  // colors
+  let bg = '#181522'
 
   /** Previous y position */
   let py: number
@@ -97,6 +108,20 @@ function createWorkerTask(id: string, kind: WavetracerWorkerInit['kind'], canvas
     freqs = _freqs
   }
 
+  let didPaintBg = false
+  function setColors(_bg: string) {
+    bg = _bg
+
+    if (!didPaintBg) {
+      didPaintBg = true
+      c.globalCompositeOperation = 'source-over'
+      // c.fillStyle = bg
+      // c.fillRect(0, 0, width, height)
+      // c.fillStyle = 'rgba(0,0,0,0.3)'
+      // c.fillRect(0, height / 2, width, height / 2)
+    }
+  }
+
   function setSizes(pixelRatio: number, newWidth: number, newHeight: number) {
     pr = pixelRatio
     c.lineWidth = pr
@@ -110,9 +135,12 @@ function createWorkerTask(id: string, kind: WavetracerWorkerInit['kind'], canvas
       canvas.width = width
       canvas.height = height
 
-      c.clearRect(0, 0, canvas.width, canvas.height)
-
-      c.strokeStyle = '#16e'
+      didPaintBg = false
+      setColors(bg)
+      // c.clearRect(0, 0, canvas.width, canvas.height)
+      // c.fillStyle = '#181522'
+      // c.fillRect(0, 0, canvas.width, canvas.height)
+      // c.strokeStyle = '#16e'
       c.imageSmoothingEnabled = false
     }
   }
@@ -121,7 +149,9 @@ function createWorkerTask(id: string, kind: WavetracerWorkerInit['kind'], canvas
   let y: number
   let h: number
 
-  let drawFn: () => void
+  let drawFn: (start: number, end: number) => void
+  // c.fillStyle = '#181522'
+  // c.fillRect(0, 0, canvas.width, canvas.height)
 
   if (kind === 'tracer') drawFn = () => {
     const currentTime = performance.now() * 0.001 + offsetTime
@@ -144,36 +174,90 @@ function createWorkerTask(id: string, kind: WavetracerWorkerInit['kind'], canvas
   }
   else if (kind === 'scroller') drawFn = () => {
     c.drawImage(canvas, -1, 0, width, height)
+    c.fillStyle = bg
     c.fillRect(canvas.width - 1, 0, 1, height)
 
     y = (height - pr) * h + pr / 2
-    c.beginPath()
-    c.moveTo(width - 1, py)
-    c.lineTo(width, y)
-    c.closePath()
-    c.stroke()
+    if (y - py !== 0) {
+      c.beginPath()
+      c.moveTo(width - 1, py)
+      c.lineTo(width, y)
+      c.closePath()
+      c.stroke()
+    }
+  }
+  else if (kind === 'detailed') drawFn = (start: number, end: number) => {
+    let top = 0, bottom = 0, s
+    for (let i = start; i < end; i++) {
+      s = bytes[i] / 256
+      if (s > 0.5) {
+        s = (((s - 0.5) * 2) ** 0.8)
+        if (s > bottom) bottom = s
+        // s *= 0.65
+        // if (s > top) top = s
+      } else if (s < 0.5) {
+        s = 0.5 - s
+        s = ((s * 2) ** 0.8)
+        if (s > top) top = s
+        // s *= 0.65
+        // if (s > bottom) bottom = s
+      }
+    }
+    top = 1 - top
+    bottom += 1
+    const h = (bottom - top) / 2 * height
+    const y = top / 2 * height
+    if (h <= 0.35) return
+
+    const gradient = c.createLinearGradient(0, y, 0, y + h)
+    gradient.addColorStop(0, 'rgba(20, 225, 255, 0.1)')
+    gradient.addColorStop(0.5, 'rgba(20, 225, 255, 1)')
+    gradient.addColorStop(1, 'rgba(20, 225, 255, 0.1)')
+    c.fillStyle = gradient
+    c.fillRect(width - 1, y, 1, h)
   }
 
   const draw = () => {
-    animSchedule(draw)
+    anim.schedule(draw)
     if (!c || !bytes) return
 
-    h = bytes[0] / 256
+    if (kind === 'detailed') {
+      c.globalCompositeOperation = 'source-over'
+      c.drawImage(canvas, -1, 0, width, height)
+      c.fillStyle = bg
+      c.fillRect(width - 1, 0, 1, height)
 
-    rgb[2] = (freqs[0] + freqs[1] + freqs[2] + freqs[3] + freqs[4] + freqs[5]) / 6 / 256
-    rgb[1] = (freqs[6] + freqs[7] + freqs[8] + freqs[9] + freqs[10]) / 5 / 256
-    rgb[0] = (freqs[11] + freqs[12] + freqs[13] + freqs[14] + freqs[15]) / 5 / 256
+      const chunks = 8
+      const chunk = bytes.length / chunks | 0
 
-    // hsl = rgbToHsl([rgb[0], rgb[1] ** 0.8, rgb[2]])
-    // rgb = hslToRgb([hsl[0], hsl[1] ** 0.1, hsl[2] ** 1])
+      drawFn(0, chunk)
+      c.globalCompositeOperation = 'lighten'
+      for (let i = 1; i < chunks; i++)
+        drawFn(i * chunk, i * chunk + chunk)
 
-    c.strokeStyle = `rgb(${rgb[0] ** 0.2 * 255},${rgb[1] ** 0.8 * 255},${rgb[2] ** 1.15 * 255})`
+      // c.globalCompositeOperation = 'source-over'
+      // c.fillStyle = 'rgba(0,0,0,0.3)'
+      // c.fillRect(canvas.width - pr, canvas.height / 2, pr, canvas.height / 2)
+    } else {
+      h = bytes[0] / 256
 
-    const normal = 1 - h * 2
-    const sign = Math.sign(normal)
-    h = ((Math.abs(normal) ** 0.38) * sign * 0.5 + 0.5)
-    drawFn()
-    py = y
+      rgb[2] = (freqs[0] + freqs[1] + freqs[2] + freqs[3] + freqs[4] + freqs[5]) / 6 / 256
+      rgb[1] = (freqs[6] + freqs[7] + freqs[8] + freqs[9] + freqs[10]) / 5 / 256
+      rgb[0] = (freqs[11] + freqs[12] + freqs[13] + freqs[14] + freqs[15]) / 5 / 256
+
+      // hsl = rgbToHsl([rgb[0], rgb[1] ** 0.8, rgb[2]])
+      // rgb = hslToRgb([hsl[0], hsl[1] ** 0.1, hsl[2] ** 1])
+
+      c.strokeStyle = '#b9ff'
+      // `rgb(${rgb[0] ** 1.6 * 255},${rgb[1] ** 1.8 * 255},${rgb[2] ** 1.15 * 255})`
+      // c.strokeStyle = `rgb(${rgb[0] ** 0.2 * 255},${rgb[1] ** 0.8 * 255},${rgb[2] ** 1.15 * 255})`
+
+      const normal = 1 - h * 2
+      const sign = Math.sign(normal)
+      h = ((Math.abs(normal) ** 0.38) * sign * 0.5 + 0.5)
+      drawFn(0, 0)
+      py = y
+    }
   }
 
   return {
@@ -183,7 +267,8 @@ function createWorkerTask(id: string, kind: WavetracerWorkerInit['kind'], canvas
     setSizes,
     setTimers,
     setOffsetTime,
-    setBytes
+    setBytes,
+    setColors,
   }
 }
 
@@ -194,6 +279,7 @@ interface Task {
   setTimers: (offsetTime: number, loopTime: number) => void
   setOffsetTime: (offsetTime: number) => void
   setBytes: (bytes: Uint8Array, freqs: Uint8Array) => void
+  setColors: (bg: string) => void
   draw: () => void
 }
 
@@ -205,7 +291,6 @@ self.onmessage = (e: { data: WavetracerWorkerMessage }) => {
     tasks.set(task.id, task)
     return
   }
-
   const task = tasks.get(e.data.id)
   if (!task) {
     console.error(e.data)
@@ -221,13 +306,13 @@ self.onmessage = (e: { data: WavetracerWorkerMessage }) => {
         e.data.currentTime - performance.now() * 0.001,
         e.data.loopTime
       )
-      animSchedule(task.draw)
+      anim.schedule(task.draw)
     }
 
-    animSchedule(task.draw)
+    anim.schedule(task.draw)
   }
   else if ('stop' in e.data) {
-    animRemoveSchedule(task.draw)
+    anim.remove(task.draw)
   }
   else if ('bytes' in e.data) {
     task.setBytes(e.data.bytes, e.data.freqs)
@@ -237,6 +322,9 @@ self.onmessage = (e: { data: WavetracerWorkerMessage }) => {
   }
   else if ('currentTime' in e.data) {
     task.setOffsetTime(e.data.currentTime - performance.now() * 0.001)
+  }
+  else if ('bg' in e.data) {
+    task.setColors(e.data.bg)
   }
   else {
     console.error(e)

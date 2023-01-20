@@ -25,8 +25,6 @@ class Task {
   }
 
   async compile(code: string) {
-    // console.log('compile')
-
     this.code = code
 
     if (this.startVmMem) {
@@ -36,7 +34,7 @@ class Task {
       this.startVmMem = this.vm.floats.slice()
     }
 
-    await this.vm.setCode(!code.trim() ? 'f()=0' : code)
+    await this.vm.setCode(code)
 
     this.resetVmMem = this.vm.floats.slice()
     this.isMemDirty = false
@@ -100,7 +98,7 @@ async function execTask(code: string, floats: Float32Array) {
             // task.setParam(slider.id, slider.value)
             isDirty = true
           }
-          task.setParam(slider.id, slider.value)
+          task.setParam(slider.id!, slider.value)
         }
 
         if (isDirty) {

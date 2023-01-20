@@ -124,7 +124,8 @@ export const Spacer = web(view('spacer',
       resize = fn(({ host, align, layout }) => queue.raf(() => {
         const [, oppDim] = dims(align)
 
-        $.rect = new Rect(layout.getBoundingClientRect()) //.round()
+        const scrollTop = document.documentElement.scrollTop
+        $.rect = new Rect(layout.getBoundingClientRect()).translate(0, scrollTop) //.round()
         Object.assign(host.style, {
           ...$.rect.toStyleSize(),
           [oppDim]: '100%'
@@ -141,6 +142,7 @@ export const Spacer = web(view('spacer',
       $.css = /*css*/`
 
       & {
+        position: relative;
         display: flex;
         flex-flow: ${flow} nowrap;
       }
@@ -155,7 +157,7 @@ export const Spacer = web(view('spacer',
         margin-${pos}: -5px;
         ${opp}: 100%;
         cursor: ${cursor};
-        background-color: #aaf2;
+        background-color: #aaf0;
         background-clip: content-box;
         &.dragging,
         &:hover {
@@ -207,7 +209,8 @@ export const Spacer = web(view('spacer',
     fx(function listenWindowAndHostResize({ layout }) {
       return chain(
         on(window, 'resize')($.resize),
-        observe.resize.initial(layout, $.resize)
+        observe.resize.initial(layout, $.resize),
+        observe.intersection(layout, $.resize),
       )
     })
 

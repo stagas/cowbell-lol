@@ -226,8 +226,8 @@ f()=(
 
 export const demo = {
   kick: {
-    sound: String.raw`\\\ kick \\\
-#:1,3;
+    sound: String.raw
+      `#:1,3;
 write_note(x,y)=(
   #=(t,note_to_hz(x),y/127);
   0
@@ -252,15 +252,15 @@ play(nt,x,y,
   s
 );
 f()=#::play:sum
-`, patterns: [String.raw`/// 1/4 ///
-bars=1
+`, patterns: [String.raw
+      `bars=1
 seed=1
 on(1/4,x=>
   [x,127,127,.05])
 `,
 
-    String.raw`/// 1/4 brk 1 ///
-bars=1
+    String.raw
+      `bars=1
 seed=1
 on(1/8,x=>
   [x,127,127,.03])
@@ -274,8 +274,8 @@ events[6][2]-=70
   },
 
   snare: {
-    sound: String.raw`\\\ snare \\\
-#:2,3;
+    sound: String.raw
+      `#:2,3;
 write_note(x,y)=(
   #=(t,note_to_hz(x),y/127);
   0
@@ -306,15 +306,15 @@ f()=(
   x*.35
 )
 `,
-    patterns: [String.raw`/// 1/2+1/4 ///
-bars=1
+    patterns: [
+      String.raw
+        `bars=1
 seed=1
 on(1/2,x=>
   [x+1/4,127,127,.05])
 `,
-
-    String.raw`/// 1/2+1/4 brk 1 ///
-bars=1
+      String.raw
+        `bars=1
 seed=1
 on(1/2,x=>
   [x+1/4,127,127,.05])
@@ -325,8 +325,7 @@ events.push([1/2+3/12,127,87,.05])
   },
 
   bass: {
-    sound: String.raw`\\\ bass \\\
-#:2,3;
+    sound: String.raw`#:2,3;
 write_note(x,y)=(
   #=(t,note_to_hz(x),y/127);
   0
@@ -354,8 +353,7 @@ synth(
 f()=synth();
 `,
 
-    patterns: [String.raw`/// 1/4 ///
-bars=1
+    patterns: [String.raw`bars=1
 seed=91
 euc(1/16,4,
   delay(1/4,8,
@@ -371,8 +369,7 @@ euc(1/16,4,
   },
 
   reverb: {
-    sound: String.raw`\\\
-f()=sine(1);
+    sound: String.raw`f()=sine(1);
 `
     //     sound: String.raw`\\\ reverb \\\
     // fx(
@@ -387,8 +384,7 @@ f()=sine(1);
     // `
   },
 
-  main: String.raw`\\\ main \\\
-const [kick,snare,bass,hats,keys] = players
+  main: String.raw`const [kick,snare,bass,hats,keys] = players
 const [reverb,delay] = sends
 
 kick.in('350547'.sample.offset(-19231))

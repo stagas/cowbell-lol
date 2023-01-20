@@ -1,8 +1,9 @@
 import { CanvyElement } from 'canvy'
-import { cheapRandomId, pick } from 'everyday-utils'
+import { cheapRandomId, checksum, pick } from 'everyday-utils'
 import { ImmMap } from 'immutable-map-set'
 import { queue, reactive } from 'minimal-view'
-import { Audio } from './audio'
+import { MidiOp } from 'webaudio-tools'
+import { services } from './services'
 import { compilePattern } from './pattern'
 import { Preview } from './preview-service'
 import { Slider } from './slider'
@@ -12,10 +13,11 @@ import { getTitle } from './util/parse'
 import { randomName } from './util/random-name'
 import { Waveplot } from './waveplot'
 
+const MidiOps = new Set(Object.values(MidiOp))
+
 export type EditorBuffer = typeof EditorBuffer.State
 export const EditorBuffer = reactive('editor-buffer',
   class props {
-    audio!: Audio
     kind!: 'sound' | 'pattern' | 'main'
     id?= cheapRandomId()
 
@@ -35,6 +37,8 @@ export const EditorBuffer = reactive('editor-buffer',
   },
 
   class local {
+    checksum?: number
+
     title?: string
 
     didDisplay?: boolean = false
@@ -55,6 +59,7 @@ export const EditorBuffer = reactive('editor-buffer',
 
     midiEvents = new ImmMap<number, WebMidi.MIDIMessageEvent[]>()
     numberOfBars?: number
+    midiRange?: [number, number]
     recompute = false
     turn = 0
 
@@ -73,13 +78,12 @@ export const EditorBuffer = reactive('editor-buffer',
         (props: Partial<typeof $>) =>
           [EditorBuffer, Object.assign(pick($, [
             'value',
-            'audio',
             'kind',
             'midiEvents',
             'numberOfBars',
           ]), props)] as const
 
-      draw = fn(({ id, waveplot, preview, canvas: _, canvases, noDraw }) => queue.raf(async () => {
+      draw = fn(({ id, waveplot, preview, canvas: _, canvases: __, noDraw }) => queue.raf(async () => {
         if (noDraw) return
 
         if (!$.didPaint && $.parentId) {
@@ -129,9 +133,27 @@ export const EditorBuffer = reactive('editor-buffer',
         )
 
         if (result.success) {
-          $.midiEvents = $.midiEvents.set(turn, result.midiEvents)
           $.numberOfBars = result.numberOfBars
           $.error = false
+
+          const prevEvents = $.midiEvents.get(turn)
+
+          // are events equal?
+          if (prevEvents) {
+            if (prevEvents.length === result.midiEvents.length) {
+              if (prevEvents.every((ev, i) =>
+                result.midiEvents[i].receivedTime === ev.receivedTime
+                && result.midiEvents[i].data[0] === ev.data[0]
+                && result.midiEvents[i].data[1] === ev.data[1]
+                && result.midiEvents[i].data[2] === ev.data[2]
+              )) {
+                return result.midiEvents
+              }
+            }
+          }
+
+          $.midiEvents = $.midiEvents.set(turn, result.midiEvents)
+
           return result.midiEvents
         } else {
           const { error, sandboxCode } = result
@@ -154,13 +176,15 @@ export const EditorBuffer = reactive('editor-buffer',
       $.title = getTitle(value) || fallbackTitle
     })
 
+    fx(({ value }) => {
+      $.checksum = checksum(value)
+    })
+
     if ($.kind === 'sound') {
-      fx(({ audio }) =>
-        audio.fx(({ waveplot, preview }) => {
-          $.waveplot = waveplot
-          $.preview = preview
-        })
-      )
+      services.fx(({ waveplot, preview }) => {
+        $.waveplot = waveplot
+        $.preview = preview
+      })
 
       fx(async ({ id, waveplot, noDraw, didDisplay }) => {
         if (didDisplay && !noDraw && !$.canvas) {
@@ -169,8 +193,8 @@ export const EditorBuffer = reactive('editor-buffer',
         }
       })
 
-      fx(({ audio, value }) => {
-        const nextSliders = audio.$.getSliders(value)
+      fx(({ value }) => {
+        const nextSliders = services.$.getSliders(value)
         const prevSliders = $.sliders
 
         if (!areSlidersCompatible(prevSliders, nextSliders)) {
@@ -202,6 +226,59 @@ export const EditorBuffer = reactive('editor-buffer',
         if (didDisplay) {
           off()
           $.compilePattern(0)
+        }
+      })
+
+      fx(({ midiEvents }) => {
+        const events = [...midiEvents.values()]
+          .flat()
+          .filter(x => MidiOps.has(x.data[0]))
+
+        let notes: number[]
+
+        if (!events.length) {
+          notes = [66]
+        } else {
+          notes = events.map(x => x.data[1])
+        }
+
+        // First, sort the notes in ascending order
+        notes.sort((a, b) => a - b);
+
+        // Determine the minimum and maximum notes in the range
+        let minNote = notes[0];
+        let maxNote = notes[notes.length - 1];
+
+        // Determine the lower and upper bounds of the quantized range
+        minNote = Math.floor((minNote - 3) / 6) * 6;
+        maxNote = Math.ceil((maxNote + 7) / 6) * 6;
+
+        // If the range is less than 3 half-octaves, expand it in both directions
+        // such that the included notes are as centered as possible within the range
+        if (maxNote - minNote < 17) {
+          maxNote += 6
+        }
+
+        if (maxNote - minNote < 17) {
+          minNote -= 6
+        }
+
+        const isExact = ((maxNote - minNote) % 12) === 0
+        const isExactStart = (minNote % 12) === 0
+
+        // console.log(minNote, maxNote)
+        if (!isExact && !isExactStart) minNote -= 1
+        if (!isExact && isExactStart) maxNote -= 1
+        if (isExact && !isExactStart) {
+          minNote -= 1
+          maxNote -= 1
+        }
+        // maxNote += (isExact ? 0 : -1)
+
+        // if (!isExactStart) maxNote += 2
+
+        if (!$.midiRange || $.midiRange[0] !== minNote || $.midiRange[1] !== maxNote) {
+          $.midiRange = [minNote, maxNote]
         }
       })
     }

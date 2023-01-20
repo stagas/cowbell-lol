@@ -2,11 +2,16 @@
 
 import { web, view } from 'minimal-view'
 import { Knob } from 'x-knob'
+import { anim } from './anim'
 import { Button } from './button'
-import { ui } from './ui'
+import { NumberInput } from './number-input'
+import { Project } from './project'
+import { services } from './services'
+import { Volume } from './volume'
 
 export const Toolbar = web(view('toolbar',
   class props {
+    project!: Project
   },
 
   class local {
@@ -21,27 +26,50 @@ export const Toolbar = web(view('toolbar',
 
   function actions({ $, fns, fn }) {
     return fns(new class actions {
+      drawTime = services.fn(({ audio }) => fn(({ mins, secs, mill, bar, beat, sixt }) => () => {
+        const elapsed = audio.$.getTime()
+        const time = new Date(Math.max(0, elapsed / audio.$.coeff * 1000))
 
+        mins.textContent = `${time.getMinutes()}`
+        secs.textContent = `${time.getSeconds()}`.padStart(2, '0')
+        mill.textContent = `${time.getMilliseconds()}`.padStart(3, '0')
+
+        const b = elapsed
+
+        bar.textContent = `${Math.max(1, 1 + b | 0)}`.padStart(3, '0')
+        // bar.textContent = `${Math.max(1, 1+(b % 16)|0 )}`.padStart(2, '0')
+        beat.textContent = `${Math.max(1, 1 + ((b * 4) % 4) | 0)}`
+        sixt.textContent = `${Math.max(1, 1 + ((b * 16) % 16) | 0)}`.padStart(2, '0')
+      }))
     })
   },
 
   function effects({ $, fx, deps, refs }) {
-    ui.fx(({ skin }) => {
+    services.fx(({ skin }) => {
       $.css = /*css*/`
       ${skin.css}
 
       & {
-        position: relative;
-        z-index: 999;
+        position: sticky;
+        top: 0;
+        z-index: 99999;
+        background: ${skin.colors.bgLight};
+        box-shadow: 0 1px 2.5px 1.15px ${skin.colors.shadeBlack};
+        color: ${skin.colors.fg};
+        display: flex;
+        flex-flow: row nowrap;
+        justify-content: center;
+      }
+
+      .inner {
+        padding: 10px;
+        box-sizing: border-box;
+        max-width: 800px;
+        width: 100%;
         display: flex;
         flex-flow: row wrap;
         align-items: center;
         justify-content: space-between;
-        background: ${skin.colors.bgLight};
-        box-shadow: 0 1px 2.5px 1.15px ${skin.colors.shadeBlack};
-        color: ${skin.colors.fg};
-        padding: 9px 14px;
-        box-sizing: border-box;
       }
 
       .logo {
@@ -77,13 +105,13 @@ export const Toolbar = web(view('toolbar',
           .o {
             color: ${skin.colors.brightGreen};
             display: inline-block;
-            transform: translateX(-0.35px) translateY(-1.5px) scale(1.05);
+            transform: translateX(-0.35px) translateY(-1.5px) scale(1.0);
           }
 
           .l2 {
             color: ${skin.colors.yellow};
             display: inline-block;
-            transform: rotate(-25deg) scale(1.71) translateX(3.5px);
+            transform: rotate(-25deg) scale(1.71) translateX(2.86px) translateY(-1.1px);
           }
         }
 
@@ -111,11 +139,10 @@ export const Toolbar = web(view('toolbar',
         }
       }
 
-
       ${Knob} {
         --white: ${skin.colors.brightGreen};
         position: relative;
-        top: 2px;
+        top: 3px;
         left: .5px;
         margin: 0 3px;
         min-width: 21px !important;
@@ -144,11 +171,11 @@ export const Toolbar = web(view('toolbar',
         background: ${skin.colors.bg};
         border-radius: 8px;
         margin: 10px 0 10px;
-        padding: 0px 9px 0 11px;
+        /* padding: 0px 9px 0 11px; */
         box-sizing: border-box;
         height: 32px;
         box-shadow:
-          inset 0 0.8px 1.95px -0.35px ${skin.colors.shadeDarker}
+          inset 0 1.5px 2.25px -0.35px ${skin.colors.shadeBlack}
           ,0 1px 2.85px -1.9px ${skin.colors.shadeBrighter}
           ;
         top: 2.5px;
@@ -161,6 +188,16 @@ export const Toolbar = web(view('toolbar',
         > div {
           display: flex;
           flex-flow: column nowrap;
+          &:first-child {
+            .value {
+              padding-left: 14px;
+            }
+          }
+          &:last-child {
+            .value {
+              padding-right: 11px;
+            }
+          }
           &:not(:first-child) {
             border-left: 2px solid ${skin.colors.bgLight};
             padding-left: 8px;
@@ -172,6 +209,11 @@ export const Toolbar = web(view('toolbar',
           padding: .8px;
         }
 
+        .beats {
+          margin-left: -18px;
+          /* padding-right: 5px; */
+        }
+
         .value {
           color: ${skin.colors.fg};
           font-size: 25px;
@@ -181,10 +223,12 @@ export const Toolbar = web(view('toolbar',
           letter-spacing: -1.25px;
           position: relative;
           z-index: 1;
+          border-radius: 8px;
+          overflow: hidden;
         }
 
         .words {
-          z-index: 0;
+          z-index: 2;
           background: ${skin.colors.bgPale};
           color: ${skin.colors.fgLight};
           box-shadow: 0 0.7px 1.3px -.5px ${skin.colors.shadeBlack};
@@ -201,131 +245,166 @@ export const Toolbar = web(view('toolbar',
 
         .bpm {
           &-control {
-            line-height: 0px;
-            font-size: 20px;
-            color: ${skin.colors.fgPale};
-            -webkit-text-stroke: .225px;
             position: relative;
-            top: 4.5px;
-            margin: 0 -10px;
+            left: -11px;
+            --padding: 14.5px;
 
-            &.dec {
-              margin-right: -5px;
+            &::part(left),
+            &::part(right) {
+              width: 18px;
+              color: ${skin.colors.fgPale};
+              font-size: 20px;
+              padding-top: 7px;
             }
 
-            &.inc {
-              margin-left: -2.5px;
+            &::part(left) {
+              padding-right: var(--padding);
+            }
+
+            &::part(right) {
+              padding-left: var(--padding);
             }
           }
 
           .words {
-            left: 2.3px;
+            left: 16.5px;
           }
         }
       }
       `
     })
 
+    fx(() =>
+      services.fx(({ audio }) =>
+        audio.fx(({ state }) => {
+          if (state === 'running') {
+            const tick = () => {
+              anim.schedule(tick)
+              $.drawTime()
+            }
 
-    fx(({ bar, beat, sixt, mins, secs, mill }) => {
-      const start = Date.now()
-      let time = new Date()
-      const anim = () => {
-        // requestAnimationFrame(anim)
+            anim.schedule(tick)
 
-        time = new Date(Date.now() - start + 260360)
+            return () => {
+              tick()
+              anim.remove(tick)
+            }
+          }
+        })
+      )
+    )
 
-        mins.textContent = `${time.getMinutes()}`
-        secs.textContent = `${time.getSeconds()}`.padStart(2, '0')
-        mill.textContent = `${time.getMilliseconds()}`.padStart(3, '0')
+    fx(() =>
+      services.fx(({ audio }) =>
+        audio.fx(({ state, internalTime: _ }) => {
+          // this allows the time display to be reset
+          // when clicking stop after pause
+          if (state === 'suspended') {
+            $.drawTime()
+          }
+        })
+      )
+    )
 
-        const co = (60 * 4) / 140
-        const b = time.getTime() / 1000 / co
+    services.fx(({ skin, audio }) =>
+      audio.fx(({ repeatState }) =>
+        fx(({ project }) =>
+          project.fx(({ audioPlayer }) =>
+            audioPlayer.fx(({ state }) => {
+              $.view = <>
+                <div class="inner">
+                  <div class="logo">
+                    <h1 key={project}>
+                      <div class="cowbell">
+                        cowbell
+                        <span class="dot">.</span>
+                      </div>
+                      <div class="lol">
+                        <span class="l">l</span>
+                        <span class="o">
+                          <Volume target={audioPlayer} theme="ableton" bare />
+                        </span>
+                        {/* <span class="o">o</span> */}
+                        <span class="l2">l</span>
+                      </div>
+                    </h1>
+                    <span class="motto">needs more</span>
+                  </div>
 
-        bar.textContent = `${Math.max(1, 1 + b | 0)}`.padStart(3, '0')
-        // bar.textContent = `${Math.max(1, 1+(b % 16)|0 )}`.padStart(2, '0')
-        beat.textContent = `${Math.max(1, 1 + ((b * 4) % 4) | 0)}`
-        sixt.textContent = `${Math.max(1, 1 + ((b * 16) % 16) | 0)}`.padStart(2, '0')
-      }
-      requestAnimationFrame(anim)
-    })
+                  <div class="controls">
+                    <Button onClick={project.$.stop}>
+                      <span class="i la-stop" />
+                    </Button>
+                    <Button
+                      active={state === 'running'}
+                      onClick={project.$.toggle}
+                    >
+                      <span class={`i la-${state === 'running' ? 'pause' : 'play'}`} />
+                    </Button>
+                    <Button
+                      active={repeatState !== 'none'}
+                      onClick={audio.$.toggleRepeat}
+                      style={`--backlight-color: ${skin.colors.brightPurple}; --backlight-color-trans: ${skin.colors.brightPurple}35;`}
+                    >
+                      <span class={`i mdi-light-repeat${repeatState === 'bar' ? ''/*'-once'*/ : ''}`} />
+                    </Button>
+                    <Button
+                      onClick={audio.$.seekTime(-1)}
+                    >
+                      <span class="i la-backward" />
+                    </Button>
+                    <Button
+                      onClick={audio.$.seekTime(+1)}
+                    >
+                      <span class="i la-forward" />
+                    </Button>
+                  </div>
 
-    fx(() => {
-      $.view = <>
-        <div class="logo">
-          <h1>
-            <div class="cowbell">
-            cowbell
-            <span class="dot">.</span>
-            </div>
-            <div class="lol">
-              <span class="l">l</span>
-        <Knob
-          id="b"
-          class="o"
-          min={0}
-          max={1}
-          step={0.01}
-          value={0.3 + Math.random() * 0.7}
-          theme="ableton"
-        />
-              {/* <span class="o">o</span> */}
-              <span class="l2">l</span>
-            </div>
-          </h1>
-          <span class="motto">needs more</span>
-        </div>
-
-        <div class="controls">
-          <Button>
-            <span class="i la-backward" />
-          </Button>
-          <Button active>
-            <span class="i la-pause" />
-          </Button>
-          <Button>
-            <span class="i la-forward" />
-          </Button>
-          <Button>
-            <span class="i la-stop" />
-          </Button>
-          <Button>
-            <span class="i mdi-light-repeat" />
-          </Button>
-        </div>
-
-        <div class="display">
-          <div class="bpm">
-            <span class="words">BPM</span>
-            <div class="value">
-              <span class="dec bpm-control i mdi-light-chevron-left"></span>
-              <span class="amt">125</span>
-              <span class="inc bpm-control i mdi-light-chevron-right"></span>
-            </div>
-          </div>
-          <div class="beat">
-            <span class="words">BEAT</span>
-            <div class="value">
-              <span class="bar" ref={refs.bar}>24</span>
-              <span class="dot">.</span>
-              <span class="beat" ref={refs.beat}>4</span>
-              <span class="dot">.</span>
-              <span class="sixt" ref={refs.sixt}>16</span>
-            </div>
-          </div>
-          <div class="time">
-            <span class="words">TIME</span>
-            <div class="value">
-              <span class="mins" ref={refs.mins}>2</span>
-              <span class="dot">:</span>
-              <span class="secs" ref={refs.secs}>34</span>
-              <span class="dot">:</span>
-              <span class="mill" ref={refs.mill}>567</span>
-            </div>
-          </div>
-        </div>
-
-      </>
-    })
+                  <div class="display">
+                    <div class="bpm">
+                      <span class="words">BPM</span>
+                      <div class="value">
+                        <NumberInput
+                          style="height:30px"
+                          class="bpm-control"
+                          min={1}
+                          max={666}
+                          value={audio.deps.bpm}
+                          step={1}
+                          align="x"
+                        />
+                        {/*                 <span class="dec bpm-control i mdi-light-chevron-left"></span>
+                <span class="amt">125</span>
+                <span class="inc bpm-control i mdi-light-chevron-right"></span> */}
+                      </div>
+                    </div>
+                    <div class="beats">
+                      <span class="words">BEAT</span>
+                      <div class="value">
+                        <span class="bar" ref={refs.bar}>001</span>
+                        <span class="dot">.</span>
+                        <span class="beat" ref={refs.beat}>1</span>
+                        <span class="dot">.</span>
+                        <span class="sixt" ref={refs.sixt}>01</span>
+                      </div>
+                    </div>
+                    <div class="time">
+                      <span class="words">TIME</span>
+                      <div class="value">
+                        <span class="mins" ref={refs.mins}>0</span>
+                        <span class="dot">:</span>
+                        <span class="secs" ref={refs.secs}>00</span>
+                        <span class="dot">:</span>
+                        <span class="mill" ref={refs.mill}>000</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </>
+            })
+          )
+        )
+      )
+    )
   }
 ))

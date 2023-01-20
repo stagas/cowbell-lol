@@ -1,3 +1,4 @@
+import { filterMap } from 'everyday-utils'
 import { Reactive, ReactiveFactory } from 'minimal-view'
 
 export function replaceAtIndex<T>(items: T[], index: number, item: T): T[] {
@@ -49,6 +50,13 @@ export function get<T extends Reactive>(
   id: string
 ) {
   return items.find((item) => item.$.id === id)
+}
+
+export function getMany<T extends Reactive>(
+  items: T[],
+  ids: string[]
+) {
+  return filterMap(ids, (id) => get(items, id))
 }
 
 export function findEqual<T extends Reactive<

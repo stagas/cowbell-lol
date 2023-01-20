@@ -1,12 +1,10 @@
-// import { queue } from 'event-toolkit'
-
 function animCall(fn: any) { fn() }
 
 let scheduled = false
 
-const anim = function animRaf() {
+const animFn = function animRaf() {
   if (animFns.size) {
-    requestAnimationFrame(anim)
+    requestAnimationFrame(animFn)
     const fns = [...animFns]
     animFns.clear()
     fns.forEach(animCall)
@@ -20,10 +18,15 @@ export function animSchedule(fn: any) {
   animFns.add(fn)
   if (!scheduled) {
     scheduled = true
-    requestAnimationFrame(anim)
+    requestAnimationFrame(animFn)
   }
 }
 
 export function animRemoveSchedule(fn: any) {
   animFns.delete(fn)
+}
+
+export const anim = {
+  schedule: animSchedule,
+  remove: animRemoveSchedule
 }
