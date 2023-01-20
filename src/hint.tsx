@@ -2,6 +2,7 @@
 
 import { Rect } from 'geometrik'
 import { web, view, Dep, element, on, effect } from 'minimal-view'
+import { services } from './services'
 
 export const Hint = web(view('hint',
   class props {
@@ -51,18 +52,21 @@ export const Hint = web(view('hint',
   },
 
   function effects({ $, fx }) {
-    $.css = /*css*/`
-    & {
-      z-index: 9999999999;
-      position: fixed;
-      padding: 10px;
-      border: 1px solid #fff;
-      background: #000;
-      color: #fff;
-      font-family: monospace;
-      white-space: pre-wrap;
-    }
-    `
+    services.fx(({ skin }) => {
+      $.css = /*css*/`
+      & {
+        z-index: 9999999999;
+        position: fixed;
+        padding: 10px;
+        border: 1px solid #fff;
+        background: #000;
+        color: #fff;
+        font-family: ${skin.fonts.mono};
+        white-space: pre-wrap;
+      }
+      `
+    })
+
     fx(() => on(window, 'pointermove')($.onMouseMove))
     fx(() => on(window, 'keydown')($.hide))
 

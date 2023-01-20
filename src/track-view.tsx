@@ -415,10 +415,7 @@ export const TrackView = web(view('track-view',
         /* outline: 8px solid #34f; */
       }
 
-      &([error]) {
-        outline: 8px solid #f21;
-      }
-
+      &([error]):before,
       &([draft]):before {
         content: ' ';
         position: absolute;
@@ -430,6 +427,9 @@ export const TrackView = web(view('track-view',
         border-radius: 100%;
         z-index: 9999;
         pointer-events: none;
+      }
+      &([error]):before {
+        background: ${skin.colors.brightRed} !important;
       }
 
       &([active]:focus) {

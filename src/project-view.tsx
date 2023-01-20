@@ -342,7 +342,7 @@ export const ProjectView = web(view('project-view',
 
     fx(({ primary, project, controlsView, waveformView }) =>
       project.fx(({ id, isDraft, title, author, bpm, audioPlayer }) =>
-        services.fx(({ likes }) =>
+        services.fx(({ loggedIn, likes }) =>
           audioPlayer.fx(({ state }) => {
             $.view = <>
               <div class="waveform">
@@ -391,15 +391,15 @@ export const ProjectView = web(view('project-view',
                       <span class={`i la-heart${likes.includes(id) ? '-solid' : ''}`} />
                     </Button>
 
-                    {isDraft &&
+                    {isDraft && loggedIn &&
                       <Button rounded small>
-                        <span class={`i la-save`} />
+                        <span class={`i ph-upload-simple-duotone`} />
                       </Button>
                     }
 
-                    <Button rounded small>
+                    {!isDraft && <Button rounded small>
                       <span class={`i la-share`} />
-                    </Button>
+                    </Button>}
                     {/* <Button rounded small>
                     <span class={`i la-comment-dots`} />
                   </Button> */}
@@ -432,7 +432,6 @@ export const ProjectView = web(view('project-view',
           })
         )
       )
-
     )
   }
 ))

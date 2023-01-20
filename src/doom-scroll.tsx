@@ -10,7 +10,7 @@ export const DoomScroll = web(view('doom-scroll',
     factory!: (item: any) => JSX.Element
     prompt?= false
     initial?= 10
-    size?= 7
+    size?= 7000
   },
 
   class local {
@@ -62,7 +62,7 @@ export const DoomScroll = web(view('doom-scroll',
     })
 
     fx.once(({ initial }) => {
-      $.rangeEnd = initial
+      $.rangeEnd = 10000 //initial
     })
 
     fx(({ prompt, lastEl }) => {

@@ -51,7 +51,8 @@ export const getSkin = (colors: Colors) => ({
   fonts: {
     logo: "'Baumans', cursive",
     sans: "'Jost', sans-serif",
-    slab: "'Geo', sans-serif"
+    slab: "'Geo', sans-serif",
+    mono: "'JetBrains Mono', monospace",
   },
 
   css: /*css*/`
@@ -152,6 +153,10 @@ content: "\\e016";
 
 &.mdi-light-repeat-once:before {
 content: "\\e017";
+}
+
+&.ph-upload-simple-duotone:before {
+content: "\\e018";
 }
 
   }

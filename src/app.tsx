@@ -100,7 +100,6 @@ export const App = web(view('app',
     dev?= true
     apiUrl?= location.origin
     distRoot?= '/example'
-    monospaceFont?= 'Brass.woff2'
   },
 
   class local {
@@ -180,209 +179,15 @@ export const App = web(view('app',
     let presetsSmoothScrollTimeout: any
 
     return fns(new class actions {
-      fromRemoteProject = async (short: string, long: string) => {
-        // const [icon, date, id, checksum] = short.split(DELIMITERS.SHORT_ID)
-
-        let hash = await db.getHash(short, long)
-        if (!hash) {
-          console.warn('hash not found for short: ', short)
-          return
-        }
-
-        if (hash[0] === '#') hash = hash.slice(1)
-
-        console.log('hash is:', hash)
-
-        location.hash = hash
-        // const url = new URL(location.toString())
-        // url.hash = hash
-        // this.fromURL(url)
-      }
-
-      onWindowPopState = () => {
-        const result = $.project.$.fromURL(location, $.projects)
-        if (result.success) {
-          $.projects = result.projects
-        }
-      }
 
       // working state
       save = () => {
-        if ($.mode === APP_MODE.NORMAL) {
-          try {
-            console.time('Autosave')
-            // const json = this.toJSON(true)
-            // if (!isEqual(json, lastSaveJson)) {
-            //   lastSaveJson = json
-            //   const res = JSON.stringify(json)
-            //   localStorage.autoSave = res
-            //   console.log('Autosave:', res.length) //, json)
-            // } else {
-            //   console.log('Did not autosave as no changes were made.')
-            // }
-            console.timeEnd('Autosave')
-          } catch (error) {
-            console.warn('Error while saving.')
-            console.warn(error)
-          }
-
-          this.onProjectSave(true)
-        }
+        $.project.$.save()
       }
 
       autoSave = queue.debounce(5000)(this.save)
 
-      // fromJSON = (json: ReturnType<typeof this.toJSON>) => {
-      //   // Object.assign($.audio.$, json.audio)
-
-      //   // TODO: disposable(arr, x => x.dispose())
-      //   $.players.forEach((player) => {
-      //     player.dispose()
-      //   })
-      //   // TODO: this is temporarily set to return 'any' because of TS infinite loop
-      //   $.players = json.players.map((player: any) => Player({
-      //     ...player,
-      //     audio: $.audio,
-      //     state: $.audio.$.state
-      //   }))
-
-      //   $.library.$.sounds = unique(json.sounds).map((props) => EditorBuffer({ ...props, kind: 'sound', services: $.services, isNew: false, isIntent: true }))
-
-      //   $.library.$.patterns = unique(json.patterns).map((props) => EditorBuffer({ ...props, kind: 'pattern', services: $.services, isNew: false, isIntent: true }))
-      // }
-
-      // TODO: this is temporarily set to return 'any' because of TS infinite loop
-      // toJSON = (compact?: boolean) => {
-      //   const bufferKeys: (keyof EditorBuffer['$'])[] = [
-      //     'id',
-      //     'value',
-      //     'isDraft',
-      //     // 'createdAt',
-      //     'fallbackTitle',
-      //     ...(compact ? [] : ['snapshot'] as const)
-      //   ]
-
-      //   return {
-      //     audio: $.audio.$.toJSON(),
-
-      //     players: $.players.map((player) =>
-      //       pick(player.$, [
-      //         'vol',
-      //         'sound',
-      //         'pattern',
-      //         'patterns',
-      //       ])
-      //     ),
-
-      //     sounds: $.sounds.map((sound) =>
-      //       pick(sound.$, bufferKeys)
-      //     ),
-
-      //     patterns: $.patterns.map((pattern) =>
-      //       pick(pattern.$, [
-      //         ...bufferKeys,
-      //         'numberOfBars'
-      //       ])
-      //     ),
-      //   } as {
-      //     audio: ReturnType<Audio['$']['toJSON']>,
-      //     players: Pick<Player['$'], 'vol' | 'sound' | 'pattern' | 'patterns'>[],
-      //     sounds: Pick<EditorBuffer['$'], 'id' | 'value' | 'isDraft' | 'fallbackTitle'>[],
-      //     patterns: Pick<EditorBuffer['$'], 'id' | 'value' | 'isDraft' | 'fallbackTitle'>[],
-      //   }
-      // }
-
       // projects
-
-      // There are 3 cases saving a project.
-      // - user has selected a project and made changes to it
-      //   -> create draft and autosave
-      // - user has made changes to draft
-      //   -> autosave existing draft
-      // - user explicitly saves a draft
-      //   -> draft becomes not a draft and is saved in projects
-      onProjectSave = (fromAutoSave?: boolean) => {
-        try {
-          // console.time('save')
-
-          // eslint-disable-next-line prefer-const
-          let [icon, date, kind] = $.project.$.id.split(DELIMITERS.SAVE_ID)
-
-          const draft = kind == PROJECT_KINDS.DRAFT
-
-          const json = $.project.$.toProjectJSON()
-          // const res = JSON.stringify(json)
-
-          const chk = json.checksum // checksum(res).toString()
-          console.log('checksum:', chk) //, $.projects)
-
-          //   if (fromAutoSave && $.projects.some((project) =>
-          //     project.split(',').at(-1) === chk
-          //   )) {
-          //     console.timeEnd('save')
-          //     console.warn('Did not save as it already exists. Make some changes first.')
-          //     return
-          //   }
-
-          //   // NOTE: uncomment to debug why a save occured, to see what changed
-          //   if (!draft) {
-          //     const result = diffChars(localStorage[$.project.$.id], res)
-          //     console.log(result)
-          //   }
-
-          //   let id: string
-
-          //   if (!draft) {
-          //     id = `${getNewDraftProjectId()},${chk}`
-          //   } else {
-          //     id = `${icon},${date},${!fromAutoSave ? '0' : '1'},${chk}`
-          //   }
-
-          //   localStorage[id] = res
-          //   console.timeEnd('save')
-          //   console.log('save:', id, res.length, json)
-
-          //   // on explicit save
-          //   if (!fromAutoSave) {
-          //     if (draft) {
-          //       const prevId = $.project.$.id
-          //       // add to our projects
-          //       $.projects = [
-          //         // removing the draft id
-          //         ...$.projects.filter((id) => id !== prevId),
-          //         // and pushing the new saved project's id
-          //         id
-          //       ]
-          //       // this.publish(id, res)
-          //     } else {
-          //       // TODO: unreachable?
-          //       $.projects = [...$.projects, id]
-          //     }
-
-          //     // then select it
-          //     $.project.$.id = id
-          //     $.project.$.publish(res)
-          //   }
-          //   // on autosave
-          //   else {
-          //     // if it's a draft, replace the id
-          //     if (draft) {
-          //       if (id !== $.project.$.id) {
-          //         const index = $.projects.indexOf($.project.$.id)
-          //         $.projects.splice(index, 1, id)
-          //         $.projects = [...$.projects]
-          //         $.project.$.id = id
-          //       }
-          //     } else {
-          //       $.projects = [...$.projects, id]
-          //       $.project.$.id = id
-          //     }
-          //   }
-        } catch (error) {
-          console.warn('Error while saving project')
-          console.warn(error)
-        }
-      }
 
 
       // buffers
@@ -681,57 +486,11 @@ export const App = web(view('app',
       )
     )
 
-    let didInit = false
-    fx(() => {
-      if (didInit) return
-
-      didInit = true
-
-      let didLoad = false
-
-      // try {
-      //   $.fromJSON(JSON.parse(localStorage.autoSave))
-      // } catch (error) {
-      //   console.warn('autoload failed:')
-      //   console.warn(error)
-      // }
-
-      try {
-        $.save()
-      } catch (error) {
-        console.warn('initial autosave failed:')
-        console.warn(error)
-      }
-
-      try {
-        const result = $.project.$.fromURL(location, $.projects)
-        if (result.success) {
-          $.projects = result.projects
-          didLoad = true
-        } else {
-          throw (result.error ?? new Error('Could not load URL'))
-        }
-      } catch (error) {
-        console.warn('load url failed:')
-        console.warn(error)
-      }
-
-      db.getShortList().then((result) => {
-        $.remoteProjects = result.sort((a, b) => {
-          const [, , aDate] = a.split(',')
-          const [, , bDate] = b.split(',')
-          const aTime = new Date(aDate).getTime()
-          const bTime = new Date(bDate).getTime()
-          return aTime - bTime
-        })
-      })
-    })
-
     fx(() =>
       chain(
         on(window, 'keydown')($.onKeyDown),
         on(window, 'keyup')($.onKeyUp),
-        on(window, 'popstate')($.onWindowPopState),
+        // on(window, 'popstate')($.onWindowPopState),
       )
     )
 
@@ -849,13 +608,9 @@ export const App = web(view('app',
     )
 
     services.fx(({ skin }) =>
-      fx(({ distRoot, monospaceFont }) => {
+      fx(({ distRoot }) => {
         const bodyStyle = document.createElement('style')
         bodyStyle.textContent = /*css*/`
-        @font-face {
-          font-family: Mono;
-          src: url("${distRoot}/fonts/${monospaceFont}") format("woff2");
-        }
         html, body {
           margin: 0;
           padding: 0;
@@ -929,11 +684,11 @@ export const App = web(view('app',
         }
 
         &[state=errored] {
-          &:focus-within {
+          /* &:focus-within {
             &::before {
               box-shadow: inset 0 0 0 8px #f21;
             }
-          }
+          } */
         }
       }
 

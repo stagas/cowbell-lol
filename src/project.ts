@@ -14,20 +14,20 @@ import { Library } from './library'
 import { cachedProjects } from './project-view'
 import { demo } from './demo-code'
 
+const checksumId = (value: string) => checksum(value).toString(36)
+
 export function getNewDraftProjectId() {
   return `${randomName(emoji)},${new Date().toISOString()},1`
 }
 
 export type ProjectJson = {
-  checksum: number,
+  checksum: string,
   isDraft: boolean,
   bpm: number,
   date: string
   title: string
   author: string
   players: Pick<Player['$'], 'vol' | 'sound' | 'patterns'>[],
-  sounds: Pick<EditorBuffer['$'], 'id' | 'value' | 'fallbackTitle'>[],
-  patterns: Pick<EditorBuffer['$'], 'id' | 'value' | 'fallbackTitle'>[]
 }
 
 const runningProjects: any[] = []
@@ -136,38 +136,54 @@ export const Project = reactive('project',
             console.warn('Error loading: ' + id)
             console.warn(error)
 
+              ;[demo.kick.sound, demo.snare.sound, demo.bass.sound, ...demo.kick.patterns, ...demo.snare.patterns, ...demo.bass.patterns].forEach((value) => {
+                localStorage[checksumId(value)] = value
+              })
+
             json = {
-              checksum: 1,
               isDraft: true,
+              checksum: '1',
               bpm: 120,
               date: new Date().toISOString(),
               title: 'Untitled',
-              author: 'Guest',
-              sounds: [
-                { id: 'sound-kick', value: demo.kick.sound },
-                { id: 'sound-snare', value: demo.snare.sound },
-                { id: 'sound-bass', value: demo.bass.sound },
-              ],
-              patterns: [
-                { id: 'pattern-kick-0', value: demo.kick.patterns[0] },
-                { id: 'pattern-kick-1', value: demo.kick.patterns[1] },
+              author: 'guest',
+              // sounds: [
+              //   { id: 'sound-kick', value: demo.kick.sound },
+              //   { id: 'sound-snare', value: demo.snare.sound },
+              //   { id: 'sound-bass', value: demo.bass.sound },
+              // ],
+              // patterns: [
+              //   { id: 'pattern-kick-0', value: demo.kick.patterns[0] },
+              //   { id: 'pattern-kick-1', value: demo.kick.patterns[1] },
 
-                { id: 'pattern-snare-0', value: demo.snare.patterns[0] },
-                { id: 'pattern-snare-1', value: demo.snare.patterns[1] },
+              //   { id: 'pattern-snare-0', value: demo.snare.patterns[0] },
+              //   { id: 'pattern-snare-1', value: demo.snare.patterns[1] },
 
-                { id: 'pattern-bass-0', value: demo.bass.patterns[0] },
-              ],
+              //   { id: 'pattern-bass-0', value: demo.bass.patterns[0] },
+              // ],
               players: [
-                { vol: 0.45, sound: 'sound-kick', patterns: ['pattern-kick-0', 'pattern-kick-0', 'pattern-kick-0', 'pattern-kick-1'] },
+                {
+                  vol: 0.45,
+                  sound: checksumId(demo.kick.sound),
+                  patterns: [demo.kick.patterns[0], demo.kick.patterns[0], demo.kick.patterns[0], demo.kick.patterns[1]].map(checksumId)
+                },
 
-                { vol: 0.3, sound: 'sound-snare', patterns: ['pattern-snare-0', 'pattern-snare-0', 'pattern-snare-0', 'pattern-snare-1'] },
+                {
+                  vol: 0.3,
+                  sound: checksum(demo.snare.sound).toString(36),
+                  patterns: [demo.snare.patterns[0], demo.snare.patterns[0], demo.snare.patterns[0], demo.snare.patterns[1]].map(checksumId)
+                },
 
-                { vol: 0.52, sound: 'sound-bass', patterns: ['pattern-bass-0'] },
+                {
+                  vol: 0.52,
+                  sound: checksum(demo.bass.sound).toString(36),
+                  patterns: [demo.bass.patterns[0]].map(checksumId)
+                },
               ],
             }
           }
 
-          this.fromProjectJSON(id, json)
+          this.fromJSON(id, json)
 
           const off = fx(({ players }) => {
             if (players.length) {
@@ -177,6 +193,13 @@ export const Project = reactive('project',
           })
         })
       })
+
+      save = () => {
+        console.time('project save')
+        const json = this.toJSON()
+        localStorage[$.id] = JSON.stringify(json)
+        console.timeEnd('project save')
+      }
 
       publishCurrent = () => {
         this.publish(localStorage[$.id])
@@ -246,7 +269,7 @@ export const Project = reactive('project',
 
             if (equalItem) {
               console.log('found project from url in our own projects: ' + equalItem)
-              this.fromProjectJSON(equalItem, JSON.parse(localStorage[equalItem]))
+              this.fromJSON(equalItem, JSON.parse(localStorage[equalItem]))
               return { success: true, projects }
             }
 
@@ -260,12 +283,12 @@ export const Project = reactive('project',
             console.log('parsed url json:', json)
 
             projects = [...projects, id]
-            this.fromProjectJSON(id, json)
+            this.fromJSON(id, json)
             return { success: true, projects }
           } else if (hash.startsWith('#p=')) {
             const id = decodeURI(hash).split('#p=')[1] ?? ''
             if (!id.length) return { success: false }
-            this.fromProjectJSON(id, JSON.parse(localStorage[id]))
+            this.fromJSON(id, JSON.parse(localStorage[id]))
             return { success: true, projects }
           } else {
             return { success: false }
@@ -276,105 +299,25 @@ export const Project = reactive('project',
         }
       }
 
-      fromProjectJSON = fn(({ players, library }) => (id: string, json: ProjectJson) => {
-        const [icon, date, kind] = id.split(DELIMITERS.SAVE_ID)
+      fromJSON = fn(({ players, library }) => (id: string, json: ProjectJson) => {
+        cachedProjects.set(id, $.self as any)
 
         $.id = id
         $.bpm = json.bpm
-        $.date = json.date || date
-        $.title = json.title || icon
-        $.author = json.author || services.$.username || 'unknown'
-
-        $.isDraft = kind === PROJECT_KINDS.DRAFT
-        // denormalize ids by making them all unique
-
-        cachedProjects.set(id, $.self as any)
-
-        const idsMap = new Map<string, string>()
-
-        for (const sound of json.sounds) {
-          const newId = cheapRandomId()
-          idsMap.set(`sound-${sound.id}`, newId)
-          sound.id = newId
-        }
-        for (const pattern of json.patterns) {
-          const newId = cheapRandomId()
-          idsMap.set(`pattern-${pattern.id}`, newId)
-          pattern.id = newId
-        }
-
-        // let y = 0
-        for (const player of json.players) {
-
-          // TODO: disabled temporarily until we resolve memory overlap
-          // issues in monolang
-          // if (y < $.players.length) {
-          //   // @ts-ignore
-          //   player.id = $.players[y].$.id!
-          //   y++
-          // }
-
-          player.sound = idsMap.get(`sound-${player.sound}`) ?? json.sounds[0].id!
-          player.patterns = player.patterns.map((p) =>
-            idsMap.get(`pattern-${p}`) ?? json.patterns[0].id!
-          )
-        }
+        $.date = json.date
+        $.title = json.title
+        $.author = json.author
+        $.isDraft = json.isDraft
 
         const newSounds: EditorBuffer[] = []
 
-        // if the sound exists in our own collection, use that and
-        // replace the id with our own sound id,
-        // otherwise add the sound with `isImport=true`
-        for (const sound of unique(json.sounds)) {
-          // TODO: use checksum to determine equality
-          const equalItem = findEqual(library.$.sounds, '-', sound as EditorBuffer['$'])
-          if (equalItem) {
-            for (const player of json.players) {
-              if (player.sound === sound.id) {
-                player.sound = equalItem.$.id!
-              }
-            }
-          } else {
-            delete sound.fallbackTitle
-            newSounds.push(EditorBuffer({
-              ...sound,
-              kind: 'sound',
-              isNew: false,
-              isDraft: false,
-              isIntent: true,
-              isImport: true
-            }))
-          }
-        }
+        json.players.forEach((player) => {
+          // need to get the ids of the sound/patterns somehow?
+        })
 
         library.$.sounds = [...library.$.sounds, ...newSounds]
 
         const newPatterns: EditorBuffer[] = []
-
-        // if the pattern exists in our own collection, use that and
-        // replace the id with our own pattern id,
-        // otherwise add the pattern with `isImport=true`
-        for (const pattern of unique(json.patterns)) {
-          const equalItem = findEqual(library.$.patterns, '-', pattern as EditorBuffer['$'])
-          if (equalItem) {
-            for (const player of json.players) {
-              player.patterns = player.patterns
-                .join(',')
-                .replaceAll(pattern.id!, equalItem.$.id!)
-                .split(',')
-            }
-          } else {
-            delete pattern.fallbackTitle
-            newPatterns.push(EditorBuffer({
-              ...pattern,
-              kind: 'pattern',
-              isNew: false,
-              isDraft: false,
-              isIntent: true,
-              isImport: true
-            }))
-          }
-        }
 
         library.$.patterns = [...library.$.patterns, ...newPatterns]
 
@@ -391,93 +334,8 @@ export const Project = reactive('project',
       /**
        * Get a JSON representation of the project.
        */
-      toProjectJSON = fn(({ players, library }) => (): ProjectJson => {
-        const usedSounds = new Set(
-          players.map((player) =>
-            player.$.sound
-          )
-        )
+      toJSON = fn(({ players, library }) => (): ProjectJson => {
 
-        const usedPatterns = new Set(
-          players.flatMap((player) =>
-            player.$.patterns
-          )
-        )
-
-        const soundsJson = library.$.sounds.filter((sound) => usedSounds.has(sound.$.id!)).map((sound) =>
-          pick(sound.$, [
-            'id',
-            'value',
-            'checksum',
-            // 'fallbackTitle',
-          ])
-        )
-
-        const patternsJson = library.$.patterns.filter((pattern) => usedPatterns.has(pattern.$.id!)).map((pattern) =>
-          pick(pattern.$, [
-            'id',
-            'value',
-            'checksum',
-            // 'fallbackTitle',
-          ])
-        )
-
-        const playersJson = $.players!.map((player) =>
-          pick(player.$, [
-            'vol',
-            'sound',
-            'patterns',
-          ])
-        )
-
-        // Normalize ids by their value checksum so that the overall
-        // project checksum computes the same for every same project.
-        // By normalizing the ids on save and denormalizing/assigning unique
-        // when loading, we avoid conflicts, and the checksum computes
-        // the same.
-        const idsMap = new Map<string, string>()
-
-        for (const sound of soundsJson) {
-          const newId = `${sound.checksum}`
-          idsMap.set(`sound-${sound.id}`, newId)
-          sound.id = newId
-          delete sound.checksum
-        }
-        for (const pattern of patternsJson) {
-          const newId = `${pattern.checksum}`
-          idsMap.set(`pattern-${pattern.id}`, newId)
-          pattern.id = newId
-          delete pattern.checksum
-        }
-
-        // we sort buffers by their new checksum id so that it's consistent
-        // because we might have used buffers we already have so they will
-        // not be in the same order (as new buffers go to the bottom)
-        soundsJson.sort((a, b) => sortCompare(a.id!, b.id!))
-
-        patternsJson.sort((a, b) => sortCompare(a.id!, b.id!))
-
-        let chk = [$.title, $.author, $.bpm].join('')
-
-        for (const player of playersJson) {
-          player.sound = idsMap.get(`sound-${player.sound}`)!
-          player.patterns = player.patterns.map((p) =>
-            idsMap.get(`pattern-${p}`)!
-          )
-          chk += [player.vol, player.sound, ...player.patterns].join('')
-        }
-
-        return {
-          checksum: checksum(chk),
-          isDraft: $.isDraft!,
-          bpm: $.bpm!,
-          date: $.date!,
-          title: $.title!,
-          author: $.author!,
-          players: playersJson,
-          sounds: soundsJson,
-          patterns: patternsJson,
-        }
       })
     })
   },

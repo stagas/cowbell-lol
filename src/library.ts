@@ -1,5 +1,6 @@
 import { reactive } from 'minimal-view'
 import { EditorBuffer } from './editor-buffer'
+import { cachedProjects } from './project-view'
 
 export const Library = reactive('library',
   class props { },
@@ -13,7 +14,27 @@ export const Library = reactive('library',
     })
   },
   function effects({ $, fx }) {
+    fx(({ sounds, patterns }) => {
+      const bufferToJson = (buffer: EditorBuffer) => [
+        buffer.$.checksum!.toString(36),
+        buffer.$.value
+      ]
 
+      setTimeout(() => {
+        console.log({
+          sounds: Object.fromEntries(sounds.map(bufferToJson)),
+          patterns: Object.fromEntries(patterns.map(bufferToJson)),
+          projects: [...cachedProjects.values()].map((project) => ({
+            players: project.$.players.map((player) => ({
+              vol: player.$.vol,
+              sound: player.$.soundBuffer!.$.checksum!.toString(36),
+              patterns: player.$.patternBuffers!.map((p) => p.$.checksum!.toString(36))
+            })
+            )
+          }))
+        })
+      }, 1000)
+    })
   }
 )
 
