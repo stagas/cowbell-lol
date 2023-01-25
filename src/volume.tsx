@@ -1,7 +1,8 @@
 /** @jsxImportSource minimal-view */
 
-import { view } from 'minimal-view'
-import { AudioPlayer } from './audio'
+import { Dep, view } from 'minimal-view'
+import { Knob } from 'x-knob'
+import { AudioPlayer } from './audio-player'
 import { KnobView } from './knob-view'
 import { Player } from './player'
 import { Slider } from './slider'
@@ -11,6 +12,7 @@ export const Volume = view('volume',
     target!: AudioPlayer | Player
     bare?: boolean = false
     theme?: string = 'cowbell'
+    knobRef?: Dep<InstanceType<typeof Knob.Element>>
   },
   class local { },
   function actions({ $, fns, fn }) {
@@ -32,6 +34,7 @@ export const Volume = view('volume',
         const Fn = bare ? KnobView.Fn : KnobView
         $.view = <Fn
           id={slider.$.id!}
+          knobRef={$.knobRef!}
           slider={slider}
           vol={target.deps.vol}
           theme={theme}

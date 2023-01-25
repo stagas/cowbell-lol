@@ -52,6 +52,13 @@ export function get<T extends Reactive>(
   return items.find((item) => item.$.id === id)
 }
 
+export function getByChecksum<T extends Reactive<string, { checksum?: string }, unknown>>(
+  items: T[],
+  checksum: string
+) {
+  return items.find((item) => item.$.checksum === checksum)
+}
+
 export function getMany<T extends Reactive>(
   items: T[],
   ids: string[]

@@ -1,5 +1,5 @@
 import { CanvyElement } from 'canvy'
-import { cheapRandomId, checksum, pick } from 'everyday-utils'
+import { cheapRandomId, pick } from 'everyday-utils'
 import { ImmMap } from 'immutable-map-set'
 import { queue, reactive } from 'minimal-view'
 import { MidiOp } from 'webaudio-tools'
@@ -12,6 +12,7 @@ import { areSlidersCompatible } from './util/args'
 import { getTitle } from './util/parse'
 import { randomName } from './util/random-name'
 import { Waveplot } from './waveplot'
+import { checksumId } from './util/checksum-id'
 
 const MidiOps = new Set(Object.values(MidiOp))
 
@@ -20,11 +21,9 @@ export const EditorBuffer = reactive('editor-buffer',
   class props {
     kind!: 'sound' | 'pattern' | 'main'
     id?= cheapRandomId()
-
+    checksum?: string
     value!: string
-
     parentId?: string
-
     createdAt?: number = Date.now()
     isDraft?: boolean = true
     isNew?: boolean = true
@@ -32,44 +31,37 @@ export const EditorBuffer = reactive('editor-buffer',
     isImport?: boolean = false
     didPaint?: boolean = false
     fallbackTitle?: string = randomName()
-
     noDraw?= false
   },
 
   class local {
-    checksum?: number
-
     title?: string
-
     didDisplay?: boolean = false
-
     compiledValue?: string
-
     originalValue?: string
-
     snapshot?: any
-
     sliders: Sliders = new Map()
-
     editor?: CanvyElement | null | undefined
     waveplot?: Waveplot
     preview?: Preview
     canvas?: HTMLCanvasElement
     canvases: Set<string> = new Set()
-
     midiEvents = new ImmMap<number, WebMidi.MIDIMessageEvent[]>()
     numberOfBars?: number
     midiRange?: [number, number]
     recompute = false
     turn = 0
-
     sandboxCode?: string
-
     error?: Error | false = false
   },
 
   function actions({ $, fns, fn }) {
     return fns(new class actions {
+      toJSON = () => {
+        localStorage[$.checksum!] = $.value
+        return [$.isDraft ? 1 : 0, $.checksum] as [0 | 1, string]
+      }
+
       equals = (other: Partial<typeof $>) => {
         return $.value === other.value
       }
@@ -177,7 +169,15 @@ export const EditorBuffer = reactive('editor-buffer',
     })
 
     fx(({ value }) => {
-      $.checksum = checksum(value)
+      $.checksum = checksumId(value)
+    })
+
+    fx(({ kind, checksum: _ }) => {
+      if (kind === 'sound') {
+        services.$.library.$.autoSaveSounds()
+      } else {
+        services.$.library.$.autoSavePatterns()
+      }
     })
 
     if ($.kind === 'sound') {
@@ -266,19 +266,15 @@ export const EditorBuffer = reactive('editor-buffer',
         const isExact = ((maxNote - minNote) % 12) === 0
         const isExactStart = (minNote % 12) === 0
 
-        // console.log(minNote, maxNote)
         if (!isExact && !isExactStart) minNote -= 1
         if (!isExact && isExactStart) maxNote -= 1
         if (isExact && !isExactStart) {
           minNote -= 1
           maxNote -= 1
         }
-        // maxNote += (isExact ? 0 : -1)
-
-        // if (!isExactStart) maxNote += 2
 
         if (!$.midiRange || $.midiRange[0] !== minNote || $.midiRange[1] !== maxNote) {
-          $.midiRange = [minNote, maxNote]
+          $.midiRange = [Math.max(0, minNote), Math.max(0, maxNote)]
         }
       })
     }

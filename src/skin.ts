@@ -1,5 +1,7 @@
 import { luminate, saturate } from 'everyday-utils'
 import { Knob } from 'x-knob'
+import { KnobView } from './knob-view'
+import { PlayerView } from './player-view'
 
 /* font-family: 'ABeeZee', sans-serif; */
 /* font-family: 'Albert Sans', sans-serif; */
@@ -53,6 +55,7 @@ export const getSkin = (colors: Colors) => ({
     sans: "'Jost', sans-serif",
     slab: "'Geo', sans-serif",
     mono: "'JetBrains Mono', monospace",
+    cond: "'Barlow Semi Condensed', sans-serif",
   },
 
   css: /*css*/`
@@ -62,7 +65,6 @@ export const getSkin = (colors: Colors) => ({
     font-style: normal;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
-
 &.clarity-arrow-line:before {
 content: "\\e001";
 }
@@ -79,84 +81,92 @@ content: "\\e003";
 content: "\\e004";
 }
 
-&.la-backward:before {
+&.fluent-padding-down-24-regular:before {
 content: "\\e005";
 }
 
-&.la-check:before {
+&.fluent-padding-right-24-regular:before {
 content: "\\e006";
 }
 
-&.la-forward:before {
+&.la-backward:before {
 content: "\\e007";
 }
 
-&.la-github:before {
+&.la-check:before {
 content: "\\e008";
 }
 
-&.la-heart:before {
+&.la-forward:before {
 content: "\\e009";
 }
 
-&.la-heart-solid:before {
+&.la-github:before {
 content: "\\e00a";
 }
 
-&.la-list:before {
+&.la-heart:before {
 content: "\\e00b";
 }
 
-&.la-pause:before {
+&.la-heart-solid:before {
 content: "\\e00c";
 }
 
-&.la-play:before {
+&.la-list:before {
 content: "\\e00d";
 }
 
-&.la-save:before {
+&.la-pause:before {
 content: "\\e00e";
 }
 
-&.la-share:before {
+&.la-play:before {
 content: "\\e00f";
 }
 
-&.la-sistrix:before {
+&.la-save:before {
 content: "\\e010";
 }
 
-&.la-stop:before {
+&.la-share:before {
 content: "\\e011";
 }
 
-&.mdi-light-chevron-down:before {
+&.la-sistrix:before {
 content: "\\e012";
 }
 
-&.mdi-light-chevron-left:before {
+&.la-stop:before {
 content: "\\e013";
 }
 
-&.mdi-light-chevron-right:before {
+&.mdi-light-chevron-down:before {
 content: "\\e014";
 }
 
-&.mdi-light-chevron-up:before {
+&.mdi-light-chevron-left:before {
 content: "\\e015";
 }
 
-&.mdi-light-repeat:before {
+&.mdi-light-chevron-right:before {
 content: "\\e016";
 }
 
-&.mdi-light-repeat-once:before {
+&.mdi-light-chevron-up:before {
 content: "\\e017";
 }
 
-&.ph-upload-simple-duotone:before {
+&.mdi-light-repeat:before {
 content: "\\e018";
+}
+
+&.mdi-light-repeat-once:before {
+content: "\\e019";
+}
+
+&.ph-upload-simple-duotone:before {
+content: "\\e01a";
 }
 
   }
@@ -174,15 +184,15 @@ content: "\\e018";
     bg: colors.background,
     bgPale: luminate(saturate(colors.background, 0.15), 0.18),
     bgPaleLight: luminate(saturate(colors.background, 0.15), 0.3),
-    bgLight: luminate(colors.background, .025),
-    bgLighter: luminate(saturate(colors.background, 0.05), .082),
+    bgLight: luminate(saturate(colors.background, 0.05), .025),
+    bgLighter: luminate(saturate(colors.background, 0.1), .082),
     bgDark: luminate(colors.background, -0.005),
     bgDarky: luminate(saturate(colors.background, -0.015), -0.022),
     bgDarker: luminate(saturate(colors.background, 0.02), -0.045),
 
     shadeBright: `${luminate(saturate(colors.background, 1), 0.71)}55`,
     shadeBrighter: `${luminate(saturate(colors.foreground, .10), -0.04)}ee`,
-    shadeSoft: `${luminate(saturate(colors.background, 0.2), 0.35)}55`,
+    shadeSoft: `${luminate(saturate(colors.background, 0.12), 0.35)}55`,
     shadeSofter: `${luminate(saturate(colors.background, 0.1), 0.3)}25`,
     shadeSoftest: `${luminate(saturate(colors.background, 0), 0.05)}55`,
     shadeDark: `${luminate(saturate(colors.background, -0.015), -0.07)}88`,
@@ -276,6 +286,68 @@ ${Knob} {
 
 .lowered {
   ${skin.styles.lowered}
+}
+
+.player-view {
+  max-width: 100%;
+  overflow: hidden;
+}
+
+.controls {
+  /* min-width: 126px; */
+  z-index: 4;
+  display: flex;
+  flex-flow: row nowrap;
+  gap: 10.5px;
+  align-items: center;
+  justify-content: center;
+
+  ${KnobView} {
+    position: relative;
+    top: 1.05px;
+  }
+
+  &-secondary {
+    z-index: 5;
+  }
+}
+
+${PlayerView} {
+  &::part(controls) {
+    background: ${skin.colors.bgLighter};
+    padding: 0 15px;
+    min-width: 88.5px;
+    gap: 8.5px;
+  }
+}
+
+[part=app-selected] {
+  position: relative;
+  height: 290px;
+  background: ${skin.colors.bgDarky};
+
+  &:before {
+    content: ' ';
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: calc(100% + 1px);
+    z-index: 999;
+    pointer-events: none;
+    ${skin.styles.deep}
+  }
+
+  &:focus-within {
+  }
+
+  &[state=errored] {
+    /* &:focus-within {
+      &::before {
+        box-shadow: inset 0 0 0 8px #f21;
+      }
+    } */
+  }
 }
 `
 

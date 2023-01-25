@@ -1,24 +1,18 @@
-import { cheapRandomId, checksum, pick, sortCompare } from 'everyday-utils'
-import { reactive } from 'minimal-view'
-import { compressUrlSafe, decompressUrlSafe } from 'urlsafe-lzma'
-import { DELIMITERS, PROJECT_KINDS } from './app'
-import { Audio, AudioPlayer } from './audio'
+import { cheapRandomId, checksum, pick } from 'everyday-utils'
+import { chain, reactive } from 'minimal-view'
+import { Audio, AudioState } from './audio'
 import { EditorBuffer } from './editor-buffer'
 import { Player } from './player'
 import { services } from './services'
-import { findEqual } from './util/list'
-import { randomName, emoji } from './util/random-name'
-import { unique } from './util/unique'
-import * as db from './db'
-import { Library } from './library'
-import { cachedProjects } from './project-view'
+import { getByChecksum } from './util/list'
+import { Library, mapToBuffer } from './library'
 import { demo } from './demo-code'
-
-const checksumId = (value: string) => checksum(value).toString(36)
-
-export function getNewDraftProjectId() {
-  return `${randomName(emoji)},${new Date().toISOString()},1`
-}
+import { checksumId } from './util/checksum-id'
+import { schemas } from './schemas'
+import { AudioPlayer } from './audio-player'
+import { noneOf, oneOf } from './util/one-of'
+import { filterState } from './util/filter-state'
+import { storage } from './util/storage'
 
 export type ProjectJson = {
   checksum: string,
@@ -27,86 +21,78 @@ export type ProjectJson = {
   date: string
   title: string
   author: string
-  players: Pick<Player['$'], 'vol' | 'sound' | 'patterns'>[],
+  players: {
+    vol: number,
+    sound: string,
+    patterns: string[]
+  }[],
 }
 
-const runningProjects: any[] = []
+export const projects = new Map<string, Project>()
 
 export const Project = reactive('project',
   class props {
-    id = getNewDraftProjectId()
-    isDraft?: boolean = true
-    short?: string = 'untitled'
-    date?: string = new Date().toISOString()
-    title?: string = 'Untitled'
-    author?: string = 'Guest'
+    id?= cheapRandomId()
+    checksum?: string
     bpm?: number = 120
-
-    audio?: Audio
+    title?: string = 'Untitled'
+    author?: string = 'guest'
+    date?: string = new Date().toISOString()
+    isDraft?: boolean = true
+    remoteProject?: schemas.ProjectResponse
   },
   class local {
+    state: AudioState = 'init'
+    audio?: Audio | null
     audioPlayer = AudioPlayer({})
-    players: Player[] = []
     library?: Library
+    players: Player[] = []
   },
   function actions({ $, fx, fn, fns }) {
+    let projectLoadPromise: Promise<void>
+
     return fns(new class actions {
       // Audio
-      start = fn(({ audioPlayer, players }) => async (resetTime = false) => {
-        await this.load()
-
-        const audio = services.$.audio!
-
-        if (!runningProjects.includes($)) {
-          resetTime = true
-
-          runningProjects.push($)
-
-          $.audio = audio
-
-          if (runningProjects.length > 1) {
-            const oldestProject = runningProjects.shift()!
-            oldestProject.$.stop()
-            oldestProject.$.audio = void 0 as any
-          }
+      start = fn(({ audioPlayer }) => async (resetTime = false) => {
+        if (oneOf($.state, 'running', 'preparing')) {
+          return
         }
 
-        let count = players.length
+        $.state = 'preparing'
 
-        await new Promise<void>((resolve) => {
-          players.forEach((player) => {
-            const off = player.fx(({ compileState }) => {
-              if (compileState === 'compiled') {
-                off()
-                --count || resolve()
-              }
-            })
-          })
+        $.audio = services.$.audio!
+
+        filterState(projects, 'running').forEach((p) => {
+          p.$.stop()
         })
 
-        audio.$.bpm = $.bpm!
+        await this.load()
 
-        const shouldStartAll = players.every((player) => player.$.state !== 'running')
+        const shouldStartAll = $.players.every((player) => noneOf(player.$.state, 'preparing', 'running'))
 
         if (shouldStartAll) {
           await Promise.all(
-            players.map((player) =>
-              player.$.start(resetTime)
+            $.players.map((player) =>
+              new Promise<void>((resolve) => player.fx.once.task(async ({ audioPlayer: _ }) => {
+                await player.$.start(resetTime, false)
+                resolve()
+              }))
             )
           )
         }
 
-        // else {
         await audioPlayer.$.start(resetTime)
-        // }
       })
 
       stop = fn(({ audioPlayer, players }) => (resetTime = true) => {
         audioPlayer.$.stop(resetTime)
 
         players.forEach((player) => {
-          player.$.stop()
+          player.$.stop(resetTime)
         })
+
+        $.state = 'suspended'
+        $.audio = null
       })
 
       toggle = fn(({ audioPlayer }) => (resetTime = false) => {
@@ -119,207 +105,215 @@ export const Project = reactive('project',
 
       // Storage/JSON
 
-      load = () => new Promise<void>((resolve) => {
-        if ($.players.length) return resolve()
+      publish = async () => {
+        const payload: schemas.PostPublishRequest = {
+          bpm: $.bpm!,
+          title: $.title!,
+          mixer: $.players.map((player) => ({
+            vol: player.$.vol
+          })),
+          tracks: $.players.map((player) => ({
+            sound: player.$.soundBuffer!.$.checksum!,
+            patterns: player.$.patternBuffers!.map((p) => p.$.checksum!)
+          })),
+          buffers: $.players.flatMap((player) => [...new Set([
+            player.$.soundBuffer!.$.value,
+            ...player.$.patternBuffers!.map((p) => p.$.value)
+          ])])
+        }
 
-        const id = $.id
+        console.log(payload)
 
-        fx.once(({ library: _ }) => {
-          let json: ProjectJson
-
-          try {
-            json = JSON.parse(localStorage[id])
-            if (!json.players.length) {
-              throw new Error('Empty project: ' + id)
-            }
-          } catch (error) {
-            console.warn('Error loading: ' + id)
-            console.warn(error)
-
-              ;[demo.kick.sound, demo.snare.sound, demo.bass.sound, ...demo.kick.patterns, ...demo.snare.patterns, ...demo.bass.patterns].forEach((value) => {
-                localStorage[checksumId(value)] = value
-              })
-
-            json = {
-              isDraft: true,
-              checksum: '1',
-              bpm: 120,
-              date: new Date().toISOString(),
-              title: 'Untitled',
-              author: 'guest',
-              // sounds: [
-              //   { id: 'sound-kick', value: demo.kick.sound },
-              //   { id: 'sound-snare', value: demo.snare.sound },
-              //   { id: 'sound-bass', value: demo.bass.sound },
-              // ],
-              // patterns: [
-              //   { id: 'pattern-kick-0', value: demo.kick.patterns[0] },
-              //   { id: 'pattern-kick-1', value: demo.kick.patterns[1] },
-
-              //   { id: 'pattern-snare-0', value: demo.snare.patterns[0] },
-              //   { id: 'pattern-snare-1', value: demo.snare.patterns[1] },
-
-              //   { id: 'pattern-bass-0', value: demo.bass.patterns[0] },
-              // ],
-              players: [
-                {
-                  vol: 0.45,
-                  sound: checksumId(demo.kick.sound),
-                  patterns: [demo.kick.patterns[0], demo.kick.patterns[0], demo.kick.patterns[0], demo.kick.patterns[1]].map(checksumId)
-                },
-
-                {
-                  vol: 0.3,
-                  sound: checksum(demo.snare.sound).toString(36),
-                  patterns: [demo.snare.patterns[0], demo.snare.patterns[0], demo.snare.patterns[0], demo.snare.patterns[1]].map(checksumId)
-                },
-
-                {
-                  vol: 0.52,
-                  sound: checksum(demo.bass.sound).toString(36),
-                  patterns: [demo.bass.patterns[0]].map(checksumId)
-                },
-              ],
-            }
-          }
-
-          this.fromJSON(id, json)
-
-          const off = fx(({ players }) => {
-            if (players.length) {
-              off()
-              resolve()
-            }
-          })
+        const res = await services.$.apiRequest('/publish', {
+          method: 'POST',
+          body: JSON.stringify(payload)
         })
-      })
+
+        if (!res.ok) {
+          console.error('publish: Something went wrong')
+          console.error(res)
+          return
+        }
+
+        const data: schemas.PublishResponse = await res.json()
+
+        $.isDraft = false
+        $.title = data.project.item.title
+        $.author = data.project.item.author
+        this.save()
+      }
 
       save = () => {
-        console.time('project save')
+        console.time('saved')
         const json = this.toJSON()
-        localStorage[$.id] = JSON.stringify(json)
-        console.timeEnd('project save')
+        localStorage[json.checksum] = JSON.stringify(json)
+        console.timeEnd('saved')
       }
 
-      publishCurrent = () => {
-        this.publish(localStorage[$.id])
-      }
-
-      // publish
-      publish = (serialized: string) => {
-        const hash = this.toURL(serialized)
-        if (hash != null) {
-          db.createShort($.id, hash).then((short) => {
-            prompt(
-              'Here is your short url:\n(copy it and store it, click Ok when you\'re done)',
-              `https://play.${location.hostname}/v2/${short.split(DELIMITERS.SHORT_ID)[3]}`
-            )
-          })
-        }
-      }
-
-      toURL = (
-        serialized: string,
-        isFromUrl?: boolean
-      ) => {
-        const url = new URL(location.href)
-
-        const [icon, date, , checksum] = $.id.split(DELIMITERS.SAVE_ID)
-
-        let hash: string | void
-
-        if (!isFromUrl) {
-          if (serialized) {
-            const compressed = compressUrlSafe(
-              serialized, { mode: 9, enableEndMark: false }
-            )
-            hash = `s=${[icon, date, checksum, compressed].join(DELIMITERS.SAVE_ID)}`
-            url.hash = hash
-            console.log('hash length:', hash.length)
-          } else {
-            // unreachable?
-            url.hash = ''
-          }
-
-          history.pushState({}, '', url)
+      load = () => {
+        if (projectLoadPromise) {
+          return projectLoadPromise
         }
 
-        // TODO: change favicon, change save button background
-        document.title = `${icon} - ${new Date(date).toLocaleString()}`
+        projectLoadPromise = new Promise<void>((resolve) => {
+          const checksum = $.checksum
 
-        return hash
-      }
+          fx.once(({ library: _ }) => {
+            let json: ProjectJson
 
-      fromURL = (url: URL | Location, projects: string[]): {
-        success: true, projects: string[]
-      } | { success: false, error?: Error } => {
-        try {
-          let hash = url.hash
-          if (!hash.startsWith('#')) hash = '#' + hash
+            try {
+              if (!checksum) {
+                throw new Error('No checksum')
+              }
+              json = JSON.parse(localStorage[checksum])
+              if (!json.players.length) {
+                throw new Error('Empty project: ' + checksum)
+              }
+              this.fromJSON(json)
+            } catch (error) {
+              if (checksum) {
+                console.warn('Error loading: ' + checksum)
+              }
+              console.warn(error)
 
-          if (hash.startsWith('#s=')) {
-            hash = decodeURI(hash).split('#s=')[1] ?? ''
-            if (!hash.length) return { success: false }
+              if ($.remoteProject) {
+                this.loadRemote($.remoteProject)
+              } else {
+                json = {
+                  isDraft: true,
+                  checksum: '1',
+                  bpm: 120,
+                  date: new Date().toISOString(),
+                  title: 'Untitled',
+                  author: 'guest',
+                  players: [
+                    {
+                      vol: 0.45,
+                      sound: checksumId(demo.kick.sound),
+                      patterns: [demo.kick.patterns[0], demo.kick.patterns[0], demo.kick.patterns[0], demo.kick.patterns[1]].map(checksumId)
+                    },
 
-            const [icon, date, checksum, compressed] = hash.split(DELIMITERS.SAVE_ID)
+                    {
+                      vol: 0.3,
+                      sound: checksumId(demo.snare.sound),
+                      patterns: [demo.snare.patterns[0], demo.snare.patterns[0], demo.snare.patterns[0], demo.snare.patterns[1]].map(checksumId)
+                    },
 
-            const equalItem = projects.find((id) =>
-              id.split(',').at(-1) === checksum
-            )
+                    {
+                      vol: 0.52,
+                      sound: checksumId(demo.bass.sound),
+                      patterns: [demo.bass.patterns[0]].map(checksumId)
+                    },
+                  ],
+                }
 
-            if (equalItem) {
-              console.log('found project from url in our own projects: ' + equalItem)
-              this.fromJSON(equalItem, JSON.parse(localStorage[equalItem]))
-              return { success: true, projects }
+                this.fromJSON(json)
+              }
             }
 
-            const id = [icon, date, '2', checksum].join(DELIMITERS.SAVE_ID)
-            const serialized = decompressUrlSafe(compressed)
-
-            localStorage[id] = serialized
-
-            const json = JSON.parse(serialized)
-
-            console.log('parsed url json:', json)
-
-            projects = [...projects, id]
-            this.fromJSON(id, json)
-            return { success: true, projects }
-          } else if (hash.startsWith('#p=')) {
-            const id = decodeURI(hash).split('#p=')[1] ?? ''
-            if (!id.length) return { success: false }
-            this.fromJSON(id, JSON.parse(localStorage[id]))
-            return { success: true, projects }
-          } else {
-            return { success: false }
-          }
-        } catch (error) {
-          console.warn(error)
-          return { success: false, error: error as Error }
-        }
+            const off = fx(({ players }) => {
+              if (players.length) {
+                off()
+                resolve()
+              }
+            })
+          })
+        })
+        return projectLoadPromise
       }
 
-      fromJSON = fn(({ players, library }) => (id: string, json: ProjectJson) => {
-        cachedProjects.set(id, $.self as any)
+      loadRemote = fn(({ library }) => async (p: schemas.ProjectResponse) => {
+        // TODO: cache trackIds and only request new ones
+        let endpoint = `/tracks?ids=${[...new Set(p.trackIds)]}`
+        let res = await services.$.apiRequest(endpoint)
+        if (!res.ok) {
+          console.error(endpoint, res)
+          return
+        }
 
-        $.id = id
+        const tracks: schemas.TrackResponse[] = await res.json()
+
+        const bufferIds = [...new Set(tracks.flatMap((t) => [t.soundId, ...t.patternIds]))]
+
+        endpoint = `/buffers?ids=${bufferIds}`
+        res = await services.$.apiRequest(endpoint)
+        if (!res.ok) {
+          console.error(endpoint, res)
+          return
+        }
+
+        const buffers: schemas.BufferResponse[] = await res.json()
+
+        buffers.forEach((b) => {
+          localStorage[b.id] = b.value
+        })
+
+        const newSounds: EditorBuffer[] = []
+        const newPatterns: EditorBuffer[] = []
+
+        const players: ProjectJson['players'] = (p.mixer as { vol: number }[]).map(({ vol }, i) => {
+          const t: schemas.TrackResponse = tracks.find((t) => t.id === p.trackIds[i])!
+
+          // const getChecksumId = (id: number): string => buffers.find((b) => b.id === id)!.checksum
+
+          // const sound: string = getChecksumId(t.soundId)
+          // const patterns: string[] = t.patternIds.map(getChecksumId)
+
+          // console.log(sound, patterns)
+
+          const soundBuffer = getByChecksum(library.$.sounds, t.soundId)
+
+          if (!soundBuffer) {
+            newSounds.push(mapToBuffer('sound')([0, t.soundId]))
+          }
+
+          t.patternIds.forEach((patternId) => {
+            const patternBuffer = getByChecksum(library.$.patterns, patternId)
+            if (!patternBuffer) {
+              newPatterns.push(mapToBuffer('pattern')([0, patternId]))
+            }
+          })
+
+          return {
+            vol,
+            sound: t.soundId,
+            patterns: t.patternIds,
+          }
+        })
+
+        library.$.sounds = [...library.$.sounds, ...newSounds]
+        library.$.patterns = [...library.$.patterns, ...newPatterns]
+
+        const json: ProjectJson = {
+          isDraft: false,
+          checksum: p.id,
+          bpm: p.bpm,
+          title: p.title,
+          author: p.author,
+          date: p.updatedAt,
+          players,
+        }
+
+        localStorage[p.id] = JSON.stringify(json)
+
+        this.fromJSON(json)
+      })
+
+      fromJSON = fn(({ players, library }) => (json: ProjectJson) => {
+        $.checksum = json.checksum
         $.bpm = json.bpm
         $.date = json.date
         $.title = json.title
         $.author = json.author
         $.isDraft = json.isDraft
 
-        const newSounds: EditorBuffer[] = []
-
         json.players.forEach((player) => {
-          // need to get the ids of the sound/patterns somehow?
+          player.sound = getByChecksum(library.$.sounds, player.sound)!.$.id!
+
+          player.patterns.forEach((pattern, i) => {
+            player.patterns[i] = getByChecksum(library.$.patterns, pattern)!.$.id!
+          })
         })
-
-        library.$.sounds = [...library.$.sounds, ...newSounds]
-
-        const newPatterns: EditorBuffer[] = []
-
-        library.$.patterns = [...library.$.patterns, ...newPatterns]
 
         players?.forEach((player) => {
           player.dispose()
@@ -328,42 +322,121 @@ export const Project = reactive('project',
         $.players = json.players.map((player) => Player({
           ...player,
           pattern: 0,
+          project: $.self as Project,
         }))
       })
 
       /**
        * Get a JSON representation of the project.
        */
-      toJSON = fn(({ players, library }) => (): ProjectJson => {
+      toJSON = fn(({ players }) => (): ProjectJson => ({
+        ...pick($ as Required<typeof $>, ['checksum', 'date', 'bpm', 'title', 'author', 'isDraft']),
+        players: players.map((player) => ({
+          vol: player.$.vol,
+          sound: player.$.soundBuffer!.$.checksum!,
+          patterns: player.$.patternBuffers!.map((p) => p.$.checksum!)
+        }))
+      }))
 
-      })
     })
   },
   function effects({ $, fx }) {
+    fx(({ id }) => {
+      projects.set(id, $.self)
+      return () => {
+        projects.delete(id)
+      }
+    })
+
     fx(() =>
       services.fx(({ library }) => {
         $.library = library
       })
     )
 
+    fx(({ audioPlayer }) => {
+      audioPlayer.$.project = $.self
+    })
+
+    fx.once(({ checksum, audioPlayer }) => {
+      audioPlayer.$.vol = storage.vols.get(checksum, 1)
+      fx(({ checksum }, prev) => {
+        if (prev.checksum) {
+          storage.vols.delete(checksum)
+        }
+        storage.vols.set(checksum, audioPlayer.$.vol!)
+        return audioPlayer.fx.raf(({ vol }) => {
+          storage.vols.set(checksum, vol)
+        })
+      })
+    })
+
     fx(({ audio, audioPlayer }) => {
       audioPlayer.$.audio = audio
-    })
-
-    fx(({ audio, bpm }) => {
-      audio.$.bpm = bpm
-    })
-
-    fx(({ audio, audioPlayer, players }) => {
-      players.forEach((player) => {
-        player.$.isPreview = true
-        player.$.audio = audio
-        player.$.audioPlayer = audioPlayer
+      return audioPlayer.fx(({ state }) => {
+        if (state === 'running') {
+          $.state = 'running'
+        }
       })
-      return () => {
-        players.forEach((player) => {
-          player.$.audio = void 0 as any
-        })
+    })
+
+    // fx(({ audio, bpm }) => {
+    //   audio.$.bpm = bpm
+    // })
+
+    // fx(({ players }) =>
+    //   chain(
+    //     players.map((player) =>
+    //       player.fx(({ state }) => {
+    //         if (state === 'running' && !player.$.audio) {
+    //           $.audioPlayer.$.audio = services.$.audio!
+    //           player.$.audio = services.$.audio!
+    //           player.$.audioPlayer = $.audioPlayer
+    //         }
+    //       })
+    //     )
+    //   )
+    // )
+
+    // fx(({ audio, audioPlayer, players }) => {
+    //   players.forEach((player) => {
+    //     // player.$.isPreview = true
+    //     // player.$.audio = audio
+    //     player.$.audioPlayer = audioPlayer
+    //   })
+    //   return () => {
+    //     players.forEach((player) => {
+    //       player.$.audio = void 0 as any
+    //     })
+    //   }
+    // })
+
+    fx(({ players }) =>
+      chain(
+        players.map((player) =>
+          player.fx(({ soundBuffer, patternBuffers }) => chain(
+            ...[soundBuffer, ...patternBuffers].map((b) => b.fx(({ checksum: _ }) => {
+
+              const trackIds = players.map((p) =>
+                checksumId([
+                  p.$.soundBuffer?.$.checksum,
+                  p.$.patternBuffers?.map((pat) => pat.$.checksum)
+                ].join())
+              )
+
+              if (trackIds.every((c) => c != null)) {
+                $.checksum = checksumId(trackIds.join())
+              }
+            }))
+          ))
+        )
+      )
+    )
+
+    fx(({ checksum: _ }, prev) => {
+      if (prev.checksum && !$.isDraft) {
+        console.log(_, prev.checksum, $.title)
+        $.isDraft = true
       }
     })
   }

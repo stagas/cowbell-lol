@@ -66,7 +66,7 @@ export const SliderView = web(view('slider-view',
           : [yDims, xDims]
 
         const getPointerPos = (e: PointerEvent) => {
-          const scrollTop = document.documentElement.scrollTop
+          const scrollTop = 0 //document.documentElement.scrollTop
           return new Point(e.pageX, e.pageY - scrollTop)
         }
 
@@ -112,7 +112,8 @@ export const SliderView = web(view('slider-view',
       }
 
       resize = fn(({ host }): ResizeObserverCallback => queue.raf((entries) => {
-        $.rect = new Rect(host.getBoundingClientRect()).round()
+        const scrollTop = document.documentElement.scrollTop
+        $.rect = new Rect(host.getBoundingClientRect()).translate(0, scrollTop).round()
         const aspect = $.rect.size.x / $.rect.size.y
         if (aspect < 0.5) {
           $.vertical = false

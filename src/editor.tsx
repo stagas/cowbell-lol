@@ -4,6 +4,7 @@ import { Marker, CanvyElement, Lens } from 'canvy'
 import { filterMap } from 'everyday-utils'
 import { web, view, element, chain } from 'minimal-view'
 import { app } from './app'
+import { services } from './services'
 import { Code } from './code'
 import { EditorBuffer } from './editor-buffer'
 import { Player } from './player'
@@ -284,7 +285,7 @@ export const Editor = web(view('editor',
       })
     )
 
-    const initialFontSize = window.innerWidth > 800 ? 15.5 : 14
+    const initialFontSize = window.innerHeight > 900 ? 15.5 : 14
 
     fx(function $view({ name, editorBuffer }) {
       $.view = <div style="width:100%; height: 100%; display: flex;">
@@ -295,7 +296,7 @@ export const Editor = web(view('editor',
           // fontName="JetBrains Mono"
           fontSize={initialFontSize}
           singleComment="\"
-          scene={app.$.editorScene}
+          scene={services.$.editorScene}
           editor={deps.editor}
           value={editorBuffer.deps.value}
           markers={deps.markers}

@@ -34,6 +34,7 @@ export const Button = web(view('btn',
         --backlight-width: 2.55px;
         --backlight-color: ${skin.colors.brightGreen};
         --backlight-color-trans: ${skin.colors.brightGreen}35;
+        pointer-events: none;
       }
 
       button {
@@ -47,6 +48,7 @@ export const Button = web(view('btn',
         height: 41px;
         font-size: 25px;
         overflow: hidden;
+        pointer-events: all;
       }
 
       .shades {

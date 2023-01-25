@@ -1,24 +1,28 @@
 /** @jsxImportSource minimal-view */
 
 import { element, view, web } from 'minimal-view'
-import { app } from './app'
+import { Selected } from './app'
 import { Button } from './button'
-import { KnobView } from './knob-view'
 import { Player } from './player'
-import { Services } from './services'
-import { TrackView } from './track-view'
+import { TrackView, TrackViewHandler } from './track-view'
 import { services } from './services'
 import { get } from './util/list'
 import { Volume } from './volume'
+import { Focused } from './project-view'
 
 export type PlayerView = typeof PlayerView.State
 
 export const PlayerView = web(view('player-view',
   class props {
     id!: string
-    services!: Services
+    y!: number
+    focused!: Focused
+    selected!: Selected
     player!: Player
     active!: boolean
+
+    onSoundSelect!: TrackViewHandler
+    onPatternSelect!: TrackViewHandler
   },
 
   class local {
@@ -39,9 +43,9 @@ export const PlayerView = web(view('player-view',
   },
 
   function effects({ $, fx }) {
-    fx(({ player }) => {
-      player.$.view = $.self
-    })
+    // fx(({ player }) => {
+    //   player.$.view = $.self
+    // })
 
     // fx(({ player }) =>
     //   chain(
@@ -58,7 +62,7 @@ export const PlayerView = web(view('player-view',
     // )
 
 
-    services.fx(({ skin }) => {
+    fx(() => services.fx(({ skin }) => {
       $.css = /*css*/`
       ${skin.css}
 
@@ -76,22 +80,6 @@ export const PlayerView = web(view('player-view',
       img {
         width: 100%;
         height: 100%;
-      }
-
-      .controls {
-        background: ${skin.colors.bgLight};
-        /* min-width: 126px; */
-        width: 25%;
-        display: flex;
-        flex-flow: row nowrap;
-        gap: 10.5px;
-        align-items: center;
-        justify-content: center;
-
-        ${KnobView} {
-          position: relative;
-          top: 1.05px;
-        }
       }
 
       &([active]) {
@@ -138,18 +126,17 @@ export const PlayerView = web(view('player-view',
         }
       }
       `
-    })
+    }))
 
     fx.raf(({ host, active }) => {
       host.toggleAttribute('active', active)
     })
 
-    fx(({ services, player, active }) =>
-      player.fx(({ state, sound, pattern, patterns: _ }) =>
-        app.fx(({ focused, selected }) => {
-          const y = app.$.players.indexOf(player)
+    fx(() => services.$.library.fx(({ sounds, patterns }) =>
+      fx(({ player, y, active, focused, selected, onSoundSelect, onPatternSelect }) =>
+        player.fx(({ state, sound, pattern, patterns: _ }) => {
           $.view = <>
-            <div class="controls raised">
+            <div class="controls raised" part="controls">
               <Volume target={player} />
 
               <Button
@@ -173,17 +160,17 @@ export const PlayerView = web(view('player-view',
                 services={services}
                 didDisplay={true}
                 player={player}
-                sound={get(app.$.sounds, sound)!}
+                sound={get(sounds, sound)!}
                 clickMeta={{ id: sound, y }}
-                onClick={app.$.onPlayerSoundSelect}
-                onDblClick={app.$.onSoundSave}
+                onClick={onSoundSelect}
+              // onDblClick={app.$.onSoundSave}
               />
             </div>
 
             <div class="patterns">
               {
                 player.$.patterns.map((id, x) => {
-                  const p = get(app.$.patterns, id)!
+                  const p = get(patterns, id)!
                   return <TrackView
                     active={active && pattern === x && (
                       (focused === 'pattern')
@@ -196,20 +183,20 @@ export const PlayerView = web(view('player-view',
                     pattern={p}
                     didDisplay={true}
                     clickMeta={{ id, x, y }}
-                    onClick={app.$.onPlayerPatternSelect}
-                    onDblClick={app.$.onPatternSave}
-                    onAltClick={
-                      (!active || pattern !== x)
-                      && app.$.onPlayerPatternPaste}
-                    onCtrlAltClick={app.$.onPlayerPatternInsert}
-                    onCtrlShiftClick={app.$.onPlayerPatternDelete}
+                    onClick={onPatternSelect}
+                  // onDblClick={app.$.onPatternSave}
+                  // onAltClick={
+                  //   (!active || pattern !== x)
+                  //   && app.$.onPlayerPatternPaste}
+                  // onCtrlAltClick={app.$.onPlayerPatternInsert}
+                  // onCtrlShiftClick={app.$.onPlayerPatternDelete}
                   />
                 })
               }
             </div>
           </>
         })
-      )
+      ))
     )
   }
 ))

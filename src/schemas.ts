@@ -1,40 +1,71 @@
 import { z } from 'zod'
 
-interface ItemResponse {
-  id: number
-  checksum: number
-
-  authorId: number
-  author: string
-
-  originalId: number | null
-  originalAuthor: string | null
-
-  createdAt: string
-  updatedAt: string
-}
-
 const PostItem = {
-  originalId: z.number().optional(),
-  checksum: z.number(),
+  originalId: z.string().optional(),
 }
+
+const ghError = z.object({
+  error: z.string(),
+  error_description: z.string(),
+  error_uri: z.string()
+})
 
 export const schemas = {
+  // oauth
+  oauthStart: z.object({
+    redirect_to: z.string().regex(/[a-z0-9/_-]/gi).optional()
+  }),
+  oauthCallback: z.union([
+    z.object({
+      code: z.string(),
+      state: z.string().optional()
+    }),
+    ghError
+  ]),
+  accessTokenResponse: z.union([
+    z.object({
+      access_token: z.string(),
+      scope: z.string(),
+      token_type: z.string()
+    }),
+    ghError
+  ]),
+  userResponse: z.union([
+    z.object({
+      login: z.string()
+    }),
+    ghError
+  ]),
+
+  // crud
   PostBufferRequest: z.object({
     ...PostItem,
     value: z.string(),
   }),
   postTrackRequest: z.object({
     ...PostItem,
-    soundId: z.number(),
-    patternIds: z.array(z.number()),
+    soundId: z.string(),
+    patternIds: z.array(z.string()),
   }),
   postProjectRequest: z.object({
     ...PostItem,
-    title: z.string(),
     bpm: z.number(),
-    trackIds: z.array(z.number()),
+    title: z.string(),
+    trackIds: z.array(z.string()),
     mixer: z.any(),
+  }),
+  postPublishRequest: z.object({
+    ...PostItem,
+    bpm: z.number(),
+    title: z.string(),
+    mixer: z.any(),
+    tracks: z.array(
+      z.object({
+        sound: z.string(),
+        patterns: z.array(z.string())
+      })
+    ),
+    buffers: z.array(z.string()),
   }),
   postReaction: z.object({
     reaction: z.enum(['💅', '🔥', '💥', '😎', '🤫', '🤯', '🤮']),
@@ -42,24 +73,50 @@ export const schemas = {
   })
 }
 
+interface ItemResponse {
+  id: string
+
+  authorId: number
+  author: string
+
+  originalId: string | null
+  originalAuthor: string | null
+
+  createdAt: string
+  updatedAt: string
+}
+
 export namespace schemas {
   export type PostBufferRequest = z.infer<typeof schemas.PostBufferRequest>
   export type PostTrackRequest = z.infer<typeof schemas.postTrackRequest>
   export type PostProjectRequest = z.infer<typeof schemas.postProjectRequest>
+  export type PostPublishRequest = z.infer<typeof schemas.postPublishRequest>
 
   export interface BufferResponse extends ItemResponse {
     value: string
   }
 
   export interface TrackResponse extends ItemResponse {
-    soundId: number
-    patternIds: number[]
+    soundId: string
+    patternIds: string[]
   }
 
   export interface ProjectResponse extends ItemResponse {
     title: string
     bpm: number
-    trackIds: number[]
+    trackIds: string[]
     mixer: any
+  }
+
+  export interface PublishResponse {
+    project: { created: boolean, item: ProjectResponse }
+    tracks: { created: boolean, item: TrackResponse }[]
+    buffers: { created: boolean, item: BufferResponse }[]
+  }
+
+  export interface User {
+    id: number
+    username: string
+    createdAt: string
   }
 }

@@ -8,10 +8,10 @@ import { render, enableDebug, effect } from 'minimal-view'
 // document.body.appendChild(window.recorder.el)
 
 // @ts-ignore
-// globalThis.DEBUG = ['editor', 'editor-buffer', 'slider']
+// globalThis.DEBUG = ['player', 'player-view', 'project', 'project-view', 'audio-player', 'audio']
 
 // @ts-ignore
-const isDebug = !!globalThis.DEBUG
+// const isDebug = !!globalThis.DEBUG
 
 // if (isDebug) enableDebug(5000)
 
@@ -35,10 +35,13 @@ import { App } from '..'
 // `
 
 render(<>
-  <link rel="preconnect" href="https://fonts.googleapis.com" /><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin={"anonymous"} /><link href="https://fonts.googleapis.com/css2?family=ABeeZee:ital@0;1&family=Albert+Sans&family=Baloo+2:wght@400;500&family=Baloo+Thambi+2&family=Barlow+Semi+Condensed&family=Baumans&family=Be+Vietnam+Pro:wght@300&family=DM+Mono&family=Gantari:wght@400;500;600&family=Geo&family=JetBrains+Mono:ital@0;1&family=Jost&family=Questrial&family=Share&family=Silkscreen&family=Teko:wght@300&display=swap" rel="stylesheet" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" /><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin={"anonymous"} /><link href="https://fonts.googleapis.com/css2?family=Barlow+Semi+Condensed&family=Baumans&family=Geo&family=JetBrains+Mono:ital@0;1&family=Jost&display=swap" rel="stylesheet" />
+  {/* <link rel="preconnect" href="https://fonts.googleapis.com" /><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin={"anonymous"} /><link href="https://fonts.googleapis.com/css2?family=ABeeZee:ital@0;1&family=Albert+Sans&family=Baloo+2:wght@400;500&family=Baloo+Thambi+2&family=Barlow+Semi+Condensed&family=Baumans&family=Be+Vietnam+Pro:wght@300&family=DM+Mono&family=Gantari:wght@400;500;600&family=Geo&family=JetBrains+Mono:ital@0;1&family=Jost&family=Questrial&family=Share&family=Silkscreen&family=Teko:wght@300&display=swap" rel="stylesheet" /> */}
 </>, document.head)
 
-render(<App />, document.body)
+render(<App
+  apiUrl="https://api.devito.test:3030"
+/>, document.body)
   // <AppView distRoot="/example" apiUrl="https://devito.test" />
   // render(<>
   //   <style>{css}</style>

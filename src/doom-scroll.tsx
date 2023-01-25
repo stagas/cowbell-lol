@@ -39,7 +39,7 @@ export const DoomScroll = web(view('doom-scroll',
         align-items: center;
         width: 100%;
       }
-      .items {
+      .list-item {
         background: ${skin.colors.bgLight};
         flex: 1;
         width: 100%;
@@ -73,7 +73,7 @@ export const DoomScroll = web(view('doom-scroll',
 
     fx(({ items, factory, rangeEnd, size, prompt }) => {
       $.view = <>
-        {items.slice(0, rangeEnd).map((x, i, arr) => <div class="items" ref={!prompt && i === Math.max(0, arr.length - 6) ? refs.lastEl : null}>
+        {items.slice(0, rangeEnd).map((x, i, arr) => <div class="list-item" ref={!prompt && i === Math.max(0, arr.length - 6) ? refs.lastEl : null}>
           {factory(x)}
         </div>
         )}

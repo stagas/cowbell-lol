@@ -1,34 +1,17 @@
 /** @jsxImportSource minimal-view */
 
-import { EditorScene } from 'canvy'
-import { diffChars } from 'diff'
-import { checksum, modWrap } from 'everyday-utils'
-import { Matrix, Point, Rect } from 'geometrik'
+import { cheapRandomId } from 'everyday-utils'
 import memoize from 'memoize-pure'
 import { chain, element, on, queue, ValuesOf, view, web } from 'minimal-view'
-import { MIDIMessageEvent } from 'webaudio-tools'
-import { PianoKeys } from 'x-pianokeys'
-import { AudioPlayer } from './audio'
 import { Button } from './button'
-import * as db from './db'
-import { demo } from './demo-code'
-import { DoomScroll } from './doom-scroll'
-import { Editor } from './editor'
-import { EditorBuffer } from './editor-buffer'
 import { Hint } from './hint'
-import { Player } from './player'
-import { PlayerView } from './player-view'
-import { getNewDraftProjectId, Project } from './project'
+import { Project } from './project'
 import { ProjectView } from './project-view'
+import { schemas } from './schemas'
 import { services } from './services'
-import { Spacer } from './spacer'
 import { Toolbar } from './toolbar'
-import { TrackView } from './track-view'
-import { classes } from './util/classes'
-import { delById, get, replaceAtIndex } from './util/list'
+import { groupSort } from './util/group-sort'
 import { storage } from './util/storage'
-import { Vertical } from './vertical'
-import { Wavetracer } from './wavetracer'
 
 export const PROJECT_KINDS = {
   SAVED: '0',
@@ -45,6 +28,7 @@ export const APP_MODE = {
   NORMAL: 'normal',
   SOLO: 'solo',
   BROWSE: 'browse',
+  USER_BROWSE: 'userbrowse'
 } as const
 export type AppMode = ValuesOf<typeof APP_MODE>
 
@@ -109,361 +93,107 @@ export const App = web(view('app',
 
     hint: JSX.Element = false
 
-    selected: Selected = { player: 0, preset: 'sound-kick' }
+    // selected: Selected = storage.selected.get({ player: 0, preset: 'sound-kick' })
 
-    focused: 'main' | 'sound' | 'sounds' | 'pattern' | 'patterns' = 'sound'
+    // players: Player[] = []
+    // player?: Player
 
-    players: Player[] = []
-    player?: Player
+    // sounds: EditorBuffer[] = []
+    // sound?: EditorBuffer
 
-    previewAudioPlayer = AudioPlayer({})
-    previewPlayer = Player({
-      vol: 0.45,
-      sound: 'sk',
-      pattern: 0,
-      patterns: ['k'],
-      isPreview: true,
-      audioPlayer: this.previewAudioPlayer
-    })
+    // patterns: EditorBuffer[] = []
+    // pattern?: EditorBuffer
 
-    sounds: EditorBuffer[] = []
-    sound?: EditorBuffer
+    // editor?: InstanceType<typeof Editor.Element>
+    // editorVisible = storage.editorVisible.get(false)
+    // editorEl?: HTMLElement
+    // editorBuffer?: EditorBuffer
 
-    patterns: EditorBuffer[] = []
-    pattern?: EditorBuffer
+    project: Project = Project({ checksum: storage.project.get(cheapRandomId()) })
+    projects: string[] = storage.projects.get([this.project.$.checksum!])
 
-    main = EditorBuffer({ id: 'main', kind: 'main', value: demo.main, isDraft: false, isNew: false, isIntent: true })
+    // remoteProjects: string[] = []
+    // allProjects: {
+    //   drafts: string[],
+    //   liked: string[],
+    //   recent: string[],
+    // } = makeProjects(this.projects, storage.likes.get([]))
 
-    editor?: InstanceType<typeof Editor.Element>
-    editorVisible = false
-    editorEl?: HTMLElement
-    editorBuffer?: EditorBuffer
-    editorScene = new EditorScene({
-      isValidTarget: (el) => {
-        const part = el.getAttribute('part')
-        if (part === 'canvas') return true
-        return false
-      },
-      layout: {
-        viewMatrix: new Matrix,
-        state: {
-          isIdle: true
-        },
-        viewFrameNormalRect: new Rect(0, 0, 10000, 10000),
-        pos: new Point(0, 0)
-      }
-    })
-
-    project: Project = Project({ id: storage.project.get(getNewDraftProjectId()) })
-    projects: string[] = storage.projects.get([this.project.$.id])
-    remoteProjects: string[] = []
-    allProjects: {
-      drafts: string[],
-      liked: string[],
-      recent: string[],
-    } = makeProjects(this.projects, storage.likes.get([]))
-
-
-    mode: AppMode = 'normal' //storage.mode.get('normal')
+    mode: AppMode = 'normal'
+    userBrowse?: string
+    userProjects: Project[][] = []
 
     presetsScrollEl?: HTMLDivElement
 
-    playersView: JSX.Element = false
-    editorView: JSX.Element = false
-    pianoView: JSX.Element = false
+    // playersView: JSX.Element = false
+    // editorView: JSX.Element = false
   },
 
   function actions({ $, fns, fn }) {
     // let lastSaveJson: any = {}
 
-    let presetsSmoothScrollTimeout: any
-
     return fns(new class actions {
-
       // working state
+
       save = () => {
         $.project.$.save()
       }
 
-      autoSave = queue.debounce(5000)(this.save)
-
-      // projects
-
-
-      // buffers
-
-      onBufferSave = (id: string, { kind }: { kind: string }) => {
-        if (kind === 'sound') {
-          this.onSoundSave(id)
-        } else if (kind === 'pattern') {
-          this.onPatternSave(id)
-        }
-        // trigger render
-        $.selected = { ...$.selected }
-      }
-
-      // player
-
-      onPlayerSoundSelect = (_: string, { y }: { y: number }) => {
-        if ($.editorVisible && $.focused === 'sound' && $.selected.player === y) {
-          $.editorVisible = false
-        } else {
-          $.editorVisible = true
-          $.selected = { ...$.selected, player: y }
-          $.focused = 'sound'
-        }
-      }
-
-      onPlayerPatternSelect = (id: string, { x, y }: { x: number, y: number }) => {
-        const player = $.players[y]
-
-        if ($.editorVisible && $.focused === 'pattern' && $.selected.player === y && player.$.pattern === x) {
-          $.editorVisible = false
-        } else {
-          $.editorVisible = true
-          player.$.pattern = x
-          $.selected = { ...$.selected, player: y }
-          $.focused = 'pattern'
-        }
-      }
-
-      onPlayerPatternPaste = (id: string, { x, y }: { x: number, y: number }) => {
-        const selectedPlayer = $.players[$.selected.player]
-
-        const p = selectedPlayer.$.pattern
-
-        if (x !== p || y !== $.selected.player) {
-          const targetPlayer = $.players[y]
-
-          const pattern = selectedPlayer.$.patterns[p]
-
-          targetPlayer.$.patterns = replaceAtIndex(
-            targetPlayer.$.patterns,
-            x,
-            pattern
-          )
-
-          // trigger render
-          $.selected = { ...$.selected }
-        }
-      }
-
-      onPlayerPatternInsert = (id: string, { x, y }: { x: number, y: number }) => {
-        const player = $.players[y]
-        const patterns = [...player.$.patterns]
-        const pattern = patterns[x]
-        patterns.splice(x + 1, 0, pattern)
-        player.$.patterns = patterns
-
-        // trigger render
-        $.selected = { ...$.selected }
-      }
-
-      onPlayerPatternDelete = (id: string, { x, y }: { x: number, y: number }) => {
-        const player = $.players[y]
-        const patterns = player.$.patterns
-
-        if (patterns.length === 1) return
-
-        patterns.splice(x, 1)
-
-        player.$.pattern = Math.min(player.$.pattern, patterns.length - 1)
-
-        // trigger render
-        $.selected = { ...$.selected }
-      }
-
-      // presets
-
-      onPresetsRearrange = services.fn(({ library }) => (id: string, { dir, kinds }: { dir: 1 | -1, kinds: 'sounds' | 'patterns' }) => {
-        const buffers = $[kinds]
-
-        const index = buffers.findIndex((buffer) => buffer.$.id === id)
-
-        const dest = index + dir
-        if (dest >= 0 && dest < buffers.length) {
-          const bufs = [...buffers]
-          const [buffer] = bufs.splice(index, 1)
-          bufs.splice(dest, 0, buffer)
-          library.$[kinds] = [...bufs]
-        }
-      })
-
-      // sound
-
-      sendTestNote = () => {
-        let delay = 0
-
-        if (!$.previewPlayer.$.preview) delay = 50
-
-        const off = $.previewPlayer.fx(({ compileState, preview }) => {
-          if (compileState === 'compiled' && preview) {
-            setTimeout(() => {
-              this.onMidiEvent(Object.assign(
-                new MIDIMessageEvent('message', {
-                  data: new Uint8Array([144, 40, 127])
-                }),
-                { receivedTime: 0 }
-              ) as any)
-            }, delay)
-            off()
-          }
-        })
-        $.previewPlayer.$.startPreview()
-      }
-
-      startTemporaryPresetsSmoothScroll = () => {
-        if ($.presetsScrollEl) {
-          $.presetsScrollEl.style.scrollBehavior = 'smooth'
-          clearTimeout(presetsSmoothScrollTimeout)
-          presetsSmoothScrollTimeout = setTimeout(() => {
-            $.presetsScrollEl!.style.scrollBehavior = 'auto'
-          }, 100)
-        }
-      }
-
-      onSoundSelect = (id: string, { noPreview }: { noPreview?: boolean } = {}) => {
-        this.startTemporaryPresetsSmoothScroll()
-        $.focused = 'sounds'
-        $.selected = { ...$.selected, preset: id }
-
-        if (noPreview) return
-
-        if (id !== $.previewPlayer.$.sound) {
-          queueMicrotask(() => {
-            this.sendTestNote()
-          })
-        } else {
-          this.sendTestNote()
-        }
-      }
-
-      onSoundUse = fn(({ player }) => (id: string) => {
-        player.$.sound = id
-        this.onSoundSelect(id, { noPreview: true })
-        queueMicrotask(() => {
-          $.focused = 'sound'
-        })
-      })
-
-      onSoundSave = (id: string) => {
-        get($.sounds, id)!.$.isDraft = false
-      }
-
-      onSoundDelete = services.fn(({ library }) => (id: string) => {
-        const index = $.players.map((player) => player.$.sound).indexOf(id)
-        if (!~index) {
-          library.$.sounds = delById($.sounds, id)
-        }
-      })
-
-      onSoundRearrange = (id: string, { dir }: { dir: 1 | -1 }) => {
-        this.onPresetsRearrange(id, { dir, kinds: 'sounds' })
-      }
-
-      // pattern
-
-      onPatternSelect = (id: string) => {
-        this.startTemporaryPresetsSmoothScroll()
-        $.focused = 'patterns'
-        $.selected = { ...$.selected, preset: id }
-      }
-
-      onPatternUse = fn(({ player }) => (id: string) => {
-        player.$.patterns = replaceAtIndex(
-          player.$.patterns,
-          player.$.pattern,
-          id
-        )
-
-        this.onPatternSelect(id)
-
-        queueMicrotask(() => {
-          $.focused = 'pattern'
-        })
-      })
-
-      onPatternSave = (id: string) => {
-        get($.patterns, id)!.$.isDraft = false
-      }
-
-      onPatternDelete = services.fn(({ library }) => (id: string) => {
-        const index = $.players.flatMap((player) => player.$.patterns).indexOf(id)
-        if (!~index) {
-          library.$.patterns = delById($.patterns, id)
-        }
-      })
-
-      onPatternRearrange = (id: string, { dir }: { dir: 1 | -1 }) => {
-        this.onPresetsRearrange(id, { dir, kinds: 'patterns' })
-      }
-
-      // editor
-
-      focusEditor = fn(({ editor }) => () => {
-        editor.$.editor?.focus()
-      })
-
-      // midi
-
-      onMidiEvent = (e: WebMidi.MIDIMessageEvent) => {
-        $.previewPlayer.$.startPreview()
-        $.previewPlayer.$.monoNode!.processMidiEvent(e)
-      }
+      autoSave = queue.debounce(1000)(this.save)
 
       // song
 
-      onKeyDown = fn(({ player }) => (e: KeyboardEvent) => {
-        const cmd = (e.ctrlKey || e.metaKey)
+      // onKeyDown = fn(({ player }) => (e: KeyboardEvent) => {
+      //   const cmd = (e.ctrlKey || e.metaKey)
 
-        if (cmd && e.shiftKey) {
-          $.state = 'deleting'
-        } else {
-          $.state = 'idle'
-        }
+      //   if (cmd && e.shiftKey) {
+      //     $.state = 'deleting'
+      //   } else {
+      //     $.state = 'idle'
+      //   }
 
-        if (cmd && e.code === 'Backquote') {
-          e.preventDefault()
-          e.stopPropagation()
+      //   // if (cmd && e.code === 'Backquote') {
+      //   //   e.preventDefault()
+      //   //   e.stopPropagation()
 
-          const dir = e.shiftKey ? -1 : 1
+      //   //   const dir = e.shiftKey ? -1 : 1
 
-          if ($.focused === 'pattern') {
-            let x = player.$.pattern
-            x = modWrap(x + dir, player.$.patterns.length)
-            player.$.pattern = x
-            // trigger render
-            $.selected = { ...$.selected }
-          } else {
-            let y = $.selected.player
-            y = modWrap(y + dir, $.players.length)
-            $.selected = { ...$.selected, player: y }
-          }
-        }
-        else if (cmd && (e.key === ';' || e.key === ':')) {
-          e.preventDefault()
-          e.stopPropagation()
+      //   //   if ($.focused === 'pattern') {
+      //   //     let x = player.$.pattern
+      //   //     x = modWrap(x + dir, player.$.patterns.length)
+      //   //     player.$.pattern = x
+      //   //     // trigger render
+      //   //     $.selected = { ...$.selected }
+      //   //   } else {
+      //   //     let y = $.selected.player
+      //   //     y = modWrap(y + dir, $.players.length)
+      //   //     $.selected = { ...$.selected, player: y }
+      //   //   }
+      //   // }
+      //   // else if (cmd && (e.key === ';' || e.key === ':')) {
+      //   //   e.preventDefault()
+      //   //   e.stopPropagation()
 
-          const order = ['main', 'sound', 'sounds', 'pattern', 'patterns'] as const
-          const dir = e.shiftKey ? -1 : 1
+      //   //   const order = ['main', 'sound', 'sounds', 'pattern', 'patterns'] as const
+      //   //   const dir = e.shiftKey ? -1 : 1
 
-          let z = order.indexOf($.focused)
-          z = modWrap(z + dir, order.length)
-          $.focused = order[z]
+      //   //   let z = order.indexOf($.focused)
+      //   //   z = modWrap(z + dir, order.length)
+      //   //   $.focused = order[z]
 
-          this.focusEditor()
-        }
-      })
+      //   //   this.focusEditor()
+      //   // }
+      // })
 
-      onKeyUp = (e: KeyboardEvent) => {
-        const cmd = (e.ctrlKey || e.metaKey)
+      // onKeyUp = (e: KeyboardEvent) => {
+      //   const cmd = (e.ctrlKey || e.metaKey)
 
-        if (cmd && e.shiftKey) {
-          $.state = 'deleting'
-        } else {
-          $.state = 'idle'
-        }
-      }
+      //   if (cmd && e.shiftKey) {
+      //     $.state = 'deleting'
+      //   } else {
+      //     $.state = 'idle'
+      //   }
+      // }
 
       onProjectSelect = (project: Project) => {
         $.project = project
@@ -475,87 +205,87 @@ export const App = web(view('app',
   function effects({ $, fx, deps, refs }) {
     app = $.self
 
-    services.fx(({ library }) =>
-      chain(
-        library.fx(({ sounds }) => {
-          $.sounds = sounds
-        }),
-        library.fx(({ patterns }) => {
-          $.patterns = patterns
-        })
-      )
-    )
+    // routes
+    services.fx(({ href }) => {
+      const { pathname, searchParams } = new URL(href)
+
+      console.log('Navigated to:', pathname, searchParams)
+
+      const [, username, target] = pathname.split('/')
+      if (!username) {
+        $.mode = APP_MODE.NORMAL
+      } else if (!target) {
+        $.userBrowse = username
+        $.mode = APP_MODE.USER_BROWSE
+      }
+    })
+
+    fx(async ({ host }) => {
+      host.style.opacity = '0'
+      await document.fonts.ready
+      host.style.opacity = '1'
+    })
+
+    fx(({ apiUrl }) => {
+      services.$.apiUrl = apiUrl
+    })
+
+    services.fx(async ({ apiUrl: _, username }) => {
+      const endpoint = `/projects?u=${username}`
+      const res = await services.$.apiRequest(endpoint)
+      if (!res.ok) {
+        console.error(endpoint, res)
+        return
+      }
+
+      const projects: schemas.ProjectResponse[] = await res.json()
+      console.log(endpoint, projects)
+
+      $.userProjects = groupSort(projects)
+        .map((group) =>
+          group.map((p) =>
+            Project({
+              checksum: p.id,
+              title: p.title,
+              bpm: p.bpm,
+              author: p.author,
+              date: p.updatedAt,
+              isDraft: false,
+              remoteProject: p,
+            })
+          )
+        )
+
+      console.log($.userProjects)
+    })
 
     fx(() =>
       chain(
-        on(window, 'keydown')($.onKeyDown),
-        on(window, 'keyup')($.onKeyUp),
-        // on(window, 'popstate')($.onWindowPopState),
+        // on(window, 'keydown')($.onKeyDown),
+        // on(window, 'keyup')($.onKeyUp),
       )
     )
 
-    fx(({ project }) => {
-      project.$.load()
-    })
 
-    fx(({ project }) =>
-      project.fx(({ players }) => {
-        $.players = players
-      })
-    )
+    // fx(({ selected }) => {
+    //   storage.selected.set(selected)
+    // })
 
-    fx(({ players, selected }) => {
-      $.player = players[selected.player]
-    })
+    // fx(({ focused }) => {
+    //   storage.focused.set(focused)
+    // })
 
-    services.fx(({ audio }) =>
-      fx(({ previewPlayer }) => {
-        previewPlayer.$.audio = audio
-        previewPlayer.$.audioPlayer!.$.audio = audio
-      })
-    )
-
-    fx(({ previewPlayer, player, selected, focused }) => {
-      if (focused === 'sounds') {
-        previewPlayer.$.sound = selected.preset
-      } else {
-        previewPlayer.$.sound = player.$.sound
-      }
-    })
-
-    fx(({ player, previewPlayer }) =>
-      player.fx(({ vol }) => {
-        previewPlayer.$.vol = vol
-      })
-    )
-
-    fx(({ player, sounds, selected, focused }) => {
-      $.sound = focused === 'sounds'
-        ? get(sounds, selected.preset)!
-        : get(sounds, player.$.sound)!
-    })
-
-    fx(({ player, patterns, selected, focused }) => {
-      if (focused === 'patterns') {
-        $.pattern = get(patterns, selected.preset)!
-      } else {
-        return player.fx(({ pattern, patternBuffers }) => {
-          $.pattern = patternBuffers[pattern]
-        })
-      }
-    })
-
-    fx(({ selected }) => {
-      storage.selected.set(selected)
-    })
+    // fx(({ editorVisible }) => {
+    //   storage.editorVisible.set(editorVisible)
+    // })
 
     fx(({ projects }) => {
       storage.projects.set(projects)
     })
 
     fx(({ project }) =>
-      project.fx(({ id }) => {
-        storage.project.set(id)
+      project.fx(({ checksum }) => {
+        storage.project.set(checksum)
       })
     )
 
@@ -569,43 +299,6 @@ export const App = web(view('app',
     //   })
     // )
 
-    fx(({ focused, sound, pattern, main }) => {
-      $.editorBuffer = (
-        (focused === 'pattern' || focused === 'patterns')
-          ? pattern
-          : (focused === 'sound' || focused === 'sounds')
-            ? sound
-            : main)
-        || $.editorBuffer!
-    })
-
-    fx(() =>
-      services.fx(({ audio }) =>
-        audio.fx(({ audioContext }) =>
-          fx(({ pattern }) =>
-            pattern.fx(({ midiRange }) => {
-              const hasRange = isFinite(midiRange[0]) && isFinite(midiRange[1])
-              const halfOctaves = !hasRange
-                ? 3
-                : Math.round(
-                  (midiRange[1] - midiRange[0]) / 6
-                )
-
-              const startHalfOctave = !hasRange ? 8 : Math.round(pattern.$.midiRange![0] / 6)
-
-              $.pianoView =
-                <PianoKeys
-                  halfOctaves={halfOctaves}
-                  startHalfOctave={startHalfOctave}
-                  audioContext={audioContext}
-                  onMidiEvent={$.onMidiEvent}
-                  vertical
-                />
-            })
-          )
-        )
-      )
-    )
 
     services.fx(({ skin }) =>
       fx(({ distRoot }) => {
@@ -663,34 +356,6 @@ export const App = web(view('app',
         height: 100%;
       }
 
-      [part=app-selected] {
-        position: relative;
-        height: 290px;
-        background: ${skin.colors.bgDarky};
-
-        &:before {
-          content: ' ';
-          position: absolute;
-          left: 0;
-          top: 0;
-          width: 100%;
-          height: calc(100% + 1px);
-          z-index: 999;
-          pointer-events: none;
-          ${skin.styles.deep}
-        }
-
-        &:focus-within {
-        }
-
-        &[state=errored] {
-          /* &:focus-within {
-            &::before {
-              box-shadow: inset 0 0 0 8px #f21;
-            }
-          } */
-        }
-      }
 
       main {
         position: relative;
@@ -725,155 +390,47 @@ export const App = web(view('app',
       `
     })
 
-    fx(({ player, main, sounds, sound, patterns, pattern, focused, selected, editorBuffer, pianoView }) => {
-      const soundPresets = <div key="sounds" part="app-presets" ref={cachedRef('sounds')} style={focused !== 'sound' && focused !== 'sounds' && 'display:none'}>
-        {sounds.map((s) =>
-          <TrackView
-            key={s.$.id!}
-            ref={cachedRef(`sound-${s.$.id}`)}
-            canFocus
-            active={
-              (focused === 'sound' || focused === 'sounds')
-              && s.$.id === sound.$.id
-            }
-            live={player.$.sound === s.$.id}
-            services={services}
-            sound={s}
-            clickMeta={s.$}
-            onClick={$.onSoundSelect}
-            // onDblClick={$.onSoundSave}
-            onCtrlClick={$.onSoundUse}
-            onCtrlShiftClick={$.onSoundDelete}
-            onRearrange={$.onSoundRearrange}
-          />
-        )}
-      </div>
 
-      const patternPresets = <div key="presets" part="app-presets" ref={cachedRef('presets')} style={focused !== 'pattern' && focused !== 'patterns' && 'display:none'}>
-        {patterns.map((p) =>
-          <TrackView
-            key={p.$.id!}
-            ref={cachedRef(`pattern-${p.$.id}`)}
-            canFocus
-            active={
-              (focused === 'pattern' || focused === 'patterns')
-              && p.$.id === pattern.$.id
-            }
-            live={player.$.patterns[player.$.pattern] === p.$.id}
-            pattern={p}
-            clickMeta={p.$}
-            onClick={$.onPatternSelect}
-            // onDblClick={$.onPatternSave}
-            onCtrlClick={$.onPatternUse}
-            onCtrlShiftClick={$.onPatternDelete}
-            onRearrange={$.onPatternRearrange}
-          />
-        )}
-      </div>
+    // fx(({ players, editorVisible, selected, editorView }) => {
+    //   $.playersView = <PlayersView
+    //     players={players}
+    //     selected={selected}
+    //     editorEl={deps.editorEl}
+    //     editorView={editorView}
+    //     editorVisible={editorVisible}
+    //   />
 
-      const readableOnly = (focused === 'sounds' && editorBuffer.$.id !== player.$.sound)
-        || (focused === 'patterns' && player.$.patterns[player.$.pattern] !== editorBuffer.$.id!)
+    //   // players.map((player, y) => <>
+    //   //   <PlayerView
+    //   //     key={player.$.id!}
+    //   //     id={player.$.id!}
+    //   //     services={services}
+    //   //     player={player}
+    //   //     active={editorVisible && selected.player === y}
+    //   //   />
 
-      $.editorView = <Spacer
-        id="app-selected"
-        part="app-selected"
-        align="x"
-        initial={[
-          0,
-          .0825,
-          .225,
-          .60
-        ]}
-      >
-        {pianoView}
-
-        <div ref={refs.presetsScrollEl} style="height:100%; position:relative; overflow-y: scroll; overscroll-behavior: contain;">
-          {soundPresets}
-          {patternPresets}
-        </div>
-
-        <div class="wrapper">
-          <TrackView
-            active={false}
-            hoverable={false}
-            showNotes={true}
-            sliders
-            player={(focused === 'sound' || focused === 'pattern' || (focused === 'sounds' && selected.preset === player.$.sound)) && player}
-            services={services}
-            main={focused === 'main' && main}
-            sound={(focused === 'sound' || focused === 'sounds') && sound}
-            pattern={(focused === 'pattern' || focused === 'patterns') && pattern}
-            xPos={focused === 'pattern' || focused === 'patterns' ? player.$.pattern : 0}
-            clickMeta={editorBuffer.$}
-          // onDblClick={$.onBufferSave}
-          />
-
-          {(readableOnly || editorBuffer.$.isDraft) && <div style="position: absolute; top: 0; left: 0; width: 100%; display: flex; align-items: center; justify-content:center; padding: 15px 0; box-sizing: border-box; gap: 9px">
-            {readableOnly && <Button rounded onClick={() => {
-              if (focused === 'sounds') {
-                $.onSoundUse(selected.preset)
-              } else if (focused === 'patterns') {
-                $.onPatternUse(selected.preset)
-              }
-            }}>
-              <span class="i mdi-light-chevron-up" style="font-size:32px; position: relative; left: 1px; top: -1px;" />
-            </Button>}
-
-            {editorBuffer.$.isDraft && <Button rounded onClick={() => {
-              $.onBufferSave(editorBuffer.$.id!, editorBuffer.$)
-            }}>
-              <span class="i la-save" style="font-size:23px; position: relative; left: 0.5px; top: -1px;" />
-            </Button>}
-          </div>}
-        </div>
-
-        <Editor
-          ref={refs.editor}
-          part="app-editor"
-          name="editor"
-          player={player}
-          buffer={editorBuffer}
-          readableOnly={readableOnly}
-        />
-
-      </Spacer>
-    })
-
-    fx(({ players, editorVisible, selected, editorView }) => {
-      $.playersView = players.map((player, y) => <>
-        <PlayerView
-          key={player.$.id!}
-          id={player.$.id!}
-          services={services}
-          player={player}
-          active={editorVisible && selected.player === y}
-        />
-
-        {selected.player === y && <div
-          ref={refs.editorEl}
-          class={classes({
-            // TODO: this should work with 'none'
-            // but something isn't playing well
-            hidden: !editorVisible
-          })}
-        >
-          {editorView}
-          {editorView && <Vertical
-            align='y'
-            id='editor'
-            size={290}
-          />}
-        </div>}
-      </>)
-    })
+    //   //   {selected.player === y && <div
+    //   //     ref={refs.editorEl}
+    //   //     class={classes({
+    //   //       'player-view': true,
+    //   //       // TODO: this should work with 'none'
+    //   //       // but something isn't playing well
+    //   //       hidden: !editorVisible
+    //   //     })}
+    //   //   >
+    //   //     {editorView}
+    //   //     {editorView && <Vertical
+    //   //       align='y'
+    //   //       id='editor'
+    //   //       size={290}
+    //   //     />}
+    //   //   </div>}
+    //   // </>)
+    // })
 
     services.fx(({ likes, loggedIn }) =>
-      fx(({ mode, project, projects, allProjects, playersView }) => {
+      fx(({ distRoot, mode, project, projects, userProjects }) => {
         $.autoSave()
-
-        function notCurrentProject(id: string) {
-          return id !== project.$.id
-        }
 
         $.view = <>
           <Toolbar project={project} />
@@ -882,8 +439,9 @@ export const App = web(view('app',
 
           <main>
             <ProjectView
-              key={project.$.id}
-              id={project.$.id}
+              key={project.$.id!}
+              id={project.$.id!}
+              ref={cachedRef(project.$.id!)}
               primary={true}
               project={project}
               controlsView={<>
@@ -895,7 +453,7 @@ export const App = web(view('app',
                     const x = window.outerWidth / 2 + window.screenX - (w / 2)
                     const y = window.outerHeight / 2 + window.screenY - (h / 2)
 
-                    const popup = window.open('/example/login.html', 'oauth', `width=${w}, height=${h}, top=${y}, left=${x}`)!
+                    const popup = window.open(`${distRoot}/login.html`, 'oauth', `width=${w}, height=${h}, top=${y}, left=${x}`)!
 
                     const off = on(window, 'storage')(() => {
                       off()
@@ -907,61 +465,46 @@ export const App = web(view('app',
                 >
                   Login with GitHub <span class="i la-github" />
                 </Button>}
-                {loggedIn && <Button round onClick={() => { }}>
+
+                {loggedIn && <Button round onClick={
+                  mode === APP_MODE.NORMAL
+                    || (mode === APP_MODE.USER_BROWSE && $.userBrowse !== services.$.username)
+                    ? services.$.linkTo(services.$.username)
+                    : services.$.linkTo('/')
+                }>
                   <img crossorigin={'anonymous'} src={`https://avatars.githubusercontent.com/${services.$.username}?s=42&v=4`} />
                 </Button>}
-                <Button round onClick={() => {
-                  if ($.mode === APP_MODE.NORMAL) {
-                    $.mode = APP_MODE.BROWSE
-                    $.allProjects = makeProjects(projects, likes)
-                  } else {
-                    $.mode = APP_MODE.NORMAL
-                  }
-                }}>
-                  <span class={`i ${$.mode === APP_MODE.NORMAL
+                {/*
+                <Button round onClick={
+                  mode === APP_MODE.NORMAL
+                    ? services.$.linkTo('/browse')
+                    : services.$.linkTo('/')
+                }>
+                  <span class={`i ${mode === APP_MODE.NORMAL
                     ? 'la-list'
                     : 'mdi-light-chevron-up'
-                    }`} />
-                </Button>
+                    }`}
+                  />
+                </Button> */}
               </>}
             />
 
-            <div class={classes(({ light: true, hidden: mode !== 'normal' }))}>
+            {userProjects.map((p) =>
+              p.length && p[0] !== project && <ProjectView
+                key={p[0].$.id!}
+                id={p[0].$.id!}
+                ref={cachedRef(p[0].$.id!)}
+                project={p[0]}
+                primary={false}
+                onSelect={$.onProjectSelect}
+              />
+            )}
+
+            {/*
+            <div class={classes(({ light: true, hidden: mode !== APP_MODE.NORMAL }))}>
               {playersView}
-            </div>
+            </div> */}
 
-            <div class={classes(({ hidden: mode !== 'browse' }))}>
-              <DoomScroll prompt initial={3} items={allProjects.drafts.filter(notCurrentProject)} factory={(id: string) =>
-                <ProjectView
-                  key={id}
-                  id={id}
-                  primary={false}
-                  onSelect={$.onProjectSelect}
-                />
-              } />
-
-              <h2>Liked:</h2>
-
-              <DoomScroll prompt initial={3} items={allProjects.liked.filter(notCurrentProject)} factory={(id: string) =>
-                <ProjectView
-                  key={id}
-                  id={id}
-                  primary={false}
-                  onSelect={$.onProjectSelect}
-                />
-              } />
-
-              <h2>Latest:</h2>
-
-              <DoomScroll prompt initial={3} items={allProjects.recent.filter(notCurrentProject)} factory={(id: string) =>
-                <ProjectView
-                  key={id}
-                  id={id}
-                  primary={false}
-                  onSelect={$.onProjectSelect}
-                />
-              } />
-            </div>
           </main>
 
           <footer>🔔</footer>
@@ -970,27 +513,6 @@ export const App = web(view('app',
   }
 ))
 
-function isDraft(id: string) {
-  const [, , kind] = id.split(DELIMITERS.SAVE_ID)
-  return kind === PROJECT_KINDS.DRAFT
-}
-
-function getDateTime(id: string) {
-  const [, date] = id.split(DELIMITERS.SAVE_ID)
-  return new Date(date).getTime()
-}
-
-function byDateDescending(a: string, b: string) {
-  return getDateTime(b) - getDateTime(a)
-}
-
-function makeProjects(projects: string[], likes: string[]) {
-  return {
-    drafts: projects.filter((id) => isDraft(id)).sort(byDateDescending),
-    liked: projects.filter((id) => !isDraft(id) && likes.includes(id)).sort(byDateDescending),
-    recent: projects.filter((id) => !isDraft(id) && !likes.includes(id)).sort(byDateDescending)
-  }
-}
 ////////////////
 
 // export const Skeleton = view('skeleton',

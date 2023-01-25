@@ -47,7 +47,7 @@ export const Midi = web(view('midi',
         --note-color: ${skin.colors.brightGreen};
         contain: size layout style paint;
         pointer-events: none;
-        font-family: 'Barlow Semi Condensed', sans-serif;
+        font-family: ${skin.fonts.cond};
 
         font-size: 13px;
         /* &(:not([state=running])) {
@@ -143,12 +143,10 @@ export const Midi = web(view('midi',
                 MidiOps.has(x.data[0]) && x.receivedTime < numberOfBars * 1000
               )
 
-          let [minNote, maxNote] = midiRange
-
-          minNote -= 1
-          maxNote -= 1
+          const [minNote, maxNote] = midiRange
 
           const heightScale = (maxNote - minNote)
+
           const fullTime = numberOfBars * 1000
 
           const width = 1 / numberOfBars
@@ -166,7 +164,7 @@ export const Midi = web(view('midi',
               return [
                 new Rect(
                   (noteOn.receivedTime / 1000) * width,
-                  (heightScale - (noteOn.data[1] - minNote)) * height,
+                  (heightScale - (noteOn.data[1] - minNote) - 1) * height,
                   (((noteOff?.receivedTime ?? fullTime) - noteOn.receivedTime) / 1000) * width,
                   height
                 ),

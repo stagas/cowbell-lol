@@ -1,17 +1,21 @@
-import { cheapRandomId, pick } from 'everyday-utils'
+import { cheapRandomId, Deferred, pick } from 'everyday-utils'
 import { Scalar } from 'geometrik'
 import { chain, queue, reactive } from 'minimal-view'
 import { MonoNode } from 'mono-worklet'
 import { LoopKind, SchedulerEventGroupNode } from 'scheduler-node'
-import { Audio, AudioPlayer, AudioState } from './audio'
+import { Audio, AudioState } from './audio'
+import { AudioPlayer } from './audio-player'
 import { EditorBuffer } from './editor-buffer'
 import { Library } from './library'
-import { PlayerView } from './player-view'
+import { Project } from './project'
 import { services } from './services'
 import { fixed, markerForSlider } from './slider'
-import { areSlidersCompatible, getCodeWithoutArgs, getSliders } from './util/args'
+import { areSlidersCompatible, getCodeWithoutArgs } from './util/args'
 import { add, del, derive, findEqual, get, getMany } from './util/list'
+import { noneOf, oneOf } from './util/one-of'
 import { spacer } from './util/storage'
+
+export const players = new Set<Player>()
 
 const { clamp } = Scalar
 
@@ -28,9 +32,6 @@ export const Player = reactive('player',
   class props {
     id?: string = cheapRandomId()
 
-    state?: AudioState = 'init'
-    compileState?: 'init' | 'compiling' | 'compiled' = 'init'
-
     isPreview?= false
 
     vol: number = 0.5
@@ -38,22 +39,23 @@ export const Player = reactive('player',
     patterns!: string[]
     pattern!: number
 
+    project?: Project
     audioPlayer?: AudioPlayer
-    audio?: Audio
-    library?: Library
-
-    view?: PlayerView
+    // view?: PlayerView
   },
 
   class local {
+    state: AudioState = 'init'
+    compileState: 'init' | 'compiling' | 'compiled' = 'init'
+    connectedState: 'disconnected' | 'connected' = 'disconnected'
+
+    audio?: Audio
+    library?: Library
     preview = false
 
     totalBars?: number
     patternOffsets?: number[]
 
-    // TODO:
-    // these are EditorBuffer[] but TS goes into infinite loop
-    // in App
     soundBuffer?: EditorBuffer
     patternBuffer?: EditorBuffer
     patternBuffers?: EditorBuffer[]
@@ -66,31 +68,78 @@ export const Player = reactive('player',
     groupNode?: SchedulerEventGroupNode
   },
 
-  function actions({ $, fns, fn }) {
-    // let tick = () => { }
+  function actions({ $, fx, fns, fn }) {
+    let startPromise: Promise<unknown>
 
     return fns(new class actions {
-      derive = () =>
-        Object.assign(
-          pick($, ['sound', 'pattern', 'vol']),
-          { patterns: [...$.patterns] }
-        )
-
-      start = (resetTime = false) => {
-        if ($.state === 'running') return
+      start = fn(({ audioPlayer }) => async (resetTime = false, startAudioPlayer = true) => {
+        if (oneOf($.state, 'preparing', 'running')) {
+          return startPromise
+        }
 
         // TODO: is this necessary?
         if (resetTime) {
           $.currentTime = $.turn = 0
         }
 
-        $.state = 'running'
-      }
+        if (!$.audio) {
+          $.audio = services.$.audio!
+        }
 
-      stop = () => {
+        $.state = 'preparing'
+
+        const deferred = Deferred<void>()
+
+        startPromise = deferred.promise
+
+        if ($.project) {
+          if (noneOf($.audio.$.state, 'preparing', 'running')) {
+            $.audio.$.bpm = $.project.$.bpm!
+          }
+          $.project.$.audio = $.audio
+        }
+
+        await new Promise<void>((resolve) =>
+          audioPlayer.fx(({ audio: _ }) => resolve())
+        )
+
+        await new Promise<void>((resolve) => {
+          const off = fx(({ compileState, connectedState }) => {
+            if (compileState === 'compiled' && connectedState === 'connected') {
+              off()
+              resolve()
+            }
+          })
+        })
+
+        if (startAudioPlayer) {
+          await audioPlayer.$.start(resetTime)
+        }
+
+        $.state = 'running'
+
+        deferred.resolve()
+
+        return startPromise
+      })
+
+      stop = (resetTime = false) => {
         if ($.state === 'suspended') return
 
         $.state = 'suspended'
+
+        if (resetTime) {
+          $.currentTime = $.turn = 0
+        }
+
+        if ($.project) {
+          if ($.project.$.players.every((player) =>
+            noneOf(player.$.state, 'preparing', 'running')
+          )) {
+            $.project.$.stop()
+          }
+        }
+        // TODO: stop rest
       }
 
       toggle = () => {
@@ -336,10 +385,23 @@ export const Player = reactive('player',
 
         }
       })
+
+      derive = () =>
+        Object.assign(
+          pick($, ['sound', 'pattern', 'vol']),
+          { patterns: [...$.patterns] }
+        )
     })
   },
 
   function effects({ $, fx, deps, refs }) {
+    fx(() => {
+      players.add($.self)
+      return () => {
+        players.delete($.self)
+      }
+    })
+
     fx(() =>
       services.fx(({ library }) => {
         $.library = library
@@ -391,6 +453,10 @@ export const Player = reactive('player',
       }
     })
 
+    fx(({ project }) => {
+      $.audioPlayer = project.$.audioPlayer
+    })
+
     fx(({ audio, audioPlayer }) =>
       audioPlayer.fx(({ destNode }) =>
         audio.fx(({ disconnect, monoNodePool, gainNodePool, groupNodePool }) =>
@@ -404,9 +470,16 @@ export const Player = reactive('player',
             audio.$.connectedNodes.add(gainNode)
             audio.$.connectedNodes.add(groupNode)
 
-            console.log('connect mononode', id)
+            groupNode.connect(monoNode)
+            groupNode.suspend(monoNode)
+            gainNode.connect(destNode)
+            monoNode.connect(gainNode)
+
+            console.log('create', $.sound)
+
+            console.log('connect mononode:', id, '- sound:', $.sound)
             return () => {
-              console.log('disconnect mononode', id)
+              console.log('disconnect mononode:', id, '- sound:', $.sound)
 
               audio.$.connectedNodes.delete(monoNode)
               audio.$.connectedNodes.delete(gainNode)
@@ -434,28 +507,27 @@ export const Player = reactive('player',
       )
     )
 
-    fx(({ audio, audioPlayer, state, preview, monoNode, gainNode, groupNode }) => {
-      if (state === 'running' || preview) {
+    fx(({ audio, state, preview, monoNode, gainNode, groupNode }) => {
+      if (oneOf(state, 'preparing', 'running') || preview) {
         audio.$.setParam(gainNode.gain, $.vol)
 
-        monoNode.resume()
-
-        gainNode.connect(audioPlayer.$.destNode!)
-        monoNode.connect(gainNode)
-
-        // if (state === 'running') {
-        groupNode.connect(monoNode)
         groupNode.resume(monoNode)
-        // }
+        monoNode.resume()
+        // gainNode.connect(audioPlayer.$.destNode!)
+        // monoNode.connect(gainNode)
+
+        $.connectedState = 'connected'
       } else {
         audio.$.setParam(gainNode.gain, 0)
 
         monoNode.suspend()
         groupNode.suspend(monoNode)
 
-        audio.$.disconnect(monoNode, gainNode)
-        audio.$.disconnect(gainNode, audioPlayer.$.destNode!)
-        audio.$.disconnect(groupNode, monoNode)
+        // audio.$.disconnect(monoNode, gainNode)
+        // audio.$.disconnect(gainNode, audioPlayer.$.destNode!)
+        // audio.$.disconnect(groupNode, monoNode)
+
+        $.connectedState = 'disconnected'
       }
     })
 

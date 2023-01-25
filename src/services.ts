@@ -1,6 +1,10 @@
-import { reactive } from 'minimal-view'
+import { EditorScene } from 'canvy'
+import { Matrix, Point, Rect } from 'geometrik'
+import { on, reactive } from 'minimal-view'
 import { Audio } from './audio'
+import { AudioPlayer } from './audio-player'
 import { library, Library } from './library'
+import { Player } from './player'
 import { Preview, createPreview } from './preview-service'
 import { Skin, skin } from './skin'
 import { getSliders } from './util/args'
@@ -9,11 +13,15 @@ import { Waveplot, createWaveplot } from './waveplot'
 
 export const Services = reactive('services',
   class props {
+    apiUrl?: string
     sampleRate?= storage.sampleRate.get(44100)
     latencyHint?= storage.latencyHint.get(0.04)
     previewSampleRate?= storage.previewSampleRate.get(22050)
   },
   class local {
+    state: 'idle' | 'deleting' = 'idle'
+
+    href: string = location.href
     username: string = storage.username.get('guest')
     loggedIn = false
     skin?: Skin = skin
@@ -22,19 +30,105 @@ export const Services = reactive('services',
     preview?: Preview
     library: Library = library
     likes: string[] = storage.likes.get([])
+    editorScene = new EditorScene({
+      isValidTarget: (el) => {
+        const part = el.getAttribute('part')
+        if (part === 'canvas') return true
+        return false
+      },
+      layout: {
+        viewMatrix: new Matrix,
+        state: {
+          isIdle: true
+        },
+        viewFrameNormalRect: new Rect(0, 0, 10000, 10000),
+        pos: new Point(0, 0)
+      }
+    })
+
+    previewAudioPlayer?: AudioPlayer // = AudioPlayer({})
+    previewPlayer?: Player
+    //  = Player({
+    //   vol: 0.45,
+    //   sound: 'sk',
+    //   pattern: 0,
+    //   patterns: ['k'],
+    //   isPreview: true,
+    //   audioPlayer: this.previewAudioPlayer
+    // })
   },
   function actions({ $, fn, fns }) {
-    return fns(new class actions {
-      tryLogin = async () => {
-        const res = await fetch(
-          'https://gho.devito.test:3030/whoami',
-          { credentials: 'include' }
-        )
+    const urlHistory: string[] = [location.href]
 
-        if (res.ok) {
-          $.username = (await res.text()) || 'guest'
+    return fns(new class actions {
+      // backend
+
+      apiRequest = fn(({ apiUrl }) => (endpoint: string, init?: RequestInit) =>
+        fetch(
+          `${apiUrl}${endpoint}`,
+          { credentials: 'include', ...init }
+        )
+      )
+
+      tryLogin = async () => {
+        try {
+          const res = await this.apiRequest('/whoami')
+
+          if (res.ok) {
+            const username = await res.text()
+            $.username = username.length < 25 && username || 'guest'
+          }
+        } catch (error) {
+          $.username = 'guest'
         }
       }
+
+      // navigation
+
+      go = (pathname: string, searchParams: Record<string, string>) => {
+        if (!pathname.startsWith('.') && !pathname.startsWith('/')) {
+          pathname = '/' + pathname
+        }
+
+        const url = new URL(pathname, location.origin)
+
+        Object.entries(searchParams).forEach(([key, value]) => {
+          url.searchParams.set(key, value)
+        })
+
+        if (url.href !== location.href) {
+          if (urlHistory.at(-2) === url.href) {
+            history.back()
+            this.onWindowPopState()
+          } else {
+            history.pushState({}, '', url)
+            this.onWindowPopState()
+          }
+        }
+      }
+
+      linkTo = (pathname: string, searchParams: Record<string, string> = {}) => (e?: PointerEvent | MouseEvent) => {
+        e?.preventDefault?.()
+        e?.stopPropagation?.()
+        this.go(pathname, searchParams)
+      }
+
+      onNavigation = () => {
+        if (urlHistory.at(-2) === location.href) {
+          urlHistory.pop()
+        } else if (urlHistory.at(-1) !== location.href) {
+          urlHistory.push(location.href)
+        }
+        $.href = location.href
+      }
+
+      onWindowPopState = () => {
+        setTimeout(() => {
+          this.onNavigation()
+        })
+      }
+
+      // misc
 
       getSliders = fn(({ sampleRate }) =>
         (code: string) =>
@@ -47,10 +141,42 @@ export const Services = reactive('services',
             numberOfBars: 1
           })
       )
+
+      sendTestNote = fn(({ previewPlayer }) => () => {
+        let delay = 0
+
+        if (!previewPlayer.$.preview) delay = 50
+
+        const off = previewPlayer.fx(({ compileState, connectedState, preview }) => {
+          if (compileState === 'compiled' && connectedState === 'connected' && preview) {
+            setTimeout(() => {
+              this.onMidiEvent(Object.assign(
+                new MIDIMessageEvent('message', {
+                  data: new Uint8Array([144, 40, 127])
+                }),
+                { receivedTime: 0 }
+              ) as any)
+            }, delay)
+            off()
+          }
+        })
+        previewPlayer.$.startPreview()
+      })
+
+      // midi
+
+      onMidiEvent = fn(({ previewPlayer }) => (e: WebMidi.MIDIMessageEvent) => {
+        previewPlayer.$.startPreview()
+        previewPlayer.$.monoNode!.processMidiEvent(e)
+      })
     })
   },
   function effects({ $, fx }) {
-    fx(() => {
+    fx(() =>
+      on(window, 'popstate')(services.$.onWindowPopState)
+    )
+
+    fx(({ apiUrl: _ }) => {
       $.tryLogin()
     })
 
@@ -67,6 +193,20 @@ export const Services = reactive('services',
         sampleRate,
         latencyHint,
       })
+    })
+
+    fx(({ audio }) => {
+      $.previewAudioPlayer = AudioPlayer({})
+      $.previewPlayer = Player({
+        vol: 0.45,
+        sound: 'sk',
+        pattern: 0,
+        patterns: ['k'],
+        isPreview: true,
+        audioPlayer: $.previewAudioPlayer
+      })
+      $.previewPlayer.$.audio = audio
+      $.previewPlayer.$.audioPlayer!.$.audio = audio
     })
 
     fx(({ likes }) => {

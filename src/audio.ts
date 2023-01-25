@@ -1,123 +1,17 @@
-import { attempt, cheapRandomId } from 'everyday-utils'
+import { attempt, Deferred } from 'everyday-utils'
 import { on, reactive } from 'minimal-view'
 import { MonoNode } from 'mono-worklet'
 import { SchedulerNode, SchedulerEventGroupNode, SchedulerTargetNode } from 'scheduler-node'
-import { anim } from './anim'
+import { app } from './app'
+import { AudioPlayer } from './audio-player'
+import { Player, players } from './player'
+import { projects } from './project'
+import { filterState } from './util/filter-state'
+import { oneOf } from './util/one-of'
 import { ObjectPool } from './util/pool'
 import { storage } from './util/storage'
 
-export type AudioState = 'init' | 'running' | 'suspended' | 'preview'
-
-export const AudioPlayer = reactive('audio-player',
-  class props {
-    id?: string = cheapRandomId()
-    vol?: number = storage.vol.get(0.35)
-    audio?: Audio | undefined
-    isSpeakers?: boolean = false
-  },
-
-  class local {
-    state: AudioState = 'init'
-    destNode?: GainNode
-    gainNode?: GainNode
-    analyserNode?: AnalyserNode
-    bytes?: Uint8Array
-    freqs?: Uint8Array
-    workerBytes?: Uint8Array
-    workerFreqs?: Uint8Array
-  },
-
-  function actions({ $, fn, fns }) {
-    let tick = () => { }
-
-    return fns(new class actions {
-      analyseStart = fn(({ analyserNode, bytes, freqs, workerBytes, workerFreqs }) => {
-        tick = () => {
-          analyserNode.getByteTimeDomainData(bytes)
-          analyserNode.getByteFrequencyData(freqs)
-          workerBytes.set(bytes)
-          workerFreqs.set(freqs)
-          anim.schedule(tick)
-        }
-
-        return () => {
-          anim.schedule(tick)
-        }
-      })
-
-      analyseStop = fn(({ workerBytes, workerFreqs }) => () => {
-        workerBytes.fill(128)
-        workerFreqs.fill(0)
-        anim.remove(tick)
-      })
-
-      start = fn(({ audio }) => async (resetTime = false) => {
-        if ($.state === 'running') return
-
-        $.state = 'running'
-
-        await audio.$.start(resetTime)
-
-        this.analyseStart()
-      })
-
-      stop = fn(({ audio }) => (resetTime = true) => {
-        $.state = 'suspended'
-        this.analyseStop()
-        audio.$.stop(resetTime)
-      })
-
-      toggle = () => {
-        if ($.state === 'running') {
-          this.stop(false)
-        } else {
-          this.start()
-        }
-      }
-    })
-  },
-
-  function effects({ $, fx }) {
-    fx(({ analyserNode }) => {
-      $.bytes = new Uint8Array(analyserNode.fftSize)
-      $.freqs = new Uint8Array(analyserNode.frequencyBinCount)
-    })
-
-    fx(({ bytes, freqs }) => {
-      $.workerBytes = new Uint8Array(new SharedArrayBuffer(bytes.byteLength))
-        .fill(128) // center it at 128 (0-256)
-      $.workerFreqs = new Uint8Array(new SharedArrayBuffer(freqs.byteLength))
-    })
-
-    fx(({ audio }) =>
-      fx(({ gainNode, vol }) => {
-        audio.$.setParam(gainNode.gain, vol)
-      })
-    )
-
-    fx(({ audio, isSpeakers }) =>
-      audio.fx(async ({ audioContext, analyserNodePool, gainNodePool, destPlayer }) => {
-        $.analyserNode = await analyserNodePool.acquire()
-        $.gainNode = await gainNodePool.acquire()
-        $.destNode = await gainNodePool.acquire()
-
-        $.destNode.gain.value = 1
-        $.destNode.connect($.analyserNode)
-        $.destNode.connect($.gainNode)
-
-        if (isSpeakers) {
-          $.gainNode.connect(audioContext.destination)
-        } else {
-          return destPlayer.fx(({ destNode }) => {
-            $.gainNode!.connect(destNode)
-          })
-        }
-      })
-    )
-  }
-)
-
-export type AudioPlayer = typeof AudioPlayer.State
+export type AudioState = 'init' | 'preparing' | 'running' | 'suspended' | 'preview'
 
 export const Audio = reactive('audio',
   class props {
@@ -131,7 +25,7 @@ export const Audio = reactive('audio',
     connectedNodes = new Set<AudioNode | SchedulerEventGroupNode>()
 
     destPlayer?: AudioPlayer = AudioPlayer({
-      vol: 1,
+      vol: storage.vols.get('audio', 0.5),
       isSpeakers: true
     })
 
@@ -140,7 +34,7 @@ export const Audio = reactive('audio',
 
     schedulerNode?: SchedulerNode
     startTime = 0
-    delayStart = 0.15
+    delayStart = 0.2
     internalTime = -this.delayStart
     repeatStartTime = 0
     repeatState: 'none' | 'turn' | 'bar' = 'none'
@@ -155,13 +49,42 @@ export const Audio = reactive('audio',
   },
   function actions({ $, fns, fn }) {
     let lastReceivedTime = 0
+    let lastRunningPlayers: Set<Player> | null
     let repeatIv: any
+    let startPromise: Promise<number>
 
     return fns(new class actions {
-      start = fn(({ audioContext, schedulerNode }) => async (resetTime = false) => {
-        if ($.state === 'running') return
+      startClick = async (resetTime = true) => {
+        if (lastRunningPlayers?.size) {
+          const audioPlayersToStart: AudioPlayer[] = []
+          await Promise.all(
+            [...lastRunningPlayers].map((player) =>
+              new Promise<void>((resolve) => player.fx.once.task(async ({ audioPlayer }) => {
+                audioPlayersToStart.push(audioPlayer)
+                await player.$.start(resetTime, false)
+                resolve()
+              }))
+            )
+          )
+          return Promise.all(
+            audioPlayersToStart.map((audioPlayer) => new Promise<unknown>((resolve) => {
+              audioPlayer.$.start().then(resolve)
+            }))
+          )
+        } else {
+          return app.$.project.$.start()
+        }
+      }
 
-        $.state = 'running'
+      start = fn(({ audioContext, schedulerNode }) => async (resetTime = false) => {
+        if (oneOf($.state, 'preparing', 'running')) {
+          return startPromise
+        }
+
+        const deferred = Deferred<number>()
+        startPromise = deferred.promise
+
+        $.state = 'preparing'
 
         const now = audioContext.currentTime
         lastReceivedTime = now
@@ -169,6 +92,8 @@ export const Audio = reactive('audio',
         if (resetTime) {
           this.resetTime()
         }
+
+        lastRunningPlayers = null
 
         $.startTime = await schedulerNode.start(now + $.delayStart, $.internalTime + $.delayStart)
 
@@ -179,8 +104,18 @@ export const Audio = reactive('audio',
           repeatIv = setInterval(loop, 1000 / $.coeff)
         }
 
-        return $.startTime
+        $.state = 'running'
+
+        deferred.resolve($.startTime)
+
+        return startPromise
       })
+
+      stopClick = (resetTime = true) => {
+        // TODO: wait for 'preparing' to settle or something else? AbortController?
+        lastRunningPlayers = filterState(players, 'running')
+        this.stop(resetTime)
+      }
 
       stop = fn(({ schedulerNode }) => (resetTime = true) => {
         clearInterval(repeatIv)
@@ -194,13 +129,17 @@ export const Audio = reactive('audio',
         $.state = 'suspended'
 
         schedulerNode.stop()
+
+        filterState(projects, 'running').forEach((project) => {
+          project.$.stop()
+        })
       })
 
       toggle = () => {
         if ($.state === 'running') {
-          this.stop(false)
+          this.stopClick(false)
         } else {
-          this.start()
+          this.startClick()
         }
       }
 
@@ -315,7 +254,7 @@ export const Audio = reactive('audio',
 
     fx(async ({ audioContext, schedulerNode, fftSize }) => {
       $.gainNodePool = new ObjectPool(() => {
-        return new GainNode(audioContext, { channelCount: 1, gain: 0 })
+        return new GainNode(audioContext, { channelCount: 1, gain: 1 })
       })
 
       $.monoNodePool = new ObjectPool(async () => {

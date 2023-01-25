@@ -10,7 +10,7 @@ import { services } from './services'
 
 export { Slider }
 
-export const KnobView = web(view('slider-view',
+export const KnobView = web(view('knob-view',
   class props {
     id?= cheapRandomId()
     theme?: string = 'cowbell'
@@ -20,6 +20,8 @@ export const KnobView = web(view('slider-view',
 
     player?: Player
     vol?: Dep<number>
+
+    knobRef?: Dep<InstanceType<typeof Knob.Element>>
 
     children?: JSX.Element
   },
@@ -132,9 +134,6 @@ export const KnobView = web(view('slider-view',
 
     fx(({ slider, knob }) =>
       chain(
-        // slider.fx.raf(({ value }) => {
-        //   knob.$.value = value
-        // }),
         knob.$.self.fx(({ normal }) => {
           if ($.player) {
             $.player.$.onSliderNormal($.id!, normal)
@@ -144,6 +143,10 @@ export const KnobView = web(view('slider-view',
         })
       )
     )
+
+    fx(({ knob, knobRef }) => {
+      knobRef.value = knob
+    })
 
     fx(({ slider }) =>
       slider.fx(({ hue }) =>
@@ -163,6 +166,10 @@ export const KnobView = web(view('slider-view',
       if ($.theme !== 'ableton') {
         $.css = /*css*/`
         ${skin.css}
+
+        & {
+          pointer-events: none;
+        }
         `
       }
     })

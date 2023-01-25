@@ -4,7 +4,7 @@ const g = globalThis
 
 if (!g.didSetup) {
   Array.prototype.get = function (x) {
-    return this[modWrap(x, this.length) | 0]
+    return this[modWrap(x, this.length) | 0] + ((x / this.length) | 0) * 12
   }
 
   // adapted from https://github.com/hdavid/Launchpad95

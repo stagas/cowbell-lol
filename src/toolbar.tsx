@@ -15,6 +15,8 @@ export const Toolbar = web(view('toolbar',
   },
 
   class local {
+    volKnob?: InstanceType<typeof Knob.Element>
+
     bar?: HTMLSpanElement
     beat?: HTMLSpanElement
     sixt?: HTMLSpanElement
@@ -73,6 +75,8 @@ export const Toolbar = web(view('toolbar',
       }
 
       .logo {
+        cursor: pointer;
+        user-select: none;
         padding-right: 40px;
         h1 {
           display: flex;
@@ -99,19 +103,19 @@ export const Toolbar = web(view('toolbar',
           .l {
             color: ${skin.colors.brightCyan};
             display: inline-block;
-            transform: rotate(21deg) scale(1.5) translateY(-2px);
+            transform: rotate(21deg) scale(1.42) translateY(-2px);
           }
 
           .o {
             color: ${skin.colors.brightGreen};
             display: inline-block;
-            transform: translateX(-0.35px) translateY(-1.5px) scale(1.0);
+            transform: translateX(0.18px) translateY(-1.1px) scale(0.97);
           }
 
           .l2 {
             color: ${skin.colors.yellow};
             display: inline-block;
-            transform: rotate(-25deg) scale(1.71) translateX(2.86px) translateY(-1.1px);
+            transform: rotate(-25deg) scale(1.67) translateX(2.86px) translateY(-1.1px);
           }
         }
 
@@ -123,7 +127,7 @@ export const Toolbar = web(view('toolbar',
           font-size: 11.5px;
           letter-spacing: 2.51px;
           position: relative;
-          top: -4px;
+          top: -7px;
           left: .8px;
           font-family: ${skin.fonts.sans};
         }
@@ -135,7 +139,7 @@ export const Toolbar = web(view('toolbar',
         }
 
         .lol {
-          transform: scale(1.72) translateY(.55px) translateX(12px) !important;
+          transform: scale(1.66) translateY(.7px) translateX(12px) !important;
         }
       }
 
@@ -156,6 +160,13 @@ export const Toolbar = web(view('toolbar',
         }
         &::part(fill) {
           stroke: ${skin.colors.brightGreen}40;
+        }
+        &::part(line) {
+          stroke-width: 2.85px;
+        }
+        &::part(fill),
+        &::part(fill-value) {
+          stroke-width: 2.85px;
         }
       }
 
@@ -307,103 +318,103 @@ export const Toolbar = web(view('toolbar',
     )
 
     services.fx(({ skin, audio }) =>
-      audio.fx(({ repeatState }) =>
-        fx(({ project }) =>
-          project.fx(({ audioPlayer }) =>
-            audioPlayer.fx(({ state }) => {
-              $.view = <>
-                <div class="inner">
-                  <div class="logo">
-                    <h1 key={project}>
-                      <div class="cowbell">
-                        cowbell
-                        <span class="dot">.</span>
-                      </div>
-                      <div class="lol">
-                        <span class="l">l</span>
-                        <span class="o">
-                          <Volume target={audioPlayer} theme="ableton" bare />
-                        </span>
-                        {/* <span class="o">o</span> */}
-                        <span class="l2">l</span>
-                      </div>
-                    </h1>
-                    <span class="motto">needs more</span>
+      fx(({ project }) =>
+        audio.fx(({ state, repeatState, destPlayer }) => {
+          $.view = <>
+            <div class="inner">
+              <div class="logo" onclick={services.$.linkTo('/')} onwheel={(e) => {
+                e.preventDefault()
+                e.stopPropagation()
+                $.volKnob?.$.onWheel(e)
+              }}>
+                <h1 key={project}>
+                  <div class="cowbell">
+                    cowbell
+                    <span class="dot">.</span>
                   </div>
-
-                  <div class="controls">
-                    <Button onClick={project.$.stop}>
-                      <span class="i la-stop" />
-                    </Button>
-                    <Button
-                      active={state === 'running'}
-                      onClick={project.$.toggle}
-                    >
-                      <span class={`i la-${state === 'running' ? 'pause' : 'play'}`} />
-                    </Button>
-                    <Button
-                      active={repeatState !== 'none'}
-                      onClick={audio.$.toggleRepeat}
-                      style={`--backlight-color: ${skin.colors.brightPurple}; --backlight-color-trans: ${skin.colors.brightPurple}35;`}
-                    >
-                      <span class={`i mdi-light-repeat${repeatState === 'bar' ? ''/*'-once'*/ : ''}`} />
-                    </Button>
-                    <Button
-                      onClick={audio.$.seekTime(-1)}
-                    >
-                      <span class="i la-backward" />
-                    </Button>
-                    <Button
-                      onClick={audio.$.seekTime(+1)}
-                    >
-                      <span class="i la-forward" />
-                    </Button>
+                  <div class="lol">
+                    <span class="l">l</span>
+                    <span class="o">
+                      <Volume knobRef={deps.volKnob} target={destPlayer} theme="ableton" bare />
+                    </span>
+                    {/* <span class="o">o</span> */}
+                    <span class="l2">l</span>
                   </div>
+                </h1>
+                <span class="motto">needs more</span>
+              </div>
 
-                  <div class="display">
-                    <div class="bpm">
-                      <span class="words">BPM</span>
-                      <div class="value">
-                        <NumberInput
-                          style="height:30px"
-                          class="bpm-control"
-                          min={1}
-                          max={666}
-                          value={audio.deps.bpm}
-                          step={1}
-                          align="x"
-                        />
-                        {/*                 <span class="dec bpm-control i mdi-light-chevron-left"></span>
+              <div class="controls">
+                <Button onClick={audio.$.stopClick}>
+                  <span class="i la-stop" />
+                </Button>
+                <Button
+                  active={state === 'running'}
+                  onClick={audio.$.toggle}
+                >
+                  <span class={`i la-${state === 'running' ? 'pause' : 'play'}`} />
+                </Button>
+                <Button
+                  active={repeatState !== 'none'}
+                  onClick={audio.$.toggleRepeat}
+                  style={`--backlight-color: ${skin.colors.brightPurple}; --backlight-color-trans: ${skin.colors.brightPurple}35;`}
+                >
+                  <span class={`i mdi-light-repeat${repeatState === 'bar' ? ''/*'-once'*/ : ''}`} />
+                </Button>
+                <Button
+                  onClick={audio.$.seekTime(-1)}
+                >
+                  <span class="i la-backward" />
+                </Button>
+                <Button
+                  onClick={audio.$.seekTime(+1)}
+                >
+                  <span class="i la-forward" />
+                </Button>
+              </div>
+
+              <div class="display">
+                <div class="bpm">
+                  <span class="words">BPM</span>
+                  <div class="value">
+                    <NumberInput
+                      style="height:30px"
+                      class="bpm-control"
+                      min={1}
+                      max={666}
+                      value={audio.deps.bpm}
+                      step={1}
+                      align="x"
+                    />
+                    {/*                 <span class="dec bpm-control i mdi-light-chevron-left"></span>
                 <span class="amt">125</span>
                 <span class="inc bpm-control i mdi-light-chevron-right"></span> */}
-                      </div>
-                    </div>
-                    <div class="beats">
-                      <span class="words">BEAT</span>
-                      <div class="value">
-                        <span class="bar" ref={refs.bar}>001</span>
-                        <span class="dot">.</span>
-                        <span class="beat" ref={refs.beat}>1</span>
-                        <span class="dot">.</span>
-                        <span class="sixt" ref={refs.sixt}>01</span>
-                      </div>
-                    </div>
-                    <div class="time">
-                      <span class="words">TIME</span>
-                      <div class="value">
-                        <span class="mins" ref={refs.mins}>0</span>
-                        <span class="dot">:</span>
-                        <span class="secs" ref={refs.secs}>00</span>
-                        <span class="dot">:</span>
-                        <span class="mill" ref={refs.mill}>000</span>
-                      </div>
-                    </div>
                   </div>
                 </div>
-              </>
-            })
-          )
-        )
+                <div class="beats">
+                  <span class="words">BEAT</span>
+                  <div class="value">
+                    <span class="bar" ref={refs.bar}>001</span>
+                    <span class="dot">.</span>
+                    <span class="beat" ref={refs.beat}>1</span>
+                    <span class="dot">.</span>
+                    <span class="sixt" ref={refs.sixt}>01</span>
+                  </div>
+                </div>
+                <div class="time">
+                  <span class="words">TIME</span>
+                  <div class="value">
+                    <span class="mins" ref={refs.mins}>0</span>
+                    <span class="dot">:</span>
+                    <span class="secs" ref={refs.secs}>00</span>
+                    <span class="dot">:</span>
+                    <span class="mill" ref={refs.mill}>000</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </>
+        })
       )
     )
   }
