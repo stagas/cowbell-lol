@@ -2,11 +2,6 @@ import { Scalar } from 'geometrik'
 import { reactive } from 'minimal-view/reactive'
 import { pick, isEqual, cheapRandomId } from 'everyday-utils'
 import type { Marker } from 'canvy'
-import { app } from './app'
-// import { Dep } from 'minimal-view'
-// import { app, Player } from './app'
-// import type { EditorBuffer } from './editor-buffer'
-// import { get } from './util/list'
 
 const { clamp } = Scalar
 
@@ -112,7 +107,6 @@ export const Slider = reactive('slider',
 
     fx(({ normal, scale, min }) => {
       $.value = fixed(normal * scale + min)
-      app?.$.autoSave()
     })
 
     //   fx(({ vol, normal }) => {

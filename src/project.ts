@@ -1,11 +1,11 @@
-import { cheapRandomId, checksum, pick } from 'everyday-utils'
-import { chain, reactive } from 'minimal-view'
+import { cheapRandomId, pick } from 'everyday-utils'
+import { chain, queue, reactive } from 'minimal-view'
 import { Audio, AudioState } from './audio'
 import { EditorBuffer } from './editor-buffer'
 import { Player } from './player'
 import { services } from './services'
 import { getByChecksum } from './util/list'
-import { Library, mapToBuffer } from './library'
+import { Library, toBuffer } from './library'
 import { demo } from './demo-code'
 import { checksumId } from './util/checksum-id'
 import { schemas } from './schemas'
@@ -28,21 +28,33 @@ export type ProjectJson = {
   }[],
 }
 
-export const projects = new Map<string, Project>()
+export let projects = new Map<string, Project>()
+
+export const putProjectOnTop = (project: Project) => {
+  const entries = [...projects.entries()]
+
+  projects = new Map([
+    entries.find(([, p]) => p === project)!,
+    ...entries
+      .filter(([, p]) => p !== project)
+  ])
+}
 
 export const Project = reactive('project',
   class props {
     id?= cheapRandomId()
     checksum?: string
-    bpm?: number = 120
+    bpm?: number
     title?: string = 'Untitled'
     author?: string = 'guest'
     date?: string = new Date().toISOString()
     isDraft?: boolean = true
+    isDeleted?: boolean = false
     remoteProject?: schemas.ProjectResponse
   },
   class local {
     state: AudioState = 'init'
+    startedAt: number = 0
     audio?: Audio | null
     audioPlayer = AudioPlayer({})
     library?: Library
@@ -50,6 +62,7 @@ export const Project = reactive('project',
   },
   function actions({ $, fx, fn, fns }) {
     let projectLoadPromise: Promise<void>
+    let lastSavedJson: ProjectJson | undefined
 
     return fns(new class actions {
       // Audio
@@ -140,14 +153,42 @@ export const Project = reactive('project',
         $.isDraft = false
         $.title = data.project.item.title
         $.author = data.project.item.author
-        this.save()
+        this.save(true)
       }
 
-      save = () => {
-        console.time('saved')
-        const json = this.toJSON()
-        localStorage[json.checksum] = JSON.stringify(json)
-        console.timeEnd('saved')
+      save = (force?: boolean) => {
+        if (!force && !lastSavedJson && !$.players.length) return
+
+        if (force
+          || (
+            lastSavedJson?.checksum !== $.checksum
+            || lastSavedJson?.bpm !== $.bpm
+            || lastSavedJson?.title !== $.title
+            || lastSavedJson?.players?.map((p) => p.vol).join() !== $.players.map((p) => p.$.vol).join()
+          )
+        ) {
+          console.time('saved')
+          const json = this.toJSON()
+
+          if (lastSavedJson) {
+            delete localStorage[lastSavedJson.checksum]
+          }
+
+          localStorage[json.checksum] = JSON.stringify(lastSavedJson = json)
+
+          services.$.updateProjects()
+          console.timeEnd('saved')
+        }
+      }
+
+      autoSave = queue.debounce(1000)(this.save)
+
+      delete = () => {
+        $.isDeleted = true
+      }
+
+      undelete = () => {
+        $.isDeleted = false
       }
 
       load = () => {
@@ -166,6 +207,8 @@ export const Project = reactive('project',
                 throw new Error('No checksum')
               }
               json = JSON.parse(localStorage[checksum])
+              lastSavedJson = json
+              console.log('loaded', checksum, json)
               if (!json.players.length) {
                 throw new Error('Empty project: ' + checksum)
               }
@@ -181,7 +224,7 @@ export const Project = reactive('project',
               } else {
                 json = {
                   isDraft: true,
-                  checksum: '1',
+                  checksum: 'x',
                   bpm: 120,
                   date: new Date().toISOString(),
                   title: 'Untitled',
@@ -254,23 +297,16 @@ export const Project = reactive('project',
         const players: ProjectJson['players'] = (p.mixer as { vol: number }[]).map(({ vol }, i) => {
           const t: schemas.TrackResponse = tracks.find((t) => t.id === p.trackIds[i])!
 
-          // const getChecksumId = (id: number): string => buffers.find((b) => b.id === id)!.checksum
-
-          // const sound: string = getChecksumId(t.soundId)
-          // const patterns: string[] = t.patternIds.map(getChecksumId)
-
-          // console.log(sound, patterns)
-
           const soundBuffer = getByChecksum(library.$.sounds, t.soundId)
 
           if (!soundBuffer) {
-            newSounds.push(mapToBuffer('sound')([0, t.soundId]))
+            newSounds.push(toBuffer('sound')([0, t.soundId]))
           }
 
           t.patternIds.forEach((patternId) => {
             const patternBuffer = getByChecksum(library.$.patterns, patternId)
             if (!patternBuffer) {
-              newPatterns.push(mapToBuffer('pattern')([0, patternId]))
+              newPatterns.push(toBuffer('pattern')([0, patternId]))
             }
           })
 
@@ -294,7 +330,7 @@ export const Project = reactive('project',
           players,
         }
 
-        localStorage[p.id] = JSON.stringify(json)
+        localStorage[p.id] = JSON.stringify(lastSavedJson = json)
 
         this.fromJSON(json)
       })
@@ -330,7 +366,14 @@ export const Project = reactive('project',
        * Get a JSON representation of the project.
        */
       toJSON = fn(({ players }) => (): ProjectJson => ({
-        ...pick($ as Required<typeof $>, ['checksum', 'date', 'bpm', 'title', 'author', 'isDraft']),
+        ...pick($ as Required<typeof $>, [
+          'checksum',
+          'bpm',
+          'date',
+          'title',
+          'author',
+          'isDraft'
+        ]),
         players: players.map((player) => ({
           vol: player.$.vol,
           sound: player.$.soundBuffer!.$.checksum!,
@@ -359,16 +402,27 @@ export const Project = reactive('project',
     })
 
     fx.once(({ checksum, audioPlayer }) => {
-      audioPlayer.$.vol = storage.vols.get(checksum, 1)
-      fx(({ checksum }, prev) => {
-        if (prev.checksum) {
-          storage.vols.delete(checksum)
+      audioPlayer.$.vol = storage.vols.get(checksum, 0.5)
+
+      let lastSavedChecksum: string
+
+      const updateStorageVol = queue.debounce(1000)(() => {
+        if (lastSavedChecksum) {
+          storage.vols.delete(lastSavedChecksum)
         }
-        storage.vols.set(checksum, audioPlayer.$.vol!)
-        return audioPlayer.fx.raf(({ vol }) => {
-          storage.vols.set(checksum, vol)
-        })
+        storage.vols.set(lastSavedChecksum = $.checksum!, audioPlayer.$.vol!)
       })
+
+      updateStorageVol()
+
+      fx(() => chain(
+        fx(({ checksum: _ }) => {
+          updateStorageVol()
+        }),
+        audioPlayer.fx(({ vol: _ }) => {
+          updateStorageVol()
+        })
+      ))
     })
 
     fx(({ audio, audioPlayer }) => {
@@ -433,11 +487,15 @@ export const Project = reactive('project',
       )
     )
 
-    fx(({ checksum: _ }, prev) => {
+    fx(({ checksum: _c, bpm: _b }, prev) => {
       if (prev.checksum && !$.isDraft) {
-        console.log(_, prev.checksum, $.title)
         $.isDraft = true
       }
+      $.autoSave()
+    })
+
+    fx(({ isDeleted: _d }) => {
+      services.$.updateProjects()
     })
   }
 )

@@ -1,16 +1,20 @@
 /** @jsxImportSource minimal-view */
 
-import { cheapRandomId } from 'everyday-utils'
 import memoize from 'memoize-pure'
-import { chain, element, on, queue, ValuesOf, view, web } from 'minimal-view'
+import { chain, element, on, ValuesOf, view, web } from 'minimal-view'
+import { lastRunningPlayers } from './audio'
 import { Button } from './button'
 import { Hint } from './hint'
-import { Project } from './project'
+import { Player, players } from './player'
+import { Project, projects, putProjectOnTop } from './project'
 import { ProjectView } from './project-view'
 import { schemas } from './schemas'
 import { services } from './services'
 import { Toolbar } from './toolbar'
+import { classes } from './util/classes'
+import { filterState } from './util/filter-state'
 import { groupSort } from './util/group-sort'
+import { oneOf } from './util/one-of'
 import { storage } from './util/storage'
 
 export const PROJECT_KINDS = {
@@ -31,6 +35,31 @@ export const APP_MODE = {
   USER_BROWSE: 'userbrowse'
 } as const
 export type AppMode = ValuesOf<typeof APP_MODE>
+
+const cachedProjects = new Map<string, Project>()
+
+function getOrCreateProject(p: schemas.ProjectResponse | { id: string }) {
+  let project = cachedProjects.get(p.id)
+  if (!project) {
+    if ('title' in p) {
+      project = Project({
+        checksum: p.id,
+        title: p.title,
+        bpm: p.bpm,
+        author: p.author,
+        date: p.updatedAt,
+        isDraft: false,
+        remoteProject: p,
+      })
+    } else {
+      project = Project({
+        checksum: p.id,
+      })
+    }
+  }
+  cachedProjects.set(p.id, project)
+  return project
+}
 
 // const projectButtonRefs = new Map<string, HTMLElement>()
 
@@ -109,8 +138,7 @@ export const App = web(view('app',
     // editorEl?: HTMLElement
     // editorBuffer?: EditorBuffer
 
-    project: Project = Project({ checksum: storage.project.get(cheapRandomId()) })
-    projects: string[] = storage.projects.get([this.project.$.checksum!])
+    project?: Project
 
     // remoteProjects: string[] = []
     // allProjects: {
@@ -120,8 +148,19 @@ export const App = web(view('app',
     // } = makeProjects(this.projects, storage.likes.get([]))
 
     mode: AppMode = 'normal'
-    userBrowse?: string
+
+    tab: 'drafts' | 'user' | 'recent' | 'liked' | 'playing' = 'user'
+
+    userBrowse: string = 'guest'
+
+    draftProjects: Project[] = []
     userProjects: Project[][] = []
+    allProjects: Project[][] = []
+    likedProjects: Project[] = []
+    playingProjects: Project[] = []
+
+    visibleProjects: Project[] = []
+    hiddenProjects: Project[] = []
 
     presetsScrollEl?: HTMLDivElement
 
@@ -134,12 +173,6 @@ export const App = web(view('app',
 
     return fns(new class actions {
       // working state
-
-      save = () => {
-        $.project.$.save()
-      }
-
-      autoSave = queue.debounce(1000)(this.save)
 
       // song
 
@@ -195,9 +228,38 @@ export const App = web(view('app',
       //   }
       // }
 
-      onProjectSelect = (project: Project) => {
-        $.project = project
-        $.mode = APP_MODE.NORMAL
+      // onProjectSelect = (project: Project) => {
+      //   $.project = project
+      //   putProjectOnTop(project)
+      //   services.$.updateProjects()
+      //   $.mode = APP_MODE.NORMAL
+      // }
+
+      onMovePlayers = async (project: Project) => {
+        const playersToMove = project.$.players.filter((player) => lastRunningPlayers?.has(player) || player.$.state === 'running')
+          .map((player) => Player({
+            ...player.$.derive(),
+            audioPlayer: $.project!.$.audioPlayer!,
+            project: $.project!
+          }))
+
+        if (!playersToMove.length) return
+
+        // the player .start() method is created in the next tick
+        await Promise.resolve()
+
+        playersToMove.forEach((player) => {
+          player.$.start()
+        })
+
+        $.project!.$.players = [...$.project!.$.players, ...playersToMove]
+
+        project.$.stop()
+
+        $.playingProjects = [...filterState(projects, 'preparing', 'running')]
+          .sort((a, b) =>
+            a.$.startedAt - b.$.startedAt
+          )
       }
     })
   },
@@ -222,13 +284,33 @@ export const App = web(view('app',
 
     fx(async ({ host }) => {
       host.style.opacity = '0'
-      await document.fonts.ready
+      await Promise.race([
+        document.fonts.ready,
+        new Promise((resolve) => setTimeout(resolve, 5000))
+      ])
       host.style.opacity = '1'
     })
 
     fx(({ apiUrl }) => {
       services.$.apiUrl = apiUrl
     })
+
+    fx(({ project }) => {
+      project.$.load()
+    })
+
+    const off = services.fx(({ library }) =>
+      library.fx(({ sounds, patterns }) => {
+        if (sounds.length && patterns.length) {
+          off()
+          const draftIds = storage.projects.get(['x'])
+          $.draftProjects = (draftIds.length ? draftIds : ['x'])
+            .map((id) =>
+              getOrCreateProject({ id })
+            )
+        }
+      })
+    )
 
     services.fx(async ({ apiUrl: _, username }) => {
       const endpoint = `/projects?u=${username}`
@@ -243,20 +325,124 @@ export const App = web(view('app',
 
       $.userProjects = groupSort(projects)
         .map((group) =>
-          group.map((p) =>
-            Project({
-              checksum: p.id,
-              title: p.title,
-              bpm: p.bpm,
-              author: p.author,
-              date: p.updatedAt,
-              isDraft: false,
-              remoteProject: p,
-            })
-          )
+          group.map(getOrCreateProject)
         )
+    })
 
-      console.log($.userProjects)
+    services.fx(async ({ apiUrl: _ }) => {
+      const endpoint = `/projects`
+      const res = await services.$.apiRequest(endpoint)
+      if (!res.ok) {
+        console.error(endpoint, res)
+        return
+      }
+
+      const projects: schemas.ProjectResponse[] = await res.json()
+      console.log(endpoint, projects)
+
+      $.allProjects = groupSort(projects)
+        .map((group) =>
+          group.map(getOrCreateProject)
+        )
+    })
+
+    services.fx.once(async ({ apiUrl: _, likes }) => {
+      if (!likes.length) {
+        $.likedProjects = []
+        return
+      }
+
+      // TODO: only load the ones we don't have
+      const endpoint = `/projects?ids=${likes}`
+      const res = await services.$.apiRequest(endpoint)
+      if (!res.ok) {
+        console.error(endpoint, res)
+        return
+      }
+
+      const projects: schemas.ProjectResponse[] = await res.json()
+      console.log(endpoint, projects)
+
+      $.likedProjects = projects.map(getOrCreateProject)
+    })
+
+    services.fx(({ audio }) =>
+      audio.fx.raf(({ state }) => {
+        if (state === 'running') {
+          return fx(({ tab: _ }) => {
+            if (audio.$.state === 'running') {
+              $.playingProjects = [...filterState(projects, 'preparing', 'running')]
+                .sort((a, b) =>
+                  a.$.startedAt - b.$.startedAt
+                )
+            }
+          })
+        }
+      })
+    )
+
+    fx(({ tab, draftProjects, userBrowse, userProjects, allProjects, likedProjects, playingProjects }) => {
+      const usedProjects = new Set<string>()
+
+      const first = (g: Project[]) => g[0]
+      const add = (p: Project) => !usedProjects.has(p.$.checksum!) && (usedProjects.add(p.$.checksum!), 1)
+      const drafts = (p: Project) => !!p.$.isDraft
+      const not = (fn: (x: Project) => boolean) =>
+        (x: Project) => !fn(x)
+
+      if (tab === 'user' && userBrowse === 'guest') {
+        tab = 'recent'
+      }
+
+      if (tab === 'playing' && !playingProjects.length) {
+        tab = 'recent'
+      }
+
+      if (tab === 'drafts') {
+        $.visibleProjects = [
+          ...draftProjects.filter(drafts).filter(add),
+          ...allProjects.map(first).filter(drafts).filter(add),
+          ...userProjects.map(first).filter(drafts).filter(add),
+          ...likedProjects.filter(drafts).filter(add),
+        ]
+        $.hiddenProjects = [
+          ...draftProjects.filter(not(drafts)).filter(add),
+          ...allProjects.map(first).filter(not(drafts)).filter(add),
+          ...userProjects.map(first).filter(not(drafts)).filter(add),
+          ...likedProjects.filter(not(drafts)).filter(add),
+        ]
+      } else if (tab === 'user') {
+        $.visibleProjects = userProjects.map(first).filter(add)
+        $.hiddenProjects = [
+          ...draftProjects.filter(drafts).filter(add),
+          ...allProjects.map(first).filter(add),
+          ...likedProjects.filter(add),
+        ]
+      } else if (tab === 'recent') {
+        $.visibleProjects = allProjects.map(first).filter(add)
+        $.hiddenProjects = [
+          ...draftProjects.filter(drafts).filter(add),
+          ...userProjects.map(first).filter(add),
+          ...likedProjects.filter(add),
+        ]
+      } else if (tab === 'liked') {
+        $.visibleProjects = likedProjects.filter(add)
+        $.hiddenProjects = [
+          ...draftProjects.filter(drafts).filter(add),
+          ...allProjects.map(first).filter(add),
+          ...userProjects.map(first).filter(add),
+        ]
+      } else if (tab === 'playing') {
+        $.visibleProjects = playingProjects.filter(add)
+        $.hiddenProjects = [
+          ...draftProjects.filter(drafts).filter(add),
+          ...allProjects.map(first).filter(add),
+          ...userProjects.map(first).filter(add),
+          ...likedProjects.filter(add),
+        ]
+      }
+
+      $.project ??= $.visibleProjects[0]
     })
 
     fx(() =>
@@ -265,40 +451,6 @@ export const App = web(view('app',
         // on(window, 'keyup')($.onKeyUp),
       )
     )
-
-
-    // fx(({ selected }) => {
-    //   storage.selected.set(selected)
-    // })
-
-    // fx(({ focused }) => {
-    //   storage.focused.set(focused)
-    // })
-
-    // fx(({ editorVisible }) => {
-    //   storage.editorVisible.set(editorVisible)
-    // })
-
-    fx(({ projects }) => {
-      storage.projects.set(projects)
-    })
-
-    fx(({ project }) =>
-      project.fx(({ checksum }) => {
-        storage.project.set(checksum)
-      })
-    )
-
-    // fx(({ mode }) => {
-    //   storage.mode.set(mode)
-    // })
-
-    // fx(({ audio }) =>
-    //   audio.fx(({ bpm: _ }) => {
-    //     $.autoSave()
-    //   })
-    // )
-
 
     services.fx(({ skin }) =>
       fx(({ distRoot }) => {
@@ -369,6 +521,22 @@ export const App = web(view('app',
         }
       }
 
+      nav {
+        padding: 10px 15px;
+        display: flex;
+        flex-flow: row wrap;
+        align-items: center;
+        justify-content: space-between;
+        background: ${skin.colors.shadeSofter};
+
+        .tabs {
+          flex: 1;
+          display: flex;
+          flex-flow: row wrap;
+          gap: 12px;
+        }
+      }
+
       footer {
         position: relative;
         max-width: 800px;
@@ -381,56 +549,33 @@ export const App = web(view('app',
         min-height: 150px;
         pointer-events: none;
       }
-
-      h2 {
-        font-family: Jost;
-        font-weight: normal;
-        font-size: 36px;
-      }
       `
     })
 
+    services.fx(({ skin, loggedIn }) =>
+      fx.raf(({ distRoot, mode, tab, project, userBrowse, userProjects, likedProjects, visibleProjects, hiddenProjects, playingProjects }) => {
+        if (!loggedIn) {
+          if (tab === 'user' && userBrowse === 'guest') {
+            tab = 'recent'
+          }
+        } else {
+          if (userBrowse === 'guest') {
+            userBrowse = services.$.username
+          }
+        }
 
-    // fx(({ players, editorVisible, selected, editorView }) => {
-    //   $.playersView = <PlayersView
-    //     players={players}
-    //     selected={selected}
-    //     editorEl={deps.editorEl}
-    //     editorView={editorView}
-    //     editorVisible={editorVisible}
-    //   />
+        if (tab === 'playing' && !playingProjects.length) {
+          tab = 'recent'
+        }
 
-    //   // players.map((player, y) => <>
-    //   //   <PlayerView
-    //   //     key={player.$.id!}
-    //   //     id={player.$.id!}
-    //   //     services={services}
-    //   //     player={player}
-    //   //     active={editorVisible && selected.player === y}
-    //   //   />
+        const Controls = ({ project }: { project: Project }) => tab === 'playing' &&
+          <Button
+            small
+            onClick={() => $.onMovePlayers(project)}
+          >
+            <span class={`i clarity-arrow-line`} />
+          </Button>
 
-    //   //   {selected.player === y && <div
-    //   //     ref={refs.editorEl}
-    //   //     class={classes({
-    //   //       'player-view': true,
-    //   //       // TODO: this should work with 'none'
-    //   //       // but something isn't playing well
-    //   //       hidden: !editorVisible
-    //   //     })}
-    //   //   >
-    //   //     {editorView}
-    //   //     {editorView && <Vertical
-    //   //       align='y'
-    //   //       id='editor'
-    //   //       size={290}
-    //   //     />}
-    //   //   </div>}
-    //   // </>)
-    // })
-
-    services.fx(({ likes, loggedIn }) =>
-      fx(({ distRoot, mode, project, projects, userProjects }) => {
-        $.autoSave()
 
         $.view = <>
           <Toolbar project={project} />
@@ -438,43 +583,64 @@ export const App = web(view('app',
           <Hint message={deps.hint} />
 
           <main>
-            <ProjectView
-              key={project.$.id!}
-              id={project.$.id!}
-              ref={cachedRef(project.$.id!)}
-              primary={true}
-              project={project}
-              controlsView={<>
-                {!loggedIn && <Button
-                  pill
-                  onClick={() => {
-                    const h = 700
-                    const w = 500
-                    const x = window.outerWidth / 2 + window.screenX - (w / 2)
-                    const y = window.outerHeight / 2 + window.screenY - (h / 2)
+            <nav>
+              <div class="tabs">
+                <Button tab active={tab === 'drafts'} onClick={() => { $.tab = 'drafts' }}>
+                  Drafts
+                </Button>
 
-                    const popup = window.open(`${distRoot}/login.html`, 'oauth', `width=${w}, height=${h}, top=${y}, left=${x}`)!
-
-                    const off = on(window, 'storage')(() => {
-                      off()
-                      popup.close()
-                      services.$.tryLogin()
-                    })
-                  }}
-                  title={"No spam, no email, no messages and no tracking!\nWe only use your username to sign you in and that's it.\nClicking opens in a popup."}
-                >
-                  Login with GitHub <span class="i la-github" />
+                {!!userProjects.length && <Button tab active={tab === 'user'} onClick={() => { $.tab = 'user' }}>
+                  {userBrowse}
                 </Button>}
 
-                {loggedIn && <Button round onClick={
-                  mode === APP_MODE.NORMAL
-                    || (mode === APP_MODE.USER_BROWSE && $.userBrowse !== services.$.username)
-                    ? services.$.linkTo(services.$.username)
-                    : services.$.linkTo('/')
-                }>
-                  <img crossorigin={'anonymous'} src={`https://avatars.githubusercontent.com/${services.$.username}?s=42&v=4`} />
+                <Button tab active={tab === 'recent'} onClick={() => { $.tab = 'recent' }}>
+                  Recent
+                </Button>
+
+                {/* <Button tab active={browseTab === 'popular'} onClick={() => { $.browseTab = 'popular' }}>
+                      Popular
+                    </Button> */}
+
+                {!!likedProjects.length && <Button tab active={tab === 'liked'} onClick={() => { $.tab = 'liked' }}>
+                  Liked
                 </Button>}
-                {/*
+
+                {!!playingProjects.length && <Button tab active={tab === 'playing'} onClick={() => { $.tab = 'playing' }} style={`color: ${skin.colors.brightCyan}`}>
+                  Playing
+                </Button>}
+              </div>
+
+              {!loggedIn && <Button
+                pill
+                onClick={() => {
+                  const h = 700
+                  const w = 500
+                  const x = window.outerWidth / 2 + window.screenX - (w / 2)
+                  const y = window.outerHeight / 2 + window.screenY - (h / 2)
+
+                  const popup = window.open(`${distRoot}/login.html`, 'oauth', `width=${w}, height=${h}, top=${y}, left=${x}`)!
+
+                  const off = on(window, 'storage')(() => {
+                    off()
+                    popup.close()
+                    services.$.tryLogin()
+                  })
+                }}
+                title={"No spam, no email, no messages and no tracking!\nWe only use your username to sign you in and that's it.\nClicking opens in a popup."}
+              >
+                Login with GitHub <span class="i la-github" />
+              </Button>}
+
+              {loggedIn && <Button round onClick={
+                mode === APP_MODE.NORMAL
+                  || (mode === APP_MODE.USER_BROWSE && $.userBrowse !== services.$.username)
+                  ? services.$.linkTo(services.$.username)
+                  : services.$.linkTo('/')
+              }>
+                <img crossorigin={'anonymous'} src={`https://avatars.githubusercontent.com/${services.$.username}?s=40&v=4`} />
+              </Button>}
+
+              {/*
                 <Button round onClick={
                   mode === APP_MODE.NORMAL
                     ? services.$.linkTo('/browse')
@@ -486,25 +652,33 @@ export const App = web(view('app',
                     }`}
                   />
                 </Button> */}
-              </>}
-            />
+            </nav>
 
-            {userProjects.map((p) =>
-              p.length && p[0] !== project && <ProjectView
-                key={p[0].$.id!}
-                id={p[0].$.id!}
-                ref={cachedRef(p[0].$.id!)}
-                project={p[0]}
-                primary={false}
-                onSelect={$.onProjectSelect}
-              />
-            )}
-
-            {/*
-            <div class={classes(({ light: true, hidden: mode !== APP_MODE.NORMAL }))}>
-              {playersView}
-            </div> */}
-
+            <div>
+              {[
+                ...visibleProjects.map((p, i) =>
+                  <ProjectView
+                    key={p.$.id!}
+                    id={p.$.id!}
+                    ref={cachedRef(p.$.id!)}
+                    project={p}
+                    primary={project === p}
+                    controlsView={i > 0 && <Controls project={p} />}
+                  />
+                ),
+                ...hiddenProjects.map((p) =>
+                  <ProjectView
+                    key={p.$.id!}
+                    id={p.$.id!}
+                    class="hidden"
+                    ref={cachedRef(p.$.id!)}
+                    project={p}
+                    primary={project === p}
+                    controlsView={<Controls project={p} />}
+                  />
+                )
+              ]}
+            </div>
           </main>
 
           <footer>🔔</footer>

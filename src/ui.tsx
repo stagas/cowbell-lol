@@ -182,7 +182,7 @@ export const ProjectView = web(view('project-view',
     fx(({ id }) => {
       $.project = Project({ id })
       $.project.fx.once(({ library }) => {
-        $.project!.$.fromJSON(id, JSON.parse(localStorage[id]))
+        $.project!.$.fromJSON(JSON.parse(localStorage[id]))
       })
     })
 

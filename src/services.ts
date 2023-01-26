@@ -6,6 +6,7 @@ import { AudioPlayer } from './audio-player'
 import { library, Library } from './library'
 import { Player } from './player'
 import { Preview, createPreview } from './preview-service'
+import { Project, projects } from './project'
 import { Skin, skin } from './skin'
 import { getSliders } from './util/args'
 import { storage } from './util/storage'
@@ -56,6 +57,8 @@ export const Services = reactive('services',
     //   isPreview: true,
     //   audioPlayer: this.previewAudioPlayer
     // })
+
+    projects?: Project[]
   },
   function actions({ $, fn, fns }) {
     const urlHistory: string[] = [location.href]
@@ -129,6 +132,19 @@ export const Services = reactive('services',
       }
 
       // misc
+
+      updateProjects = () => {
+        const projectsChecksums: string[] = [
+          ...new Set<string>(
+            [...projects.values()]
+              .filter((x) => x.$.isDraft && !x.$.isDeleted)
+              .map((x: Project) =>
+                x.$.checksum as string)
+          )
+        ]
+
+        storage.projects.set(projectsChecksums)
+      }
 
       getSliders = fn(({ sampleRate }) =>
         (code: string) =>
@@ -227,10 +243,6 @@ export const Services = reactive('services',
 
     fx(async function initPreview({ waveplot, previewSampleRate }) {
       $.preview = createPreview(waveplot, previewSampleRate)
-    })
-
-    fx(() => {
-      $.library = Library({})
     })
   }
 )

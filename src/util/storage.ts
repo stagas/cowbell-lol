@@ -2,7 +2,7 @@ import type { AppMode, Selected } from '../app'
 
 export const spacer = {
   get: (id: string, fallbackSizes: number[]) => {
-    // return fallbackSizes
+    return fallbackSizes
     const cells: number[] = (localStorage[`spacer-${id}`] ?? '')
       .split(',')
       .filter((s: string) => s !== '')
@@ -11,7 +11,7 @@ export const spacer = {
     return cells
   },
   set: (id: string, sizes: number[]) => {
-    localStorage[`spacer-${id}`] = sizes
+    // localStorage[`spacer-${id}`] = sizes
   }
 }
 
@@ -52,14 +52,38 @@ function kvStorage<T>(key: string): KvStorage<T> {
   }
 }
 
+export interface BufferStorage<T> {
+  get: (fallback: T[]) => T[]
+  set: (data: T[]) => void
+}
+
+function bufferStorage<T>(key: string): BufferStorage<T> {
+  return {
+    get: (fallback: T[]): T[] => {
+      try {
+        const b: string[] = localStorage[key].split('!')
+        return b.map((x) => {
+          const [isDraft, checksum] = x.split(',')
+          return [parseInt(isDraft), checksum] as T
+        })
+      } catch {
+        return fallback
+      }
+    },
+    set: (data: T[]) => {
+      localStorage[key] = data.join('!')
+    }
+  }
+}
+
 export const selected = kvStorage<Selected>('selected')
 export const focused = kvStorage<string>('focused')
 export const editorVisible = kvStorage<boolean>('editorVisible')
 export const username = kvStorage<string>('username')
 export const project = kvStorage<string>('project')
 export const projects = kvStorage<string[]>('projects')
-export const sounds = kvStorage<[0 | 1, string][]>('sounds')
-export const patterns = kvStorage<[0 | 1, string][]>('patterns')
+export const sounds = bufferStorage<[0 | 1, string]>('sounds')
+export const patterns = bufferStorage<[0 | 1, string]>('patterns')
 export const likes = kvStorage<string[]>('likes')
 export const mode = kvStorage<AppMode>('mode')
 export const bpm = kvStorage<number>('bpm')

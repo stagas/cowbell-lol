@@ -51,11 +51,11 @@ export type Colors = typeof colors
 
 export const getSkin = (colors: Colors) => ({
   fonts: {
-    logo: "'Baumans', cursive",
-    sans: "'Jost', sans-serif",
-    slab: "'Geo', sans-serif",
-    mono: "'JetBrains Mono', monospace",
-    cond: "'Barlow Semi Condensed', sans-serif",
+    logo: '"Baumans", cursive',
+    sans: '"Jost", sans-serif',
+    slab: '"Geo", monospace',
+    mono: '"JetBrains Mono", monospace',
+    cond: '"Barlow Semi Condensed", sans-serif',
   },
 
   css: /*css*/`

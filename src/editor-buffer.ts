@@ -55,10 +55,23 @@ export const EditorBuffer = reactive('editor-buffer',
     error?: Error | false = false
   },
 
-  function actions({ $, fns, fn }) {
+  function actions({ $, fx, fns, fn }) {
+    let didSave = false
+    let lastSavedChecksum: string
+
+    fx(({ checksum: _ }) => {
+      didSave = false
+    })
+
     return fns(new class actions {
       toJSON = () => {
-        localStorage[$.checksum!] = $.value
+        if (!didSave) {
+          if (lastSavedChecksum && $.isDraft) {
+            delete localStorage[lastSavedChecksum]
+          }
+          localStorage[lastSavedChecksum = $.checksum!] = $.value
+          didSave = true
+        }
         return [$.isDraft ? 1 : 0, $.checksum] as [0 | 1, string]
       }
 

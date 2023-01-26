@@ -11,7 +11,9 @@ import { oneOf } from './util/one-of'
 import { ObjectPool } from './util/pool'
 import { storage } from './util/storage'
 
-export type AudioState = 'init' | 'preparing' | 'running' | 'suspended' | 'preview'
+export type AudioState = 'init' | 'preparing' | 'running' | 'suspended' | 'preview' | 'restarting'
+
+export let lastRunningPlayers: Set<Player> | null
 
 export const Audio = reactive('audio',
   class props {
@@ -49,13 +51,13 @@ export const Audio = reactive('audio',
   },
   function actions({ $, fns, fn }) {
     let lastReceivedTime = 0
-    let lastRunningPlayers: Set<Player> | null
     let repeatIv: any
     let startPromise: Promise<number>
 
     return fns(new class actions {
       startClick = async (resetTime = true) => {
         if (lastRunningPlayers?.size) {
+          $.state = 'restarting'
           const audioPlayersToStart: AudioPlayer[] = []
           await Promise.all(
             [...lastRunningPlayers].map((player) =>
@@ -72,7 +74,7 @@ export const Audio = reactive('audio',
             }))
           )
         } else {
-          return app.$.project.$.start()
+          return app.$.project?.$.start()
         }
       }
 
@@ -104,7 +106,9 @@ export const Audio = reactive('audio',
           repeatIv = setInterval(loop, 1000 / $.coeff)
         }
 
-        $.state = 'running'
+        queueMicrotask(() => {
+          $.state = 'running'
+        })
 
         deferred.resolve($.startTime)
 
@@ -224,6 +228,7 @@ export const Audio = reactive('audio',
 
     })
   },
+
   function effects({ $, fx }) {
     fx(() =>
       on(document.body, 'pointerdown').capture($.resumeAudio)
@@ -240,6 +245,11 @@ export const Audio = reactive('audio',
       destPlayer.$.audio = $.self
     })
 
+    fx(({ destPlayer }) =>
+      destPlayer.fx.raf(({ vol }) => {
+        storage.vols.set('audio', vol)
+      })
+    )
     fx(({ bpm }) => {
       storage.bpm.set(bpm)
     })

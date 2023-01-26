@@ -3,6 +3,7 @@ import { Scalar } from 'geometrik'
 import { chain, queue, reactive } from 'minimal-view'
 import { MonoNode } from 'mono-worklet'
 import { LoopKind, SchedulerEventGroupNode } from 'scheduler-node'
+import { app } from './app'
 import { Audio, AudioState } from './audio'
 import { AudioPlayer } from './audio-player'
 import { EditorBuffer } from './editor-buffer'
@@ -93,14 +94,23 @@ export const Player = reactive('player',
         startPromise = deferred.promise
 
         if ($.project) {
-          if (noneOf($.audio.$.state, 'preparing', 'running')) {
+          if (noneOf($.audio.$.state, 'restarting', 'preparing', 'running')) {
             $.audio.$.bpm = $.project.$.bpm!
+            app.$.project = $.project
           }
+
           $.project.$.audio = $.audio
+
+          if (noneOf($.project.$.state, 'preparing', 'running')) {
+            if ($.audio.$.state !== 'restarting') {
+              $.project.$.startedAt = performance.now()
+            }
+            $.project.$.state = 'preparing'
+          }
         }
 
         await new Promise<void>((resolve) =>
-          audioPlayer.fx(({ audio: _ }) => resolve())
+          audioPlayer.fx.once(({ audio: _ }) => resolve())
         )
 
         await new Promise<void>((resolve) => {
@@ -117,6 +127,10 @@ export const Player = reactive('player',
         }
 
         $.state = 'running'
+
+        if ($.project) {
+          $.project.$.state = 'running'
+        }
 
         deferred.resolve()
 
@@ -507,25 +521,34 @@ export const Player = reactive('player',
       )
     )
 
-    fx(({ audio, state, preview, monoNode, gainNode, groupNode }) => {
+    let suspendTimeout: any
+
+    fx(({ audio, audioPlayer, state, preview, monoNode, gainNode, groupNode }) => {
       if (oneOf(state, 'preparing', 'running') || preview) {
         audio.$.setParam(gainNode.gain, $.vol)
 
+        groupNode.connect(monoNode)
         groupNode.resume(monoNode)
         monoNode.resume()
+        monoNode.connect(gainNode)
         // gainNode.connect(audioPlayer.$.destNode!)
-        // monoNode.connect(gainNode)
 
-        $.connectedState = 'connected'
+        clearTimeout(suspendTimeout)
+        suspendTimeout = setTimeout(() => {
+          $.connectedState = 'connected'
+        }, 50)
       } else {
-        audio.$.setParam(gainNode.gain, 0)
-
-        monoNode.suspend()
+        groupNode.clear()
         groupNode.suspend(monoNode)
+        audio.$.disconnect(groupNode, monoNode)
 
-        // audio.$.disconnect(monoNode, gainNode)
-        // audio.$.disconnect(gainNode, audioPlayer.$.destNode!)
-        // audio.$.disconnect(groupNode, monoNode)
+        clearTimeout(suspendTimeout)
+        suspendTimeout = setTimeout(() => {
+          audio.$.setParam(gainNode.gain, 0)
+          monoNode.suspend()
+          audio.$.disconnect(monoNode, gainNode)
+          // audio.$.disconnect(gainNode, audioPlayer.$.destNode!)
+        }, 500)
 
         $.connectedState = 'disconnected'
       }

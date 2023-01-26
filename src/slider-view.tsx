@@ -111,7 +111,7 @@ export const SliderView = web(view('slider-view',
         }
       }
 
-      resize = fn(({ host }): ResizeObserverCallback => queue.raf((entries) => {
+      resize = fn(({ host }) => queue.raf(() => {
         const scrollTop = document.documentElement.scrollTop
         $.rect = new Rect(host.getBoundingClientRect()).translate(0, scrollTop).round()
         const aspect = $.rect.size.x / $.rect.size.y
@@ -121,6 +121,8 @@ export const SliderView = web(view('slider-view',
           $.vertical = true
         }
       }))
+
+      intersect = this.resize
     })
   },
 
@@ -299,7 +301,10 @@ export const SliderView = web(view('slider-view',
     )
 
     fx(function listenHostResize({ host }) {
-      return observe.resize.initial(host, $.resize)
+      return chain(
+        observe.resize.initial(host, $.resize),
+        observe.intersection(host, $.intersect)
+      )
     })
 
     fx(function listenPointerEvents({ host }) {

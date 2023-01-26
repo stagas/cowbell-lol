@@ -10,6 +10,7 @@ export const Button = web(view('btn',
     round?= false
     small?= false
     pill?= false
+    tab?= false
     onClick?: () => void
     children?: JSX.Element
   },
@@ -123,6 +124,8 @@ export const Button = web(view('btn',
 
       &([round]) {
         button {
+          width: 40px;
+          height: 39.5px;
           cursor: pointer;
           border-radius: 100%;
           font-size: 21.5px;
@@ -189,27 +192,60 @@ export const Button = web(view('btn',
           }
         }
       }
+
+      &([tab]) {
+        border-radius: 5px;
+        overflow: hidden;
+
+        button {
+          all: unset;
+          width: auto;
+          font-family: ${skin.fonts.sans};
+          font-size: 18px;
+          padding: 5px 15px;
+          cursor: pointer;
+          pointer-events: all;
+
+          display: flex;
+          flex-flow: row wrap;
+          gap: 4px;
+
+          .shades {
+            display: none;
+          }
+        }
+      }
+      &([tab]:hover),
+      &([active][tab]) {
+        background: ${skin.colors.shadeSoft};
+        button {
+        }
+      }
       `
     })
 
-    fx.raf(({ host, active }) => {
+    fx(({ host, active }) => {
       host.toggleAttribute('active', active)
     })
 
-    fx.raf(({ host, rounded }) => {
+    fx(({ host, rounded }) => {
       host.toggleAttribute('rounded', rounded)
     })
 
-    fx.raf(({ host, round }) => {
+    fx(({ host, round }) => {
       host.toggleAttribute('round', round)
     })
 
-    fx.raf(({ host, small }) => {
+    fx(({ host, small }) => {
       host.toggleAttribute('small', small)
     })
 
-    fx.raf(({ host, pill }) => {
+    fx(({ host, pill }) => {
       host.toggleAttribute('pill', pill)
+    })
+
+    fx(({ host, tab }) => {
+      host.toggleAttribute('tab', tab)
     })
 
     fx(({ children }) => {

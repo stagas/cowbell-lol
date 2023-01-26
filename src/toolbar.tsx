@@ -162,11 +162,11 @@ export const Toolbar = web(view('toolbar',
           stroke: ${skin.colors.brightGreen}40;
         }
         &::part(line) {
-          stroke-width: 2.85px;
+          stroke-width: 2.6px;
         }
         &::part(fill),
         &::part(fill-value) {
-          stroke-width: 2.85px;
+          stroke-width: 2.6px;
         }
       }
 
@@ -382,7 +382,7 @@ export const Toolbar = web(view('toolbar',
                       class="bpm-control"
                       min={1}
                       max={666}
-                      value={audio.deps.bpm}
+                      value={project.deps.bpm}
                       step={1}
                       align="x"
                     />

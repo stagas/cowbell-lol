@@ -27,7 +27,6 @@ export const ProjectView = web(view('project-view',
     project!: Project
     primary!: boolean
     controlsView?: JSX.Element = false
-    onSelect?: (project: Project) => void
   },
   class local {
     selected: Selected = { player: 0, preset: '' }
@@ -69,10 +68,6 @@ export const ProjectView = web(view('project-view',
     let presetsSmoothScrollTimeout: any
 
     return fns(new class actions {
-      handleSelect = fn(({ onSelect, project }) => () => {
-        onSelect(project)
-      })
-
       renameSong = fn(({ songTitleEl }) => () => {
         const p = songTitleEl
         p.contentEditable = 'plaintext-only'
@@ -359,23 +354,17 @@ export const ProjectView = web(view('project-view',
 
     fx(({ audio, primary, project }) => {
       if (primary) {
-        return project.fx.once(({ bpm }) => {
+        return project.fx.raf(({ bpm }) => {
           audio.$.bpm = bpm
-          const off = fx(({ primary }) => {
-            if (primary) {
-              return audio.fx(({ bpm }) => {
-                project.$.bpm = bpm
-              })
-            } else {
-              off()
-            }
-          })
         })
       }
     })
 
-    const off = fx(({ project: _, sounds, patterns, expanded }) => {
-      if (sounds.length && patterns.length && expanded) {
+    const off = fx(({ project, sounds, patterns, expanded }) => {
+      if (sounds.length
+        && patterns.length
+        && (expanded || !project.$.remoteProject)
+      ) {
         off()
         fx(({ project }) => {
           project.$.load()
@@ -543,7 +532,7 @@ export const ProjectView = web(view('project-view',
     ))
 
     fx(() => services.fx(({ state }) =>
-      fx.raf(({ id, project, player, main, sounds, sound, patterns, pattern, focused, selected, expanded: _, editorBuffer, pianoView }) => {
+      fx.task(({ id, project, player, main, sounds, sound, patterns, pattern, focused, selected, expanded: _, editorBuffer, pianoView }) => {
         const soundPresets = <div
           key="sounds"
           part="app-presets"
@@ -764,6 +753,7 @@ export const ProjectView = web(view('project-view',
       }
 
       .project {
+        font-family: ${skin.fonts.sans};
         position: relative;
         display: flex;
         flex: 1;
@@ -804,7 +794,6 @@ export const ProjectView = web(view('project-view',
           }
           &-title {
             outline: none;
-            font-family: Jost;
             position: relative;
             font-size: 26px;
             letter-spacing: 0.2px;
@@ -832,7 +821,6 @@ export const ProjectView = web(view('project-view',
           }
           &-bpm {
             pointer-events: none;
-            font-family: Jost;
             font-size: 13px;
             display: flex;
             flex-flow: row nowrap;
@@ -851,7 +839,6 @@ export const ProjectView = web(view('project-view',
           &-author {
             cursor: pointer;
             margin-top: -7.25px;
-            font-family: Jost;
             font-size: 13px;
             color: ${skin.colors.fg};
             display: inline-flex;
@@ -899,11 +886,11 @@ export const ProjectView = web(view('project-view',
       `
     }))
 
-    fx(({ primary, project, controlsView, waveformView, editorView }) =>
-      project.fx(({ id, isDraft, title, author, bpm, audioPlayer, players }) =>
-        services.fx(({ loggedIn, likes }) =>
+    fx(() => services.fx(({ loggedIn, likes }) =>
+      fx(({ primary, project }) =>
+        project.fx(({ id, isDraft, isDeleted, title, author, bpm, audioPlayer, players }) =>
           audioPlayer.fx(({ state }) =>
-            fx(({ didExpand, expanded, focused, selected, editorVisible }) => {
+            fx(({ didExpand, expanded, focused, selected, editorVisible, controlsView, waveformView, editorView }) => {
               const playersView = <PlayersView
                 ref={cachedRef(`players-${id}`)}
                 players={players}
@@ -960,7 +947,7 @@ export const ProjectView = web(view('project-view',
                           'song-draft': isDraft
                         })}
                         ref={refs.songTitleEl}
-                        onclick={isDraft && $.renameSong}
+                        onclick={isDraft ? $.renameSong : () => { }}
                       >
                         {title}
                       </div>
@@ -970,25 +957,23 @@ export const ProjectView = web(view('project-view',
                       </div>
                     </div>
 
-                    {!primary &&
-                      <div class="song-bpm">
-                        <span class="amt">{bpm}</span>
-                        <span class="bpm">BPM</span>
-                      </div>
-                    }
+                    <div class="song-bpm">
+                      <span class="amt">{bpm}</span>
+                      <span class="bpm">BPM</span>
+                    </div>
 
                     <div class="reactions">
-                      <Button rounded small
+                      {!isDraft && <Button rounded small
                         onClick={() => {
-                          if (likes.includes(id)) {
-                            services.$.likes = likes.filter((projectId) => projectId !== id)
+                          if (likes.includes(project.$.checksum!)) {
+                            services.$.likes = likes.filter((projectId) => projectId !== project.$.checksum!)
                           } else {
-                            services.$.likes = [...new Set([...likes, id])]
+                            services.$.likes = [...new Set([...likes, project.$.checksum!])]
                           }
                         }}
                       >
-                        <span class={`i la-heart${likes.includes(id) ? '-solid' : ''}`} />
-                      </Button>
+                        <span class={`i la-heart${likes.includes(project.$.checksum!) ? '-solid' : ''}`} />
+                      </Button>}
 
                       {isDraft && loggedIn &&
                         <Button rounded small onClick={() => {
@@ -998,9 +983,26 @@ export const ProjectView = web(view('project-view',
                         </Button>
                       }
 
+                      {isDraft && !isDeleted &&
+                        <Button rounded small onClick={() => {
+                          project.$.delete()
+                        }}>
+                          <span class={`i clarity-trash-line`} />
+                        </Button>
+                      }
+
+                      {isDraft && isDeleted &&
+                        <Button rounded small onClick={() => {
+                          project.$.undelete()
+                        }}>
+                          <span class={`i la-share`} style="transform: scaleX(-1)" />
+                        </Button>
+                      }
+
                       {!isDraft && <Button rounded small>
                         <span class={`i la-share`} />
                       </Button>}
+
                       {/* <Button rounded small>
                     <span class={`i la-comment-dots`} />
                   </Button> */}
@@ -1008,14 +1010,7 @@ export const ProjectView = web(view('project-view',
                   </div>
 
                   <div class="controls-secondary">
-                    {primary ? controlsView : <>
-                      <Button
-                        small
-                        onClick={$.handleSelect}
-                      >
-                        <span class={`i clarity-arrow-line`} />
-                      </Button>
-                    </>}
+                    {controlsView}
                   </div>
                 </div>
 
@@ -1032,7 +1027,7 @@ export const ProjectView = web(view('project-view',
               </>
             }))
         )
-      )
+      ))
     )
   }
 ))

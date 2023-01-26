@@ -4,7 +4,7 @@ import { EditorBuffer } from './editor-buffer'
 import { checksumId } from './util/checksum-id'
 import { storage } from './util/storage'
 
-export function mapToBuffer(kind: 'sound' | 'pattern') {
+export function toBuffer(kind: 'sound' | 'pattern') {
   return (b: [0 | 1, string]) => {
     const checksum = b[1]
     const value = localStorage[checksum]
@@ -18,7 +18,7 @@ export function mapToBuffer(kind: 'sound' | 'pattern') {
   }
 }
 
-function mapToStorage(value: string) {
+function toStorage(value: string) {
   const id = checksumId(value)
   localStorage[id] = value
   return [0, id] as [0 | 1, string]
@@ -26,45 +26,53 @@ function mapToStorage(value: string) {
 
 export const Library = reactive('library',
   class props { },
+
   class local {
     sounds: EditorBuffer[] = storage.sounds.get([
       demo.kick.sound,
       demo.snare.sound,
       demo.bass.sound,
-    ].map(mapToStorage)).map(mapToBuffer('sound'))
+    ].map(toStorage)).map(toBuffer('sound'))
 
     patterns: EditorBuffer[] = storage.patterns.get([
       ...demo.kick.patterns,
       ...demo.snare.patterns,
       ...demo.bass.patterns,
-    ].map(mapToStorage)).map(mapToBuffer('pattern'))
+    ].map(toStorage)).map(toBuffer('pattern'))
   },
+
   function actions({ $, fn, fns }) {
     const last = {
-      sounds: [] as string[],
-      patterns: [] as string[]
+      sounds: [] as [0 | 1, string][],
+      patterns: [] as [0 | 1, string][]
     }
 
     const saver = (kind: 'sounds' | 'patterns') => () => {
       const next = $[kind].map((b) => b.$.toJSON())
 
+      if (last[kind].join() === next.join()) return
+
       const nextIds = next.map(([, x]) => x)
 
-      last[kind].forEach((x) => {
+      last[kind].forEach(([, x]) => {
         if (!nextIds.includes(x)) {
           delete localStorage[x]
         }
       })
 
-      storage[kind].set(next)
+      console.time('save ' + kind)
+      storage[kind].set(last[kind] = next)
+      console.timeEnd('save ' + kind)
+      console.log('saved', kind, next.length)
     }
 
     return fns(new class actions {
       saveSounds = saver('sounds')
       savePatterns = saver('patterns')
 
-      autoSaveSounds = queue.debounce(500)(this.saveSounds)
-      autoSavePatterns = queue.debounce(500)(this.savePatterns)
+      autoSaveSounds = queue.debounce(1000)(this.saveSounds)
+      autoSavePatterns = queue.debounce(1000)(this.savePatterns)
+
     })
   },
   function effects({ $, fx }) {
