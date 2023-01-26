@@ -26,6 +26,7 @@ export const ProjectView = web(view('project-view',
     id!: string
     project!: Project
     primary!: boolean
+    browsing!: boolean
     controlsView?: JSX.Element = false
   },
   class local {
@@ -316,6 +317,12 @@ export const ProjectView = web(view('project-view',
         host.toggleAttribute('draft', isDraft)
       })
     )
+
+    fx(({ browsing }) => {
+      if (browsing) {
+        $.expanded = true
+      }
+    })
 
     fx(({ expanded }) => {
       if (expanded) {
@@ -999,9 +1006,7 @@ export const ProjectView = web(view('project-view',
                         </Button>
                       }
 
-                      {!isDraft && <Button rounded small>
-                        <span class={`i la-share`} />
-                      </Button>}
+                      {controlsView}
 
                       {/* <Button rounded small>
                     <span class={`i la-comment-dots`} />
@@ -1009,9 +1014,8 @@ export const ProjectView = web(view('project-view',
                     </div>
                   </div>
 
-                  <div class="controls-secondary">
-                    {controlsView}
-                  </div>
+                  {/* <div class="controls-secondary">
+                  </div> */}
                 </div>
 
                 {didExpand ? <div

@@ -149,9 +149,10 @@ export const App = web(view('app',
 
     mode: AppMode = 'normal'
 
-    tab: 'drafts' | 'user' | 'recent' | 'liked' | 'playing' = 'user'
+    tab: 'drafts' | 'user' | 'recent' | 'liked' | 'playing' | 'project' = 'user'
 
     userBrowse: string = 'guest'
+    projectBrowse: Project | false = false
 
     draftProjects: Project[] = []
     userProjects: Project[][] = []
@@ -381,7 +382,7 @@ export const App = web(view('app',
       })
     )
 
-    fx(({ tab, draftProjects, userBrowse, userProjects, allProjects, likedProjects, playingProjects }) => {
+    fx(({ tab, draftProjects, userBrowse, projectBrowse, userProjects, allProjects, likedProjects, playingProjects }) => {
       const usedProjects = new Set<string>()
 
       const first = (g: Project[]) => g[0]
@@ -391,7 +392,11 @@ export const App = web(view('app',
         (x: Project) => !fn(x)
 
       if (tab === 'user' && userBrowse === 'guest') {
-        tab = 'recent'
+        if (services.$.loggedIn) {
+          userBrowse = services.$.username
+        } else {
+          tab = 'recent'
+        }
       }
 
       if (tab === 'playing' && !playingProjects.length) {
@@ -434,6 +439,14 @@ export const App = web(view('app',
         ]
       } else if (tab === 'playing') {
         $.visibleProjects = playingProjects.filter(add)
+        $.hiddenProjects = [
+          ...draftProjects.filter(drafts).filter(add),
+          ...allProjects.map(first).filter(add),
+          ...userProjects.map(first).filter(add),
+          ...likedProjects.filter(add),
+        ]
+      } else if (tab === 'project' && projectBrowse) {
+        $.visibleProjects = [projectBrowse].filter(add)
         $.hiddenProjects = [
           ...draftProjects.filter(drafts).filter(add),
           ...allProjects.map(first).filter(add),
@@ -547,13 +560,14 @@ export const App = web(view('app',
         justify-content: center;
         font-size: 22px;
         min-height: 150px;
+        padding-bottom: 70vh;
         pointer-events: none;
       }
       `
     })
 
-    services.fx(({ skin, loggedIn }) =>
-      fx.raf(({ distRoot, mode, tab, project, userBrowse, userProjects, likedProjects, visibleProjects, hiddenProjects, playingProjects }) => {
+    services.fx(({ audio, skin, loggedIn }) =>
+      fx.raf(({ distRoot, mode, tab, project, userBrowse, projectBrowse, userProjects, likedProjects, visibleProjects, hiddenProjects, playingProjects }) => {
         if (!loggedIn) {
           if (tab === 'user' && userBrowse === 'guest') {
             tab = 'recent'
@@ -568,14 +582,26 @@ export const App = web(view('app',
           tab = 'recent'
         }
 
-        const Controls = ({ project }: { project: Project }) => tab === 'playing' &&
-          <Button
-            small
-            onClick={() => $.onMovePlayers(project)}
-          >
-            <span class={`i clarity-arrow-line`} />
-          </Button>
+        const Controls = ({ project }: { project: Project }) => <>
+          {tab !== 'project' && !project.$.isDraft && <Button rounded small onClick={() => {
+            $.tab = 'project'
+            $.projectBrowse = project
+            if (audio.$.state !== 'running') {
+              $.project = project
+            }
+          }}>
+            <span class={`i la-share`} />
+          </Button>}
 
+          {tab === 'playing'
+            && project !== $.visibleProjects[0]
+            && <Button
+              small
+              onClick={() => $.onMovePlayers(project)}
+            >
+              <span class={`i clarity-arrow-line`} />
+            </Button>}
+        </>
 
         $.view = <>
           <Toolbar project={project} />
@@ -585,10 +611,6 @@ export const App = web(view('app',
           <main>
             <nav>
               <div class="tabs">
-                <Button tab active={tab === 'drafts'} onClick={() => { $.tab = 'drafts' }}>
-                  Drafts
-                </Button>
-
                 {!!userProjects.length && <Button tab active={tab === 'user'} onClick={() => { $.tab = 'user' }}>
                   {userBrowse}
                 </Button>}
@@ -605,8 +627,16 @@ export const App = web(view('app',
                   Liked
                 </Button>}
 
+                <Button tab active={tab === 'drafts'} onClick={() => { $.tab = 'drafts' }}>
+                  Drafts
+                </Button>
+
                 {!!playingProjects.length && <Button tab active={tab === 'playing'} onClick={() => { $.tab = 'playing' }} style={`color: ${skin.colors.brightCyan}`}>
-                  Playing
+                  Playlist
+                </Button>}
+
+                {tab === 'project' && <Button tab active={tab === 'project'} onClick={() => { $.tab = 'project' }} style={`color: ${skin.colors.brightPurple}`}>
+                  Project
                 </Button>}
               </div>
 
@@ -656,14 +686,15 @@ export const App = web(view('app',
 
             <div>
               {[
-                ...visibleProjects.map((p, i) =>
+                ...visibleProjects.map((p) =>
                   <ProjectView
                     key={p.$.id!}
                     id={p.$.id!}
                     ref={cachedRef(p.$.id!)}
                     project={p}
                     primary={project === p}
-                    controlsView={i > 0 && <Controls project={p} />}
+                    browsing={tab === 'project' && projectBrowse === p}
+                    controlsView={<Controls project={p} />}
                   />
                 ),
                 ...hiddenProjects.map((p) =>
@@ -674,6 +705,7 @@ export const App = web(view('app',
                     ref={cachedRef(p.$.id!)}
                     project={p}
                     primary={project === p}
+                    browsing={false}
                     controlsView={<Controls project={p} />}
                   />
                 )
