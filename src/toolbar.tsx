@@ -162,11 +162,11 @@ export const Toolbar = web(view('toolbar',
           stroke: ${skin.colors.brightGreen}40;
         }
         &::part(line) {
-          stroke-width: 2.6px;
+          stroke-width: 2.675px;
         }
         &::part(fill),
         &::part(fill-value) {
-          stroke-width: 2.6px;
+          stroke-width: 2.675px;
         }
       }
 

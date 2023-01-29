@@ -234,6 +234,10 @@ skin.styles = {
 }
 
 skin.css += /*css*/`
+a {
+  all: unset;
+}
+
 ${Knob} {
   box-sizing: border-box;
   /* padding: 0px 3.5px; */
@@ -304,7 +308,7 @@ ${Knob} {
 
   ${KnobView} {
     position: relative;
-    top: 1.05px;
+    top: 2.1px;
   }
 
   &-secondary {

@@ -3,7 +3,7 @@ import { chain, queue, reactive } from 'minimal-view'
 import { Audio, AudioState } from './audio'
 import { EditorBuffer } from './editor-buffer'
 import { Player } from './player'
-import { services } from './services'
+import { cachedProjects, services } from './services'
 import { getByChecksum } from './util/list'
 import { Library, toBuffer } from './library'
 import { demo } from './demo-code'
@@ -13,6 +13,8 @@ import { AudioPlayer } from './audio-player'
 import { noneOf, oneOf } from './util/one-of'
 import { filterState } from './util/filter-state'
 import { storage } from './util/storage'
+import { getDateTime } from './util/get-datetime'
+import { slugify } from './util/slugify'
 
 export type ProjectJson = {
   checksum: string,
@@ -26,19 +28,25 @@ export type ProjectJson = {
     sound: string,
     patterns: string[]
   }[],
+  remixCount: number,
+  originalRemixCount: number
+  originalChecksum: string | false,
+  originalAuthor: string | false,
 }
 
-export let projects = new Map<string, Project>()
+export const projectsById = new Map<string, Project>()
 
-export const putProjectOnTop = (project: Project) => {
-  const entries = [...projects.entries()]
+// export const putProjectOnTop = (project: Project) => {
+//   const entries = [...projects.entries()]
 
-  projects = new Map([
-    entries.find(([, p]) => p === project)!,
-    ...entries
-      .filter(([, p]) => p !== project)
-  ])
-}
+//   projects = new Map([
+//     entries.find(([, p]) => p === project)!,
+//     ...entries
+//       .filter(([, p]) => p !== project)
+//   ])
+// }
+
+export const relatedProjects = new Map<Project, Project[]>()
 
 export const Project = reactive('project',
   class props {
@@ -47,14 +55,19 @@ export const Project = reactive('project',
     bpm?: number
     title?: string = 'Untitled'
     author?: string = 'guest'
-    date?: string = new Date().toISOString()
+    date?: string = getDateTime()
     isDraft?: boolean = true
     isDeleted?: boolean = false
     remoteProject?: schemas.ProjectResponse
+    remixCount?: number = 0
+    originalRemixCount?: number = 0
+    originalChecksum?: string | false = false
+    originalAuthor?: string | false = false
   },
   class local {
     state: AudioState = 'init'
     startedAt: number = 0
+    pathname?: string
     audio?: Audio | null
     audioPlayer = AudioPlayer({})
     library?: Library
@@ -63,7 +76,7 @@ export const Project = reactive('project',
   function actions({ $, fx, fn, fns }) {
     let projectLoadPromise: Promise<void>
     let lastSavedJson: ProjectJson | undefined
-
+    let resetStateTimeout: any
     return fns(new class actions {
       // Audio
       start = fn(({ audioPlayer }) => async (resetTime = false) => {
@@ -73,9 +86,16 @@ export const Project = reactive('project',
 
         $.state = 'preparing'
 
+        clearTimeout(resetStateTimeout)
+        resetStateTimeout = setTimeout(() => {
+          if ($.state === 'preparing') {
+            $.state = 'suspended'
+          }
+        }, 5000)
+
         $.audio = services.$.audio!
 
-        filterState(projects, 'running').forEach((p) => {
+        filterState(cachedProjects, 'running').forEach((p) => {
           p.$.stop()
         })
 
@@ -120,6 +140,7 @@ export const Project = reactive('project',
 
       publish = async () => {
         const payload: schemas.PostPublishRequest = {
+          originalId: $.originalChecksum || undefined,
           bpm: $.bpm!,
           title: $.title!,
           mixer: $.players.map((player) => ({
@@ -176,7 +197,7 @@ export const Project = reactive('project',
 
           localStorage[json.checksum] = JSON.stringify(lastSavedJson = json)
 
-          services.$.updateProjects()
+          services.$.refreshProjects()
           console.timeEnd('saved')
         }
       }
@@ -199,8 +220,17 @@ export const Project = reactive('project',
         projectLoadPromise = new Promise<void>((resolve) => {
           const checksum = $.checksum
 
-          fx.once(({ library: _ }) => {
+          fx.once(async ({ library: _ }) => {
             let json: ProjectJson
+
+            queueMicrotask(() => {
+              const off = fx(({ players }) => {
+                if (players.length) {
+                  off()
+                  resolve()
+                }
+              })
+            })
 
             try {
               if (!checksum) {
@@ -221,45 +251,61 @@ export const Project = reactive('project',
 
               if ($.remoteProject) {
                 this.loadRemote($.remoteProject)
-              } else {
-                json = {
-                  isDraft: true,
-                  checksum: 'x',
-                  bpm: 120,
-                  date: new Date().toISOString(),
-                  title: 'Untitled',
-                  author: 'guest',
-                  players: [
-                    {
-                      vol: 0.45,
-                      sound: checksumId(demo.kick.sound),
-                      patterns: [demo.kick.patterns[0], demo.kick.patterns[0], demo.kick.patterns[0], demo.kick.patterns[1]].map(checksumId)
-                    },
+                return
+              } else if (checksum && checksum !== 'x') {
+                const endpoint = `/projects?id=${checksum}`
+                try {
+                  const res = await services.$.apiRequest(endpoint)
+                  if (!res.ok) {
+                    throw new Error(res.statusText)
+                  }
 
-                    {
-                      vol: 0.3,
-                      sound: checksumId(demo.snare.sound),
-                      patterns: [demo.snare.patterns[0], demo.snare.patterns[0], demo.snare.patterns[0], demo.snare.patterns[1]].map(checksumId)
-                    },
-
-                    {
-                      vol: 0.52,
-                      sound: checksumId(demo.bass.sound),
-                      patterns: [demo.bass.patterns[0]].map(checksumId)
-                    },
-                  ],
+                  const p: schemas.ProjectResponse = await res.json()
+                  console.groupCollapsed(endpoint)
+                  console.log(p)
+                  console.groupEnd()
+                  this.loadRemote(p)
+                  return
+                } catch (error) {
+                  console.warn(endpoint, error)
                 }
-
-                this.fromJSON(json)
               }
+
+              json = {
+                isDraft: true,
+                checksum: 'x',
+                bpm: 120,
+                date: new Date().toISOString(),
+                title: 'Untitled',
+                author: 'guest',
+                players: [
+                  {
+                    vol: 0.45,
+                    sound: checksumId(demo.kick.sound),
+                    patterns: [demo.kick.patterns[0], demo.kick.patterns[0], demo.kick.patterns[0], demo.kick.patterns[1]].map(checksumId)
+                  },
+
+                  {
+                    vol: 0.3,
+                    sound: checksumId(demo.snare.sound),
+                    patterns: [demo.snare.patterns[0], demo.snare.patterns[0], demo.snare.patterns[0], demo.snare.patterns[1]].map(checksumId)
+                  },
+
+                  {
+                    vol: 0.52,
+                    sound: checksumId(demo.bass.sound),
+                    patterns: [demo.bass.patterns[0]].map(checksumId)
+                  },
+                ],
+                remixCount: 0,
+                originalRemixCount: 0,
+                originalChecksum: false,
+                originalAuthor: false,
+              }
+
+              this.fromJSON(json)
             }
 
-            const off = fx(({ players }) => {
-              if (players.length) {
-                off()
-                resolve()
-              }
-            })
           })
         })
         return projectLoadPromise
@@ -275,6 +321,9 @@ export const Project = reactive('project',
         }
 
         const tracks: schemas.TrackResponse[] = await res.json()
+        console.groupCollapsed(endpoint)
+        console.log(tracks)
+        console.groupEnd()
 
         const bufferIds = [...new Set(tracks.flatMap((t) => [t.soundId, ...t.patternIds]))]
 
@@ -286,6 +335,9 @@ export const Project = reactive('project',
         }
 
         const buffers: schemas.BufferResponse[] = await res.json()
+        console.groupCollapsed(endpoint)
+        console.log(buffers)
+        console.groupEnd()
 
         buffers.forEach((b) => {
           localStorage[b.id] = b.value
@@ -328,6 +380,10 @@ export const Project = reactive('project',
           author: p.author,
           date: p.updatedAt,
           players,
+          remixCount: p.remixCount || 0,
+          originalRemixCount: p.originalRemixCount || 0,
+          originalChecksum: p.originalId || false,
+          originalAuthor: p.originalAuthor || false,
         }
 
         localStorage[p.id] = JSON.stringify(lastSavedJson = json)
@@ -342,6 +398,10 @@ export const Project = reactive('project',
         $.title = json.title
         $.author = json.author
         $.isDraft = json.isDraft
+        $.remixCount = json.remixCount || 0
+        $.originalRemixCount = json.originalRemixCount || 0
+        $.originalChecksum = json.originalChecksum || false
+        $.originalAuthor = json.originalAuthor || false
 
         json.players.forEach((player) => {
           player.sound = getByChecksum(library.$.sounds, player.sound)!.$.id!
@@ -372,7 +432,11 @@ export const Project = reactive('project',
           'date',
           'title',
           'author',
-          'isDraft'
+          'isDraft',
+          'remixCount',
+          'originalAuthor',
+          'originalChecksum',
+          'originalRemixCount',
         ]),
         players: players.map((player) => ({
           vol: player.$.vol,
@@ -385,9 +449,9 @@ export const Project = reactive('project',
   },
   function effects({ $, fx }) {
     fx(({ id }) => {
-      projects.set(id, $.self)
+      projectsById.set(id, $.self)
       return () => {
-        projects.delete(id)
+        projectsById.delete(id)
       }
     })
 
@@ -487,16 +551,53 @@ export const Project = reactive('project',
       )
     )
 
-    fx(({ checksum: _c, bpm: _b }, prev) => {
+    let firstChecksum: string
+    fx.once(({ checksum }) => {
+      firstChecksum = checksum
+    })
+    fx(({ checksum, bpm: _b }, prev) => {
       if (prev.checksum && !$.isDraft) {
         $.isDraft = true
+        $.originalChecksum = $.originalChecksum || firstChecksum
+        $.originalAuthor = $.originalAuthor || $.author!
+        $.author = services.$.username
+        $.date = getDateTime()
+        // cachedProjects.set(firstChecksum, Project({ checksum: firstChecksum }))
+        // cachedProjects.set(checksum, $.self)
       }
       $.autoSave()
     })
 
-    fx(({ isDeleted: _d }) => {
-      services.$.updateProjects()
+    fx(({ isDeleted }, prev) => {
+      if (prev.isDeleted != null && isDeleted !== prev.isDeleted) {
+        services.$.refreshProjects()
+      }
     })
+
+    fx(({ author, checksum, title, isDraft }) => {
+      if (isDraft) {
+        $.pathname = `/drafts/${$.id}`
+      } else {
+        $.pathname = `/${author}/${checksum}/${slugify(title)}`
+      }
+      $.autoSave()
+    })
+
+    fx(() =>
+      services.fx(({ projects }) => {
+        const related = projects.filter((p) =>
+          p.$.checksum !== $.checksum
+          && (
+            p.$.originalChecksum === $.checksum
+            || $.originalChecksum === p.$.checksum
+            || (p.$.originalChecksum && p.$.originalChecksum === $.originalChecksum)
+            || (p.$.title === $.title && $.author === p.$.author)
+          )
+        )
+
+        relatedProjects.set($.self, related)
+      })
+    )
   }
 )
 export type Project = typeof Project.State

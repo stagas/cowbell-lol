@@ -1,4 +1,5 @@
 import { EditorScene } from 'canvy'
+import { filterMap } from 'everyday-utils'
 import { Matrix, Point, Rect } from 'geometrik'
 import { on, reactive } from 'minimal-view'
 import { Audio } from './audio'
@@ -6,11 +7,69 @@ import { AudioPlayer } from './audio-player'
 import { library, Library } from './library'
 import { Player } from './player'
 import { Preview, createPreview } from './preview-service'
-import { Project, projects } from './project'
+import { Project } from './project'
+import { schemas } from './schemas'
 import { Skin, skin } from './skin'
 import { getSliders } from './util/args'
 import { storage } from './util/storage'
 import { Waveplot, createWaveplot } from './waveplot'
+
+export const cachedProjects = new Map<string, Project>()
+
+const receivedRemixesOf = new Set<string>()
+
+export function projectsByDate(a: Project, b: Project) {
+  return new Date(b.$.date!).getTime() - new Date(a.$.date!).getTime()
+}
+
+export function projectsRelated(a: Project, b: Project) {
+  return new Date(b.$.date!).getTime() - new Date(a.$.date!).getTime()
+}
+
+export function projectsGroup(acc: Project[][], curr: Project) {
+  const group = acc.find((g) =>
+    g[0].$.originalChecksum === curr.$.checksum
+    || curr.$.originalChecksum === g[0].$.checksum
+    || (g[0].$.originalChecksum && g[0].$.originalChecksum === curr.$.originalChecksum)
+    || (g[0].$.title === curr.$.title && g[0].$.author === curr.$.author)
+  )
+
+  if (group) {
+    group.push(curr)
+  } else {
+    acc.push([curr])
+  }
+
+  return acc
+}
+
+
+export function getOrCreateProject(p: schemas.ProjectResponse | { id: string }) {
+  let project = cachedProjects.get(p.id)
+  if (!project) {
+    if ('title' in p) {
+      project = Project({
+        checksum: p.id,
+        title: p.title,
+        bpm: p.bpm,
+        author: p.author,
+        date: p.updatedAt,
+        isDraft: false,
+        remoteProject: p,
+        remixCount: p.remixCount || 0,
+        originalRemixCount: p.originalRemixCount || 0,
+        originalChecksum: p.originalId || false,
+        originalAuthor: p.originalAuthor || false,
+      })
+    } else {
+      project = Project({
+        checksum: p.id,
+      })
+    }
+  }
+  cachedProjects.set(p.id, project)
+  return project
+}
 
 export const Services = reactive('services',
   class props {
@@ -22,15 +81,21 @@ export const Services = reactive('services',
   class local {
     state: 'idle' | 'deleting' = 'idle'
 
-    href: string = location.href
-    username: string = storage.username.get('guest')
-    loggedIn = false
     skin?: Skin = skin
     audio?: Audio
     waveplot?: Waveplot
     preview?: Preview
+
+    href: string = location.href
+    username: string = storage.username.get('guest')
+    loggedIn = false
+
     library: Library = library
     likes: string[] = storage.likes.get([])
+    projects?: Project[]
+    projectsPage = 0
+    hasMoreProjects = true
+
     editorScene = new EditorScene({
       isValidTarget: (el) => {
         const part = el.getAttribute('part')
@@ -47,18 +112,8 @@ export const Services = reactive('services',
       }
     })
 
-    previewAudioPlayer?: AudioPlayer // = AudioPlayer({})
+    previewAudioPlayer?: AudioPlayer
     previewPlayer?: Player
-    //  = Player({
-    //   vol: 0.45,
-    //   sound: 'sk',
-    //   pattern: 0,
-    //   patterns: ['k'],
-    //   isPreview: true,
-    //   audioPlayer: this.previewAudioPlayer
-    // })
-
-    projects?: Project[]
   },
   function actions({ $, fn, fns }) {
     const urlHistory: string[] = [location.href]
@@ -72,6 +127,76 @@ export const Services = reactive('services',
           { credentials: 'include', ...init }
         )
       )
+
+      loadMoreProjects = async () => {
+        $.projectsPage++
+        const results = await this.fetchProjects({ page: $.projectsPage })
+        if (!results || !results.length) {
+          $.hasMoreProjects = false
+        }
+      }
+
+      fetchProjects = async ({ username, ids, page, remixesOfId }: { username?: string, ids?: string[], page?: number, remixesOfId?: string } = {}) => {
+        if (username === 'guest') return
+        if (remixesOfId) {
+          if (receivedRemixesOf.has(remixesOfId)) {
+            return
+          }
+          receivedRemixesOf.add(remixesOfId)
+        }
+
+        try {
+          let endpoint = `/projects${!page ? '' : `?p=${page}`}`
+
+          if (ids) {
+            ids = ids.filter((id) => !cachedProjects.has(id))
+            // ids = ids.filter((id) => {
+            //   if (id in localStorage) {
+            //     getOrCreateProject({ id })
+            //     return false
+            //   }
+            //   return true
+            // })
+            if (ids.length) {
+              endpoint = `/projects?ids=${ids}`
+            } else {
+              return
+            }
+          }
+
+          if (remixesOfId) {
+            endpoint = `/projects?id=${remixesOfId}&remixes=true`
+          }
+
+          if (username) {
+            endpoint = `/projects?u=${username}`
+          }
+
+          try {
+            const res = await this.apiRequest(endpoint)
+
+            if (!res.ok) {
+              throw new Error(res.statusText)
+            }
+
+            const projects: schemas.ProjectResponse[] = await res.json()
+            console.groupCollapsed(endpoint)
+            console.log(projects)
+            console.groupEnd()
+
+            projects.forEach(getOrCreateProject)
+            return projects
+          } catch (error) {
+            console.warn(endpoint, error)
+          }
+        } finally {
+          this.refreshProjects()
+        }
+      }
+
+      refreshProjects = () => {
+        $.projects = [...cachedProjects.values()].sort(projectsByDate)
+      }
 
       tryLogin = async () => {
         try {
@@ -88,7 +213,7 @@ export const Services = reactive('services',
 
       // navigation
 
-      go = (pathname: string, searchParams: Record<string, string>) => {
+      go = (pathname: string, searchParams: Record<string, string> = {}, replace = false) => {
         if (!pathname.startsWith('.') && !pathname.startsWith('/')) {
           pathname = '/' + pathname
         }
@@ -104,7 +229,11 @@ export const Services = reactive('services',
             history.back()
             this.onWindowPopState()
           } else {
-            history.pushState({}, '', url)
+            if (replace) {
+              history.replaceState({}, '', url)
+            } else {
+              history.pushState({}, '', url)
+            }
             this.onWindowPopState()
           }
         }
@@ -132,19 +261,6 @@ export const Services = reactive('services',
       }
 
       // misc
-
-      updateProjects = () => {
-        const projectsChecksums: string[] = [
-          ...new Set<string>(
-            [...projects.values()]
-              .filter((x) => x.$.isDraft && !x.$.isDeleted)
-              .map((x: Project) =>
-                x.$.checksum as string)
-          )
-        ]
-
-        storage.projects.set(projectsChecksums)
-      }
 
       getSliders = fn(({ sampleRate }) =>
         (code: string) =>
@@ -229,6 +345,21 @@ export const Services = reactive('services',
       storage.likes.set(likes)
     })
 
+    fx.once(async ({ apiUrl: _, likes }) => {
+      // drafts
+      const draftIds = storage.projects.get(['x'])
+      const ids = (draftIds.length ? draftIds : ['x'])
+      ids.forEach((id) =>
+        getOrCreateProject({ id })
+      )
+
+      // likes
+      $.fetchProjects({ ids: likes })
+
+      // recent
+      await $.fetchProjects()
+    })
+
     fx(async function initWaveplot({ previewSampleRate }) {
       const previewSamplesLength = previewSampleRate / 4 | 0
 
@@ -243,6 +374,15 @@ export const Services = reactive('services',
 
     fx(async function initPreview({ waveplot, previewSampleRate }) {
       $.preview = createPreview(waveplot, previewSampleRate)
+    })
+
+    fx(({ projects }) => {
+      const projectsChecksums = filterMap(
+        projects, (p) =>
+        p.$.isDraft && !p.$.isDeleted && p.$.checksum
+      )
+
+      storage.projects.set(projectsChecksums)
     })
   }
 )

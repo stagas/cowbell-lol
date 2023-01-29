@@ -1,65 +1,18 @@
 /** @jsxImportSource minimal-view */
 
+import { filterMap, shallowEqualArray } from 'everyday-utils'
 import memoize from 'memoize-pure'
-import { chain, element, on, ValuesOf, view, web } from 'minimal-view'
+import { chain, element, on, view, web } from 'minimal-view'
 import { lastRunningPlayers } from './audio'
 import { Button } from './button'
 import { Hint } from './hint'
-import { Player, players } from './player'
-import { Project, projects, putProjectOnTop } from './project'
+import { Player } from './player'
+import { Project, projectsById } from './project'
 import { ProjectView } from './project-view'
-import { schemas } from './schemas'
-import { services } from './services'
+import { cachedProjects, getOrCreateProject, projectsByDate, projectsGroup, services } from './services'
 import { Toolbar } from './toolbar'
-import { classes } from './util/classes'
 import { filterState } from './util/filter-state'
-import { groupSort } from './util/group-sort'
-import { oneOf } from './util/one-of'
 import { storage } from './util/storage'
-
-export const PROJECT_KINDS = {
-  SAVED: '0',
-  DRAFT: '1',
-  REMOTE: '2',
-} as const
-
-export const DELIMITERS = {
-  SAVE_ID: ',',
-  SHORT_ID: ',',
-} as const
-
-export const APP_MODE = {
-  NORMAL: 'normal',
-  SOLO: 'solo',
-  BROWSE: 'browse',
-  USER_BROWSE: 'userbrowse'
-} as const
-export type AppMode = ValuesOf<typeof APP_MODE>
-
-const cachedProjects = new Map<string, Project>()
-
-function getOrCreateProject(p: schemas.ProjectResponse | { id: string }) {
-  let project = cachedProjects.get(p.id)
-  if (!project) {
-    if ('title' in p) {
-      project = Project({
-        checksum: p.id,
-        title: p.title,
-        bpm: p.bpm,
-        author: p.author,
-        date: p.updatedAt,
-        isDraft: false,
-        remoteProject: p,
-      })
-    } else {
-      project = Project({
-        checksum: p.id,
-      })
-    }
-  }
-  cachedProjects.set(p.id, project)
-  return project
-}
 
 // const projectButtonRefs = new Map<string, HTMLElement>()
 
@@ -99,6 +52,9 @@ export const cachedRef = memoize((id: string) => ({
   }
 }))
 
+export const projectsCounts = new Map<Project, number>()
+export const projectsOlderExpanded = new Set<Project>()
+
 export type Selected = {
   player: number,
   preset: string
@@ -119,58 +75,32 @@ export const App = web(view('app',
     host = element
 
     state: 'idle' | 'deleting' = 'idle'
+    mode: 'normal' | 'solo' | 'browse' | 'userbrowse' = 'normal'
+    tab?: 'drafts' | 'user' | 'recent' | 'liked' | 'playlist' | 'project'
 
     hint: JSX.Element = false
 
-    // selected: Selected = storage.selected.get({ player: 0, preset: 'sound-kick' })
-
-    // players: Player[] = []
-    // player?: Player
-
-    // sounds: EditorBuffer[] = []
-    // sound?: EditorBuffer
-
-    // patterns: EditorBuffer[] = []
-    // pattern?: EditorBuffer
-
-    // editor?: InstanceType<typeof Editor.Element>
-    // editorVisible = storage.editorVisible.get(false)
-    // editorEl?: HTMLElement
-    // editorBuffer?: EditorBuffer
-
     project?: Project
-
-    // remoteProjects: string[] = []
-    // allProjects: {
-    //   drafts: string[],
-    //   liked: string[],
-    //   recent: string[],
-    // } = makeProjects(this.projects, storage.likes.get([]))
-
-    mode: AppMode = 'normal'
-
-    tab: 'drafts' | 'user' | 'recent' | 'liked' | 'playing' | 'project' = 'user'
+    projects: Project[] = []
 
     userBrowse: string = 'guest'
+    draftBrowse: Project | false = false
+    draftFocus = false
     projectBrowse: Project | false = false
+    projectExpand = false
 
+    userProjects: Project[] = []
     draftProjects: Project[] = []
-    userProjects: Project[][] = []
-    allProjects: Project[][] = []
+    allProjects: Project[] = []
     likedProjects: Project[] = []
     playingProjects: Project[] = []
 
     visibleProjects: Project[] = []
     hiddenProjects: Project[] = []
-
-    presetsScrollEl?: HTMLDivElement
-
-    // playersView: JSX.Element = false
-    // editorView: JSX.Element = false
   },
 
   function actions({ $, fns, fn }) {
-    // let lastSaveJson: any = {}
+    let lastPlaylistSearchParams = ''
 
     return fns(new class actions {
       // working state
@@ -229,12 +159,33 @@ export const App = web(view('app',
       //   }
       // }
 
-      // onProjectSelect = (project: Project) => {
-      //   $.project = project
-      //   putProjectOnTop(project)
-      //   services.$.updateProjects()
-      //   $.mode = APP_MODE.NORMAL
-      // }
+      getPlayingProjects = () => {
+        return [...filterState(cachedProjects, 'preparing', 'running')]
+          .sort((a, b) =>
+            a.$.startedAt - b.$.startedAt
+          )
+      }
+
+      getPlaylistSearchParams = () => {
+        let playingProjects = this.getPlayingProjects()
+        if (!playingProjects.length) playingProjects = $.playingProjects
+
+        let p = playingProjects.map((p) => [
+          p.$.checksum,
+          filterMap(p.$.players, (x, y) => (x.$.state === 'running' || lastRunningPlayers.has(x)) && y).join('.')
+        ].filter(Boolean).join('-')
+        ).join('--')
+
+        if (!p) {
+          p = lastPlaylistSearchParams
+        }
+
+        if (!p) return {}
+
+        lastPlaylistSearchParams = p
+
+        return { p }
+      }
 
       onMovePlayers = async (project: Project) => {
         const playersToMove = project.$.players.filter((player) => lastRunningPlayers?.has(player) || player.$.state === 'running')
@@ -257,7 +208,7 @@ export const App = web(view('app',
 
         project.$.stop()
 
-        $.playingProjects = [...filterState(projects, 'preparing', 'running')]
+        $.playingProjects = [...filterState(cachedProjects, 'preparing', 'running')]
           .sort((a, b) =>
             a.$.startedAt - b.$.startedAt
           )
@@ -269,26 +220,147 @@ export const App = web(view('app',
     app = $.self
 
     // routes
-    services.fx(({ href }) => {
+    services.fx(async ({ apiUrl: _, audio, href }) => {
       const { pathname, searchParams } = new URL(href)
 
       console.log('Navigated to:', pathname, searchParams)
 
-      const [, username, target] = pathname.split('/')
-      if (!username) {
-        $.mode = APP_MODE.NORMAL
-      } else if (!target) {
-        $.userBrowse = username
-        $.mode = APP_MODE.USER_BROWSE
+      const [, top, sub] = pathname.split('/')
+
+      try {
+        if (top) {
+          if (top === 'liked') {
+            await services.$.fetchProjects({ ids: services.$.likes })
+            services.$.refreshProjects()
+            await Promise.resolve()
+            $.tab = 'liked'
+            return
+          } else if (top === 'drafts') {
+            if (!sub) {
+              $.draftFocus = false
+              // drafts
+              const draftIds = storage.projects.get(['x'])
+              const ids = (draftIds.length ? draftIds : ['x'])
+              ids.forEach((id) =>
+                getOrCreateProject({ id })
+              )
+              services.$.refreshProjects()
+              await Promise.resolve()
+            } else {
+              $.draftFocus = true
+              $.draftBrowse = projectsById.get(sub) || false
+              if ($.draftBrowse) {
+                $.projectExpand = searchParams.get('expand') === 'true'
+              }
+            }
+            $.tab = 'drafts'
+            return
+          } else if (top === 'playlist') {
+            const p = decodeURIComponent(searchParams.get('p') || '')
+            if (p) {
+              const parts = p.split('--')
+              lastRunningPlayers.clear()
+              await Promise.resolve()
+              const projectResults = await Promise.allSettled(
+                parts.map(async (x) => {
+                  const [id, playersYs] = x.split('-')
+                  const project = getOrCreateProject({ id })
+                  await Promise.race([
+                    project.$.load(),
+                    new Promise((_, reject) => setTimeout(reject, 10000, new Error('Timeout loading')))
+                  ])
+                  await Promise.resolve()
+                  const ys = playersYs.split('.').map(parseFloat)
+                  const players = project.$.players
+                  players.forEach((player, y) => {
+                    if (ys.includes(y)) {
+                      lastRunningPlayers.add(player)
+                    }
+                  })
+                  return project
+                })
+              )
+              const playingProjects: Project[] = []
+              for (const projectResult of projectResults) {
+                if (projectResult.status === 'fulfilled') {
+                  playingProjects.push(projectResult.value)
+                }
+              }
+              $.playingProjects = playingProjects
+            }
+            $.tab = 'playlist'
+            return
+          }
+
+          if (!sub) {
+            // /username
+            if (top === 'guest') {
+              services.$.go('/')
+              return
+            }
+
+            $.userBrowse = top
+            await services.$.fetchProjects({ username: $.userBrowse })
+            $.tab = 'user'
+            return
+          }
+
+          $.projectExpand = searchParams.get('expand') === 'true'
+          $.draftBrowse = false
+
+          if (cachedProjects.has(sub)) {
+            $.projectBrowse = cachedProjects.get(sub)!
+            if (audio.$.state !== 'running') {
+              $.project = $.projectBrowse
+            }
+            $.tab = 'project'
+            return
+          } else {
+            const project = getOrCreateProject({ id: sub })
+            await project.$.load()
+            $.projectBrowse = project
+            if (audio.$.state !== 'running') {
+              $.project = project
+            }
+            $.tab = 'project'
+            return
+          }
+        }
+      } catch (error) {
+        console.warn(error)
       }
+
+      if (pathname !== '/') {
+        services.$.go('/', {})
+      }
+
+      $.mode = 'normal'
+      $.tab = 'recent'
+    })
+
+    fx(({ tab, userBrowse, projectBrowse, draftBrowse }) => {
+      let title = ''
+      if (tab === 'drafts') {
+        title = `Drafts${!draftBrowse ? '' : ` - ${draftBrowse.$.title}`}`
+      } else if (tab === 'liked') {
+        title = 'Liked'
+      } else if (tab === 'user' && userBrowse !== 'guest') {
+        title = userBrowse
+      } else if (tab === 'project' && projectBrowse) {
+        title = `${projectBrowse.$.author ?? 'guest'} - ${projectBrowse.$.title ?? 'Untitled'}`
+      } else if (tab === 'playlist') {
+        title = 'Playlist'
+      }
+      document.title = ['cowbell.lol', title].filter(Boolean).join(' - ')
     })
 
     fx(async ({ host }) => {
       host.style.opacity = '0'
       await Promise.race([
         document.fonts.ready,
-        new Promise((resolve) => setTimeout(resolve, 5000))
+        new Promise((resolve) => setTimeout(resolve, 7000))
       ])
+      await new Promise(requestAnimationFrame)
       host.style.opacity = '1'
     })
 
@@ -300,162 +372,127 @@ export const App = web(view('app',
       project.$.load()
     })
 
-    const off = services.fx(({ library }) =>
-      library.fx(({ sounds, patterns }) => {
-        if (sounds.length && patterns.length) {
-          off()
-          const draftIds = storage.projects.get(['x'])
-          $.draftProjects = (draftIds.length ? draftIds : ['x'])
-            .map((id) =>
-              getOrCreateProject({ id })
-            )
-        }
-      })
-    )
-
-    services.fx(async ({ apiUrl: _, username }) => {
-      const endpoint = `/projects?u=${username}`
-      const res = await services.$.apiRequest(endpoint)
-      if (!res.ok) {
-        console.error(endpoint, res)
-        return
-      }
-
-      const projects: schemas.ProjectResponse[] = await res.json()
-      console.log(endpoint, projects)
-
-      $.userProjects = groupSort(projects)
-        .map((group) =>
-          group.map(getOrCreateProject)
-        )
-    })
-
-    services.fx(async ({ apiUrl: _ }) => {
-      const endpoint = `/projects`
-      const res = await services.$.apiRequest(endpoint)
-      if (!res.ok) {
-        console.error(endpoint, res)
-        return
-      }
-
-      const projects: schemas.ProjectResponse[] = await res.json()
-      console.log(endpoint, projects)
-
-      $.allProjects = groupSort(projects)
-        .map((group) =>
-          group.map(getOrCreateProject)
-        )
-    })
-
-    services.fx.once(async ({ apiUrl: _, likes }) => {
-      if (!likes.length) {
-        $.likedProjects = []
-        return
-      }
-
-      // TODO: only load the ones we don't have
-      const endpoint = `/projects?ids=${likes}`
-      const res = await services.$.apiRequest(endpoint)
-      if (!res.ok) {
-        console.error(endpoint, res)
-        return
-      }
-
-      const projects: schemas.ProjectResponse[] = await res.json()
-      console.log(endpoint, projects)
-
-      $.likedProjects = projects.map(getOrCreateProject)
-    })
-
     services.fx(({ audio }) =>
       audio.fx.raf(({ state }) => {
         if (state === 'running') {
           return fx(({ tab: _ }) => {
             if (audio.$.state === 'running') {
-              $.playingProjects = [...filterState(projects, 'preparing', 'running')]
-                .sort((a, b) =>
-                  a.$.startedAt - b.$.startedAt
-                )
+              $.playingProjects = $.getPlayingProjects()
             }
           })
         }
       })
     )
 
-    fx(({ tab, draftProjects, userBrowse, projectBrowse, userProjects, allProjects, likedProjects, playingProjects }) => {
-      const usedProjects = new Set<string>()
+    services.fx(({ projects }) => {
+      if (!shallowEqualArray($.projects, projects)) {
+        $.projects = projects
+      }
+    })
 
-      const first = (g: Project[]) => g[0]
-      const add = (p: Project) => !usedProjects.has(p.$.checksum!) && (usedProjects.add(p.$.checksum!), 1)
-      const drafts = (p: Project) => !!p.$.isDraft
-      const not = (fn: (x: Project) => boolean) =>
-        (x: Project) => !fn(x)
+    fx(({ tab }) => {
+      services.$.refreshProjects()
+    })
 
-      if (tab === 'user' && userBrowse === 'guest') {
-        if (services.$.loggedIn) {
-          userBrowse = services.$.username
+    fx(({ projects, tab, userBrowse, projectBrowse, draftBrowse, draftFocus, projectExpand, playingProjects }, prev) => {
+      if (
+        (prev.tab === tab && prev.userBrowse === userBrowse)
+        && prev.projects && projects.length - prev.projects.length <= 1
+        && prev.projectBrowse === projectBrowse
+        && prev.projectExpand === projectExpand
+        && prev.draftBrowse === draftBrowse
+        && prev.draftFocus === draftFocus
+      ) return
+
+      function first(g: Project[]) {
+        return g[0]
+      }
+
+      const prevVisibleProjects = $.visibleProjects
+      const prevHiddenProjects = $.hiddenProjects
+
+      $.draftProjects = draftFocus && draftBrowse ? [draftBrowse] : projects.filter((p) => p.$.isDraft)
+
+      $.allProjects = projects.reduce(projectsGroup, []).map(first)
+
+      $.userProjects = projects.filter((p) =>
+        p.$.author === userBrowse
+        || (p.$.originalAuthor === userBrowse && p.$.isDraft)
+      )
+
+      $.likedProjects = projects.filter((p) => services.$.likes.includes(p.$.checksum!)).sort(projectsByDate)
+
+      $.visibleProjects = $.allProjects
+
+      if (tab === 'drafts') {
+        if (projectExpand && draftBrowse && draftFocus) {
+          const related = projects.filter((p) =>
+            p !== draftBrowse
+            && (
+              p.$.originalChecksum === draftBrowse.$.checksum
+              || draftBrowse.$.originalChecksum === p.$.checksum
+              || (p.$.originalChecksum && p.$.originalChecksum === draftBrowse.$.originalChecksum)
+              || (p.$.title === draftBrowse.$.title && draftBrowse.$.author === p.$.author)
+            )
+          )
+
+          $.visibleProjects = [
+            draftBrowse,
+            ...related
+          ]
         } else {
-          tab = 'recent'
+          $.visibleProjects = $.draftProjects
+        }
+      } else if (tab === 'user') {
+        $.visibleProjects = $.userProjects.reduce(projectsGroup, []).map(first)
+      } else if (tab === 'liked') {
+        $.visibleProjects = $.likedProjects
+      } else if (tab === 'playlist') {
+        $.visibleProjects = playingProjects
+      } else if (tab === 'project' && projectBrowse) {
+        if (projectExpand) {
+          const related = projects.filter((p) =>
+            p !== projectBrowse
+            && (
+              p.$.originalChecksum === projectBrowse.$.checksum
+              || projectBrowse.$.originalChecksum === p.$.checksum
+              || (p.$.originalChecksum && p.$.originalChecksum === projectBrowse.$.originalChecksum)
+              || (p.$.title === projectBrowse.$.title && projectBrowse.$.author === p.$.author)
+            )
+          )
+
+          $.visibleProjects = [
+            projectBrowse,
+            ...related
+          ]
+        } else {
+          $.visibleProjects = [projectBrowse]
+        }
+
+        services.$.fetchProjects({ remixesOfId: projectBrowse.$.checksum! })
+        if (projectBrowse.$.originalChecksum) {
+          services.$.fetchProjects({ remixesOfId: projectBrowse.$.originalChecksum })
         }
       }
 
-      if (tab === 'playing' && !playingProjects.length) {
-        tab = 'recent'
-      }
+      $.hiddenProjects = projects.filter((p) => !$.visibleProjects.includes(p))
 
-      if (tab === 'drafts') {
-        $.visibleProjects = [
-          ...draftProjects.filter(drafts).filter(add),
-          ...allProjects.map(first).filter(drafts).filter(add),
-          ...userProjects.map(first).filter(drafts).filter(add),
-          ...likedProjects.filter(drafts).filter(add),
-        ]
-        $.hiddenProjects = [
-          ...draftProjects.filter(not(drafts)).filter(add),
-          ...allProjects.map(first).filter(not(drafts)).filter(add),
-          ...userProjects.map(first).filter(not(drafts)).filter(add),
-          ...likedProjects.filter(not(drafts)).filter(add),
-        ]
-      } else if (tab === 'user') {
-        $.visibleProjects = userProjects.map(first).filter(add)
-        $.hiddenProjects = [
-          ...draftProjects.filter(drafts).filter(add),
-          ...allProjects.map(first).filter(add),
-          ...likedProjects.filter(add),
-        ]
-      } else if (tab === 'recent') {
-        $.visibleProjects = allProjects.map(first).filter(add)
-        $.hiddenProjects = [
-          ...draftProjects.filter(drafts).filter(add),
-          ...userProjects.map(first).filter(add),
-          ...likedProjects.filter(add),
-        ]
-      } else if (tab === 'liked') {
-        $.visibleProjects = likedProjects.filter(add)
-        $.hiddenProjects = [
-          ...draftProjects.filter(drafts).filter(add),
-          ...allProjects.map(first).filter(add),
-          ...userProjects.map(first).filter(add),
-        ]
-      } else if (tab === 'playing') {
-        $.visibleProjects = playingProjects.filter(add)
-        $.hiddenProjects = [
-          ...draftProjects.filter(drafts).filter(add),
-          ...allProjects.map(first).filter(add),
-          ...userProjects.map(first).filter(add),
-          ...likedProjects.filter(add),
-        ]
-      } else if (tab === 'project' && projectBrowse) {
-        $.visibleProjects = [projectBrowse].filter(add)
-        $.hiddenProjects = [
-          ...draftProjects.filter(drafts).filter(add),
-          ...allProjects.map(first).filter(add),
-          ...userProjects.map(first).filter(add),
-          ...likedProjects.filter(add),
-        ]
+      if (!$.visibleProjects.length) {
+        if (!prevVisibleProjects.length) {
+          services.$.go('/')
+        } else {
+          $.visibleProjects = prevVisibleProjects
+          $.hiddenProjects = prevHiddenProjects
+        }
       }
 
       $.project ??= $.visibleProjects[0]
+
+      if (prev.tab !== tab || prev.projectBrowse !== projectBrowse || (tab === 'project' && !projectExpand)) {
+        requestAnimationFrame(() => {
+          window.scrollTo(0, 0)
+        })
+      }
     })
 
     fx(() =>
@@ -532,6 +569,21 @@ export const App = web(view('app',
           background: ${skin.colors.bg};
           box-shadow: 0 0 24px 10px ${skin.colors.shadeBlack};
         }
+
+        .load-more {
+          all: unset;
+          display: flex;
+          margin: 0 auto;
+          padding: 10px 20px;
+          font-family: ${skin.fonts.sans};
+          font-size: 16px;
+          color: ${skin.colors.fgPale};
+          letter-spacing: 1px;
+          cursor: pointer;
+          &:hover {
+            color: ${skin.colors.fgLight};
+          }
+        }
       }
 
       nav {
@@ -566,42 +618,27 @@ export const App = web(view('app',
       `
     })
 
-    services.fx(({ audio, skin, loggedIn }) =>
-      fx.raf(({ distRoot, mode, tab, project, userBrowse, projectBrowse, userProjects, likedProjects, visibleProjects, hiddenProjects, playingProjects }) => {
-        if (!loggedIn) {
-          if (tab === 'user' && userBrowse === 'guest') {
-            tab = 'recent'
-          }
-        } else {
-          if (userBrowse === 'guest') {
-            userBrowse = services.$.username
-          }
-        }
-
-        if (tab === 'playing' && !playingProjects.length) {
-          tab = 'recent'
-        }
-
+    services.fx(({ skin, loggedIn, hasMoreProjects }) =>
+      fx(({ distRoot, mode, tab, project, userBrowse, draftBrowse, draftFocus, projectBrowse, projectExpand, allProjects, userProjects, likedProjects, visibleProjects, hiddenProjects, playingProjects }) => {
         const Controls = ({ project }: { project: Project }) => <>
-          {tab !== 'project' && !project.$.isDraft && <Button rounded small onClick={() => {
-            $.tab = 'project'
-            $.projectBrowse = project
-            if (audio.$.state !== 'running') {
-              $.project = project
-            }
-          }}>
-            <span class={`i la-share`} />
-          </Button>}
-
-          {tab === 'playing'
+          {tab === 'playlist'
             && project !== $.visibleProjects[0]
             && <Button
               small
               onClick={() => $.onMovePlayers(project)}
+              title="Merge playing into top project"
             >
               <span class={`i clarity-arrow-line`} />
             </Button>}
         </>
+
+        if (tab === 'drafts' && draftBrowse && draftFocus) {
+          tab = 'project'
+          projectBrowse = draftBrowse
+        }
+        if (draftBrowse) {
+          projectBrowse = draftBrowse
+        }
 
         $.view = <>
           <Toolbar project={project} />
@@ -611,31 +648,32 @@ export const App = web(view('app',
           <main>
             <nav>
               <div class="tabs">
-                {!!userProjects.length && <Button tab active={tab === 'user'} onClick={() => { $.tab = 'user' }}>
+                {userBrowse !== 'guest' && !!userProjects.length && <Button ref={cachedRef(`avatar-tab-${userBrowse}`)} tab active={tab === 'user'} onClick={services.$.linkTo(`/${userBrowse}`)}>
+                  <img crossorigin={'anonymous'} src={`https://avatars.githubusercontent.com/${userBrowse}?s=40&v=4`} />
                   {userBrowse}
                 </Button>}
 
-                <Button tab active={tab === 'recent'} onClick={() => { $.tab = 'recent' }}>
+                {!!allProjects.length && <Button tab active={tab === 'recent'} onClick={services.$.linkTo(`/`)}>
                   Recent
-                </Button>
+                </Button>}
 
                 {/* <Button tab active={browseTab === 'popular'} onClick={() => { $.browseTab = 'popular' }}>
                       Popular
                     </Button> */}
 
-                {!!likedProjects.length && <Button tab active={tab === 'liked'} onClick={() => { $.tab = 'liked' }}>
+                {!!likedProjects.length && <Button tab active={tab === 'liked'} onClick={services.$.linkTo(`/liked`)}>
                   Liked
                 </Button>}
 
-                <Button tab active={tab === 'drafts'} onClick={() => { $.tab = 'drafts' }}>
+                <Button tab active={tab === 'drafts'} onClick={services.$.linkTo(`/drafts`)}>
                   Drafts
                 </Button>
 
-                {!!playingProjects.length && <Button tab active={tab === 'playing'} onClick={() => { $.tab = 'playing' }} style={`color: ${skin.colors.brightCyan}`}>
+                {!!playingProjects.length && <Button tab active={tab === 'playlist'} onClick={() => services.$.go(`/playlist`, $.getPlaylistSearchParams())} style={`color: ${skin.colors.brightCyan}`}>
                   Playlist
                 </Button>}
 
-                {tab === 'project' && <Button tab active={tab === 'project'} onClick={() => { $.tab = 'project' }} style={`color: ${skin.colors.brightPurple}`}>
+                {projectBrowse && <Button tab active={tab === 'project'} onClick={services.$.linkTo(projectBrowse.$.pathname!)} style={`color: ${skin.colors.brightPurple}`}>
                   Project
                 </Button>}
               </div>
@@ -662,8 +700,8 @@ export const App = web(view('app',
               </Button>}
 
               {loggedIn && <Button round onClick={
-                mode === APP_MODE.NORMAL
-                  || (mode === APP_MODE.USER_BROWSE && $.userBrowse !== services.$.username)
+                mode === 'normal'
+                  || (mode === 'userbrowse' && $.userBrowse !== services.$.username)
                   ? services.$.linkTo(services.$.username)
                   : services.$.linkTo('/')
               }>
@@ -693,7 +731,7 @@ export const App = web(view('app',
                     ref={cachedRef(p.$.id!)}
                     project={p}
                     primary={project === p}
-                    browsing={tab === 'project' && projectBrowse === p}
+                    browsing={tab === 'project' && visibleProjects.length === 1}
                     controlsView={<Controls project={p} />}
                   />
                 ),
@@ -711,6 +749,13 @@ export const App = web(view('app',
                 )
               ]}
             </div>
+
+            {tab === 'recent' ?
+              hasMoreProjects ?
+                <button class="load-more" onclick={services.$.loadMoreProjects}>MORE</button>
+                : <button class="load-more" style="pointer-events: none">THIS IS THE END</button>
+              : false
+            }
           </main>
 
           <footer>🔔</footer>

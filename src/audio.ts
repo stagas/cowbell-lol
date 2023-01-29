@@ -5,7 +5,7 @@ import { SchedulerNode, SchedulerEventGroupNode, SchedulerTargetNode } from 'sch
 import { app } from './app'
 import { AudioPlayer } from './audio-player'
 import { Player, players } from './player'
-import { projects } from './project'
+import { cachedProjects } from './services'
 import { filterState } from './util/filter-state'
 import { oneOf } from './util/one-of'
 import { ObjectPool } from './util/pool'
@@ -13,7 +13,7 @@ import { storage } from './util/storage'
 
 export type AudioState = 'init' | 'preparing' | 'running' | 'suspended' | 'preview' | 'restarting'
 
-export let lastRunningPlayers: Set<Player> | null
+export let lastRunningPlayers = new Set<Player>()
 
 export const Audio = reactive('audio',
   class props {
@@ -27,7 +27,7 @@ export const Audio = reactive('audio',
     connectedNodes = new Set<AudioNode | SchedulerEventGroupNode>()
 
     destPlayer?: AudioPlayer = AudioPlayer({
-      vol: storage.vols.get('audio', 0.5),
+      vol: storage.vols.get('audio', 0.61803),
       isSpeakers: true
     })
 
@@ -95,7 +95,7 @@ export const Audio = reactive('audio',
           this.resetTime()
         }
 
-        lastRunningPlayers = null
+        lastRunningPlayers.clear()
 
         $.startTime = await schedulerNode.start(now + $.delayStart, $.internalTime + $.delayStart)
 
@@ -134,7 +134,7 @@ export const Audio = reactive('audio',
 
         schedulerNode.stop()
 
-        filterState(projects, 'running').forEach((project) => {
+        filterState(cachedProjects, 'running').forEach((project) => {
           project.$.stop()
         })
       })

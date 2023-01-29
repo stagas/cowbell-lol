@@ -208,7 +208,16 @@ export const Button = web(view('btn',
 
           display: flex;
           flex-flow: row wrap;
-          gap: 4px;
+          align-items: center;
+          gap: 7px;
+
+          line-height: 26px;
+
+          img {
+            border-radius: 100%;
+            width: 26px;
+            height: 26px;
+          }
 
           .shades {
             display: none;

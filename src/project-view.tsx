@@ -2,7 +2,7 @@
 
 import { web, view, element, chain } from 'minimal-view'
 import { PianoKeys } from 'x-pianokeys'
-import { cachedRef, Selected } from './app'
+import { cachedRef, projectsCounts, projectsOlderExpanded, Selected } from './app'
 import { Audio } from './audio'
 import { Button } from './button'
 import { demo } from './demo-code'
@@ -10,12 +10,13 @@ import { Editor } from './editor'
 import { EditorBuffer } from './editor-buffer'
 import { Player } from './player'
 import { PlayersView } from './players-view'
-import { Project } from './project'
+import { Project, relatedProjects } from './project'
 import { services } from './services'
 import { Spacer } from './spacer'
 import { TrackView } from './track-view'
 import { classes } from './util/classes'
 import { delById, get, replaceAtIndex } from './util/list'
+import { timeAgo } from './util/time-ago'
 import { Volume } from './volume'
 import { Wavetracer } from './wavetracer'
 
@@ -192,13 +193,13 @@ export const ProjectView = web(view('project-view',
         }
       })
 
-
       startTemporaryPresetsSmoothScroll = () => {
-        if ($.presetsScrollEl) {
-          $.presetsScrollEl.style.scrollBehavior = 'smooth'
+        const el = cachedRef(`presets-${$.id}`)?.current
+        if (el) {
+          el.style.scrollBehavior = 'smooth'
           clearTimeout(presetsSmoothScrollTimeout)
           presetsSmoothScrollTimeout = setTimeout(() => {
-            $.presetsScrollEl!.style.scrollBehavior = 'auto'
+            el.style.scrollBehavior = 'auto'
           }, 100)
         }
       }
@@ -514,7 +515,7 @@ export const ProjectView = web(view('project-view',
 
     fx(() => services.fx(({ audio }) =>
       audio.fx(({ audioContext }) =>
-        fx(({ pattern }) =>
+        fx(({ id, pattern }) =>
           pattern.fx(({ midiRange }) => {
             const hasRange = isFinite(midiRange[0]) && isFinite(midiRange[1])
             const halfOctaves = !hasRange
@@ -527,6 +528,7 @@ export const ProjectView = web(view('project-view',
 
             $.pianoView =
               <PianoKeys
+                ref={cachedRef(`piano-${id}`)}
                 halfOctaves={halfOctaves}
                 startHalfOctave={startHalfOctave}
                 audioContext={audioContext}
@@ -542,8 +544,8 @@ export const ProjectView = web(view('project-view',
       fx.task(({ id, project, player, main, sounds, sound, patterns, pattern, focused, selected, expanded: _, editorBuffer, pianoView }) => {
         const soundPresets = <div
           key="sounds"
-          part="app-presets"
           ref={cachedRef(`sounds-${id}`)}
+          part="app-presets"
           class={classes({
             hidden: focused !== 'sound' && focused !== 'sounds'
           })}
@@ -571,9 +573,9 @@ export const ProjectView = web(view('project-view',
         </div>
 
         const patternPresets = <div
-          key="presets"
+          key="patterns"
+          ref={cachedRef(`patterns-${id}`)}
           part="app-presets"
-          ref={cachedRef(`presets-${id}`)}
           class={classes({
             hidden: focused !== 'pattern' && focused !== 'patterns'
           })}
@@ -616,7 +618,7 @@ export const ProjectView = web(view('project-view',
         >
           {pianoView}
 
-          <div ref={refs.presetsScrollEl} style="height:100%; position:relative; overflow-y: scroll; overscroll-behavior: contain;">
+          <div ref={cachedRef(`presets-${id}`)} style="height:100%; position:relative; overflow-y: scroll; overscroll-behavior: contain;">
             {soundPresets}
             {patternPresets}
           </div>
@@ -781,13 +783,49 @@ export const ProjectView = web(view('project-view',
           gap: 15px;
           z-index: 4;
 
+          &-note {
+            position: absolute;
+            right: 0;
+            bottom: 8.85px;
+            white-space: nowrap;
+            color: ${skin.colors.fgPale};
+            text-shadow: 1px 1px ${skin.colors.shadeBlack};
+            user-select: none;
+            display: inline-flex;
+            flex-flow: row wrap;
+            gap: 10px;
+            cursor: default;
+          }
+
+          &-time-ago {
+            cursor: pointer;
+
+            &:hover {
+              text-decoration: underline;
+              text-decoration-thickness: 0.85px;
+              text-underline-offset: 2.5px;
+            }
+          }
+
+          &-more {
+            color: ${skin.colors.brightCyan};
+            cursor: pointer;
+
+            &:hover {
+              text-decoration: underline;
+              text-decoration-thickness: 0.85px;
+              text-underline-offset: 2.5px;
+            }
+          }
+
           .reactions {
             color: ${skin.colors.fg};
             display: flex;
             flex-flow: row nowrap;
             gap: 10px;
             align-self: flex-start;
-            margin-top: 5.62px;
+            position: relative;
+            top: 4px;
           }
 
           &-icon {
@@ -795,23 +833,41 @@ export const ProjectView = web(view('project-view',
           }
           &-header {
             position: relative;
-            top: -2px;
+            /* top: -2px; */
             display: flex;
+            align-items: flex-start;
             flex-flow: column wrap;
+          }
+          &-info {
+            display: inline-flex;
+            flex-flow: row wrap;
+            align-items: center;
+            justify-content: center;
+            gap: 15px;
           }
           &-title {
             outline: none;
             position: relative;
             font-size: 26px;
+            top: -1.5px;
             letter-spacing: 0.2px;
             color: ${skin.colors.fg};
+            /* text-underline-offset: 4.5px;
             text-decoration: underline;
-            text-underline-offset: 4.5px;
             text-decoration-thickness: 1.5px;
-            text-decoration-color: ${skin.colors.shadeBright};
+            text-decoration-color: ${skin.colors.shadeBright}; */
             text-shadow: 2px 2px ${skin.colors.shadeBlack};
             &:focus {
               background: ${skin.colors.shadeSoft};
+            }
+            a {
+              cursor: pointer;
+              &:hover {
+                text-underline-offset: 4.5px;
+                text-decoration: underline;
+                text-decoration-thickness: 1.5px;
+                text-decoration-color: ${skin.colors.shadeBright};
+              }
             }
           }
           &-draft {
@@ -827,8 +883,11 @@ export const ProjectView = web(view('project-view',
             right: -18px;
           }
           &-bpm {
+            position: absolute;
+            right: 0;
+            top: 4px;
             pointer-events: none;
-            font-size: 13px;
+            font-size: 14px;
             display: flex;
             flex-flow: row nowrap;
             align-items: baseline;
@@ -837,40 +896,67 @@ export const ProjectView = web(view('project-view',
 
             .bpm {
               color: ${skin.colors.fgPale};
+              /* top: -0.55px; */
+              position: relative;
             }
             .amt {
               color: ${skin.colors.fg};
-              font-size: 16px;
+              font-size: 17px;
             }
           }
           &-author {
-            cursor: pointer;
-            margin-top: -7.25px;
-            font-size: 13px;
-            color: ${skin.colors.fg};
+            position: relative;
+            top: -7px;
             display: inline-flex;
-            width: 0;
-            flex-flow: row nowrap;
-            gap: 0.32rem;
-            align-items: center;
             text-shadow: 1px 1px ${skin.colors.shadeBlack};
-            .by {
+
+            .by,
+            .remix-by {
               position: relative;
-              /* top: -0.5px; */
+              white-space: nowrap;
               font-style: italic;
               color: ${skin.colors.fgPale};
             }
+            .remove-attribution,
+            .original,
             .author {
               font-size: 17.5px;
               color: ${skin.colors.brightCyan};
             }
-            &:hover {
-              .author {
-                text-decoration: underline;
-                text-decoration-thickness: 0.85px;
-                text-underline-offset: 2.5px;
+            .original {
+              color: ${skin.colors.brightPurple};
+            }
+            .remove-attribution {
+              font-size: 13px;
+              color: ${skin.colors.fgPale};
+            }
+            .dash {
+              pointer-events: none;
+              font-size: 10px;
+              margin: 0 5px;
+              position: relative;
+              top: 5px;
+              color: ${skin.colors.fgPale};
+            }
+            a {
+              font-size: 13px;
+              color: ${skin.colors.fg};
+              display: inline-flex;
+              flex-flow: row nowrap;
+              gap: 0.32rem;
+              align-items: center;
+
+              cursor: pointer;
+              &:hover {
+                .remove-attribution,
+                .original,
+                .author {
+                  text-decoration: underline;
+                  text-decoration-thickness: 0.85px;
+                  text-underline-offset: 2.5px;
+                }
+                /* text-decoration-color: ${skin.colors.shadeBright}; */
               }
-              /* text-decoration-color: ${skin.colors.shadeBright}; */
             }
           }
         }
@@ -894,10 +980,11 @@ export const ProjectView = web(view('project-view',
     }))
 
     fx(() => services.fx(({ loggedIn, likes }) =>
-      fx(({ primary, project }) =>
-        project.fx(({ id, isDraft, isDeleted, title, author, bpm, audioPlayer, players }) =>
+      fx(({ project }) =>
+        project.fx(({ id, isDraft, isDeleted, title, author, bpm, date, audioPlayer, players, originalAuthor, originalChecksum, remixCount, originalRemixCount }) =>
           audioPlayer.fx(({ state }) =>
-            fx(({ didExpand, expanded, focused, selected, editorVisible, controlsView, waveformView, editorView }) => {
+            // .raf is needed otherwise waveforms have trouble displaying
+            fx.raf(({ didExpand, expanded, focused, selected, editorVisible, controlsView, waveformView, editorView }) => {
               const playersView = <PlayersView
                 ref={cachedRef(`players-${id}`)}
                 players={players}
@@ -914,15 +1001,24 @@ export const ProjectView = web(view('project-view',
                 <div class="project" key={project} onpointerdown={(e) => {
                   if ($.isRenamingSong) return
 
-                  if (e.target.classList.contains('song')
-                    || e.target.classList.contains('song-header')
+                  console.log(e.target)
+
+                  const clickThroughClasses = [
+                    'song',
+                    'song-header',
+                    'project',
+                    'half',
+                    'controls',
+                    'controls-secondary',
+                    'waveform-over',
+                    'reactions',
+                    'song-note',
+                    'song-author'
+                  ]
+
+                  if (
+                    clickThroughClasses.some((c) => e.target.classList.contains(c))
                     || (e.target.classList.contains('song-title') && !isDraft)
-                    || e.target.classList.contains('project')
-                    || e.target.classList.contains('half')
-                    || e.target.classList.contains('controls')
-                    || e.target.classList.contains('controls-secondary')
-                    || e.target.classList.contains('waveform-over')
-                    || e.target.classList.contains('reactions')
                   ) {
                     $.expanded = !$.expanded
                   }
@@ -948,20 +1044,109 @@ export const ProjectView = web(view('project-view',
                     </div>
 
                     <div class="song-header">
-                      <div
-                        class={classes({
-                          'song-title': true,
-                          'song-draft': isDraft
-                        })}
-                        ref={refs.songTitleEl}
-                        onclick={isDraft ? $.renameSong : () => { }}
-                      >
-                        {title}
+                      <div class="song-info">
+                        {isDraft
+                          ? <div
+                            class="song-title song-draft"
+                            ref={refs.songTitleEl}
+                            onclick={$.renameSong}
+                          >
+                            {title}
+                          </div>
+                          : <div class="song-title">
+                            <a href={project.$.pathname || '/'} onclick={services.$.linkTo(project.$.pathname || '/')}>{title}</a>
+                          </div>
+                        }
+
+                        <div class="reactions">
+                          {!isDraft && <Button rounded small
+                            onClick={() => {
+                              if (likes.includes(project.$.checksum!)) {
+                                services.$.likes = likes.filter((projectId) => projectId !== project.$.checksum!)
+                              } else {
+                                services.$.likes = [...new Set([
+                                  project.$.checksum!, ...likes
+                                ])]
+                              }
+                            }}
+                          >
+                            <span class={`i la-heart${likes.includes(project.$.checksum!) ? '-solid' : ''}`} />
+                          </Button>}
+
+                          {isDraft && loggedIn &&
+                            <Button rounded small onClick={() => {
+                              project.$.publish()
+                            }} title="Publish">
+                              <span class={`i ph-upload-simple-duotone`} />
+                            </Button>
+                          }
+
+                          {isDraft && !isDeleted &&
+                            <Button rounded small onClick={() => {
+                              project.$.delete()
+                            }} title="Delete">
+                              <span class={`i clarity-trash-line`} />
+                            </Button>
+                          }
+
+                          {isDraft && isDeleted &&
+                            <Button rounded small onClick={() => {
+                              project.$.undelete()
+                            }} title="Restore">
+                              <span class={`i la-share`} style="transform: scaleX(-1)" />
+                            </Button>
+                          }
+
+                          {controlsView}
+
+                          {/* <Button rounded small>
+                    <span class={`i la-comment-dots`} />
+                  </Button> */}
+                        </div>
+
                       </div>
-                      <div class="song-author">
-                        <span class="by">by</span>
-                        <span class="author">{author}</span>
-                      </div>
+                      {originalChecksum && originalAuthor && originalAuthor !== author
+                        ? <div class="song-author">
+                          <a href={`/${originalAuthor}`} onclick={services.$.linkTo(originalAuthor)}>
+                            <span class="by">by</span>
+                            <span class="author">{originalAuthor}</span>
+                          </a>
+                          <span class="dash">&mdash;</span>
+                          <a href={`/${author}`} onclick={services.$.linkTo(author)}>
+                            <span class="remix-by">remix by</span>
+                            <span class="author">{author}</span>
+                          </a>
+                          <span class="dash">&mdash;</span>
+                          <a href={`/${originalAuthor}/${project.$.originalChecksum}`} onclick={services.$.linkTo(`/${originalAuthor}/${project.$.originalChecksum}`)}>
+                            <span class="original">original</span>
+                          </a>
+                          {project.$.isDraft && <>
+                            <span class="dash">&mdash;</span>
+                            <a href="javascript:;" onclick={(e) => {
+                              e.preventDefault()
+                              e.stopPropagation()
+                              project.$.originalAuthor
+                                = project.$.originalChecksum = false
+                            }}><span class="remove-attribution">remove attribution</span></a>
+                          </>}
+                        </div>
+                        : <div class="song-author">
+                          <a href={`/${author}`} onclick={services.$.linkTo(`/${author}`)}>
+                            <span class="by">by</span>
+                            <span class="author">{author}</span>
+                          </a>
+                        </div>}
+                    </div>
+
+                    <div class="song-note">
+                      {(relatedProjects.get(project)?.length ?? 0) > 0 &&
+                        new URL(services.$.href).searchParams.get('expand') !== 'true'
+                        && <a href={(project.$.pathname || '/') + '?expand=true'} class="song-more" onclick={services.$.linkTo((project.$.pathname || '/') + '?expand=true')}>+{(relatedProjects.get(project)?.length ?? 0)} more</a>
+                      }
+
+                      <a class="song-time-ago" title={new Date(`${date} GMT`).toLocaleString()} href={project.$.pathname || '/'} onclick={services.$.linkTo(project.$.pathname || '/')}>
+                        {timeAgo(date, new URL(services.$.href).pathname.split('/').length > 2)}
+                      </a>
                     </div>
 
                     <div class="song-bpm">
@@ -969,49 +1154,6 @@ export const ProjectView = web(view('project-view',
                       <span class="bpm">BPM</span>
                     </div>
 
-                    <div class="reactions">
-                      {!isDraft && <Button rounded small
-                        onClick={() => {
-                          if (likes.includes(project.$.checksum!)) {
-                            services.$.likes = likes.filter((projectId) => projectId !== project.$.checksum!)
-                          } else {
-                            services.$.likes = [...new Set([...likes, project.$.checksum!])]
-                          }
-                        }}
-                      >
-                        <span class={`i la-heart${likes.includes(project.$.checksum!) ? '-solid' : ''}`} />
-                      </Button>}
-
-                      {isDraft && loggedIn &&
-                        <Button rounded small onClick={() => {
-                          project.$.publish()
-                        }}>
-                          <span class={`i ph-upload-simple-duotone`} />
-                        </Button>
-                      }
-
-                      {isDraft && !isDeleted &&
-                        <Button rounded small onClick={() => {
-                          project.$.delete()
-                        }}>
-                          <span class={`i clarity-trash-line`} />
-                        </Button>
-                      }
-
-                      {isDraft && isDeleted &&
-                        <Button rounded small onClick={() => {
-                          project.$.undelete()
-                        }}>
-                          <span class={`i la-share`} style="transform: scaleX(-1)" />
-                        </Button>
-                      }
-
-                      {controlsView}
-
-                      {/* <Button rounded small>
-                    <span class={`i la-comment-dots`} />
-                  </Button> */}
-                    </div>
                   </div>
 
                   {/* <div class="controls-secondary">
@@ -1020,9 +1162,7 @@ export const ProjectView = web(view('project-view',
 
                 {didExpand ? <div
                   class={classes({
-                    // TODO: this should work with 'none'
-                    // but something isn't playing well
-                    hidden: !expanded
+                    none: !expanded
                   })}
                 >
                   {playersView}

@@ -1,4 +1,4 @@
-import type { AppMode, Selected } from '../app'
+import type { Selected } from '../app'
 
 export const spacer = {
   get: (id: string, fallbackSizes: number[]) => {
@@ -85,7 +85,6 @@ export const projects = kvStorage<string[]>('projects')
 export const sounds = bufferStorage<[0 | 1, string]>('sounds')
 export const patterns = bufferStorage<[0 | 1, string]>('patterns')
 export const likes = kvStorage<string[]>('likes')
-export const mode = kvStorage<AppMode>('mode')
 export const bpm = kvStorage<number>('bpm')
 export const sampleRate = kvStorage<number>('sampleRate')
 export const previewSampleRate = kvStorage<number>('previewSampleRate')
@@ -102,7 +101,6 @@ export const storage = {
   sounds,
   patterns,
   likes,
-  mode,
   bpm,
   vols,
   sampleRate,

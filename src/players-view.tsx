@@ -44,7 +44,7 @@ export const PlayersView = web(view('players',
       }
       `
 
-      fx(({ players, focused, selected, editorEl, editorVisible, editorView }) => {
+      fx.raf(({ players, focused, selected, editorEl, editorVisible, editorView }) => {
         $.view = players.map((player, y) => <>
           <PlayerView
             key={player.$.id!}
@@ -62,8 +62,6 @@ export const PlayersView = web(view('players',
             ref={editorEl}
             class={classes({
               'player-view': true,
-              // TODO: this should work with 'none'
-              // but something isn't playing well
               hidden: !editorVisible
             })}
           >

@@ -104,6 +104,13 @@ export const TrackView = web(view('track-view',
         onDblClick(clickMeta.id, clickMeta, true)
       })
 
+      center = fn(({ host }) => () => {
+        if ($.active && host.offsetParent) {
+          const diff = (host.offsetParent.clientHeight - host.offsetHeight)
+          host.offsetParent.scrollTop = host.offsetTop - diff / 2
+        }
+      })
+
       intersects = ([entry]: IntersectionObserverEntry[]) => {
         if (entry.isIntersecting) {
           $.didDisplay = true
@@ -112,6 +119,7 @@ export const TrackView = web(view('track-view',
 
       resize = fn(({ host }) => queue.raf(() => {
         $.rect = new Rect(host.getBoundingClientRect())
+        this.center()
       }))
     })
   },
@@ -146,17 +154,20 @@ export const TrackView = web(view('track-view',
       }
     })
 
-    fx.raf(({ host, active }) => {
+    fx(({ host, active }) => {
       host.toggleAttribute('active', active)
+
+
       if (active) {
         // try {
         //   // @ts-ignore
         //   host.scrollIntoViewIfNeeded(true)
         // } catch {
-        if (host.offsetParent) {
-          const diff = (host.offsetParent.clientHeight - host.offsetHeight)
-          host.offsetParent.scrollTop = host.offsetTop - diff / 2
-        }
+        $.center()
+        requestAnimationFrame(() => {
+          $.center()
+          requestAnimationFrame($.center)
+        })
         // host.scrollIntoView({ block: 'center', behavior: 'smooth' })
         // }
       }

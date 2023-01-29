@@ -82,6 +82,9 @@ interface ItemResponse {
   originalId: string | null
   originalAuthor: string | null
 
+  remixCount: number | null
+  originalRemixCount: number | null
+
   createdAt: string
   updatedAt: string
 }
