@@ -227,14 +227,14 @@ export const Services = reactive('services',
         if (url.href !== location.href) {
           if (urlHistory.at(-2) === url.href) {
             history.back()
-            this.onWindowPopState()
+            this.onWindowPopState(replace)
           } else {
             if (replace) {
               history.replaceState({}, '', url)
             } else {
               history.pushState({}, '', url)
             }
-            this.onWindowPopState()
+            this.onWindowPopState(replace)
           }
         }
       }
@@ -245,18 +245,23 @@ export const Services = reactive('services',
         this.go(pathname, searchParams)
       }
 
-      onNavigation = () => {
-        if (urlHistory.at(-2) === location.href) {
+      onNavigation = (replace = false) => {
+        if (replace) {
           urlHistory.pop()
-        } else if (urlHistory.at(-1) !== location.href) {
           urlHistory.push(location.href)
+        } else {
+          if (urlHistory.at(-2) === location.href) {
+            urlHistory.pop()
+          } else if (urlHistory.at(-1) !== location.href) {
+            urlHistory.push(location.href)
+          }
         }
         $.href = location.href
       }
 
-      onWindowPopState = () => {
+      onWindowPopState = (replace?: boolean) => {
         setTimeout(() => {
-          this.onNavigation()
+          this.onNavigation(replace)
         })
       }
 
@@ -305,7 +310,7 @@ export const Services = reactive('services',
   },
   function effects({ $, fx }) {
     fx(() =>
-      on(window, 'popstate')(services.$.onWindowPopState)
+      on(window, 'popstate')(() => services.$.onWindowPopState())
     )
 
     fx(({ apiUrl: _ }) => {

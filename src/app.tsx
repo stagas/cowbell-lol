@@ -12,6 +12,7 @@ import { ProjectView } from './project-view'
 import { cachedProjects, getOrCreateProject, projectsByDate, projectsGroup, services } from './services'
 import { Toolbar } from './toolbar'
 import { filterState } from './util/filter-state'
+import { oneOf } from './util/one-of'
 import { storage } from './util/storage'
 
 // const projectButtonRefs = new Map<string, HTMLElement>()
@@ -219,6 +220,7 @@ export const App = web(view('app',
   function effects({ $, fx, deps, refs }) {
     app = $.self
 
+    let initial = true
     // routes
     services.fx(async ({ apiUrl: _, audio, href }) => {
       const { pathname, searchParams } = new URL(href)
@@ -230,25 +232,34 @@ export const App = web(view('app',
       try {
         if (top) {
           if (top === 'liked') {
-            await services.$.fetchProjects({ ids: services.$.likes })
-            services.$.refreshProjects()
-            await Promise.resolve()
+            if (initial) {
+              await services.$.fetchProjects({ ids: services.$.likes })
+              services.$.refreshProjects()
+              await Promise.resolve()
+            }
             $.tab = 'liked'
             return
           } else if (top === 'drafts') {
             if (!sub) {
               $.draftFocus = false
-              // drafts
-              const draftIds = storage.projects.get(['x'])
-              const ids = (draftIds.length ? draftIds : ['x'])
-              ids.forEach((id) =>
-                getOrCreateProject({ id })
-              )
-              services.$.refreshProjects()
-              await Promise.resolve()
+              if (initial) {
+                // drafts
+                const draftIds = storage.projects.get(['x'])
+                const ids = (draftIds.length ? draftIds : ['x'])
+                ids.forEach((id) =>
+                  getOrCreateProject({ id })
+                )
+                services.$.refreshProjects()
+                await Promise.resolve()
+              }
             } else {
+              if (initial) {
+                getOrCreateProject({ id: sub })
+                services.$.refreshProjects()
+                await Promise.resolve()
+              }
               $.draftFocus = true
-              $.draftBrowse = projectsById.get(sub) || false
+              $.draftBrowse = cachedProjects.get(sub) || false
               if ($.draftBrowse) {
                 $.projectExpand = searchParams.get('expand') === 'true'
               }
@@ -256,37 +267,39 @@ export const App = web(view('app',
             $.tab = 'drafts'
             return
           } else if (top === 'playlist') {
-            const p = decodeURIComponent(searchParams.get('p') || '')
-            if (p) {
-              const parts = p.split('--')
-              lastRunningPlayers.clear()
-              await Promise.resolve()
-              const projectResults = await Promise.allSettled(
-                parts.map(async (x) => {
-                  const [id, playersYs] = x.split('-')
-                  const project = getOrCreateProject({ id })
-                  await Promise.race([
-                    project.$.load(),
-                    new Promise((_, reject) => setTimeout(reject, 10000, new Error('Timeout loading')))
-                  ])
-                  await Promise.resolve()
-                  const ys = playersYs.split('.').map(parseFloat)
-                  const players = project.$.players
-                  players.forEach((player, y) => {
-                    if (ys.includes(y)) {
-                      lastRunningPlayers.add(player)
-                    }
+            if (initial) {
+              const p = decodeURIComponent(searchParams.get('p') || '')
+              if (p) {
+                const parts = p.split('--')
+                lastRunningPlayers.clear()
+                await Promise.resolve()
+                const projectResults = await Promise.allSettled(
+                  parts.map(async (x) => {
+                    const [id, playersYs] = x.split('-')
+                    const project = getOrCreateProject({ id })
+                    await Promise.race([
+                      project.$.load(),
+                      new Promise((_, reject) => setTimeout(reject, 10000, new Error('Timeout loading')))
+                    ])
+                    await Promise.resolve()
+                    const ys = playersYs.split('.').map(parseFloat)
+                    const players = project.$.players
+                    players.forEach((player, y) => {
+                      if (ys.includes(y)) {
+                        lastRunningPlayers.add(player)
+                      }
+                    })
+                    return project
                   })
-                  return project
-                })
-              )
-              const playingProjects: Project[] = []
-              for (const projectResult of projectResults) {
-                if (projectResult.status === 'fulfilled') {
-                  playingProjects.push(projectResult.value)
+                )
+                const playingProjects: Project[] = []
+                for (const projectResult of projectResults) {
+                  if (projectResult.status === 'fulfilled') {
+                    playingProjects.push(projectResult.value)
+                  }
                 }
+                $.playingProjects = playingProjects
               }
-              $.playingProjects = playingProjects
             }
             $.tab = 'playlist'
             return
@@ -328,6 +341,8 @@ export const App = web(view('app',
         }
       } catch (error) {
         console.warn(error)
+      } finally {
+        initial = false
       }
 
       if (pathname !== '/') {
@@ -395,8 +410,15 @@ export const App = web(view('app',
     })
 
     fx(({ projects, tab, userBrowse, projectBrowse, draftBrowse, draftFocus, projectExpand, playingProjects }, prev) => {
+      // NOTE: when we edit a project and it becomes a draft remix under
+      // our own username, it changes lists/tab, but we don't want
+      // to trigger the change right away because the ui will jump
+      // and/or project will change to another tab. So we create
+      // exclusion heuristics to prevent that, though they need
+      // to be maintained as they might conflict with other rules.
       if (
-        (prev.tab === tab && prev.userBrowse === userBrowse)
+        tab !== 'playlist'
+        && (prev.tab === tab && prev.userBrowse === userBrowse)
         && prev.projects && projects.length - prev.projects.length <= 1
         && prev.projectBrowse === projectBrowse
         && prev.projectExpand === projectExpand
@@ -451,6 +473,7 @@ export const App = web(view('app',
         $.visibleProjects = playingProjects
       } else if (tab === 'project' && projectBrowse) {
         if (projectExpand) {
+          // TODO: the related needs to be its own util maintained centrally.
           const related = projects.filter((p) =>
             p !== projectBrowse
             && (
@@ -673,7 +696,7 @@ export const App = web(view('app',
                   Playlist
                 </Button>}
 
-                {projectBrowse && <Button tab active={tab === 'project'} onClick={services.$.linkTo(projectBrowse.$.pathname!)} style={`color: ${skin.colors.brightPurple}`}>
+                {projectBrowse && <Button tab active={tab === 'project'} onClick={() => projectBrowse && services.$.go(projectBrowse.$.pathname!)} style={`color: ${skin.colors.brightPurple}`}>
                   Project
                 </Button>}
               </div>
@@ -731,7 +754,7 @@ export const App = web(view('app',
                     ref={cachedRef(p.$.id!)}
                     project={p}
                     primary={project === p}
-                    browsing={tab === 'project' && visibleProjects.length === 1}
+                    browsing={oneOf(tab, 'project', 'playlist') && visibleProjects.length === 1}
                     controlsView={<Controls project={p} />}
                   />
                 ),

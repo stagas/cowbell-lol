@@ -15,6 +15,7 @@ import { filterState } from './util/filter-state'
 import { storage } from './util/storage'
 import { getDateTime } from './util/get-datetime'
 import { slugify } from './util/slugify'
+import { app } from './app'
 
 export type ProjectJson = {
   checksum: string,
@@ -191,13 +192,35 @@ export const Project = reactive('project',
           console.time('saved')
           const json = this.toJSON()
 
+          let lastChecksum: string | void
           if (lastSavedJson) {
             delete localStorage[lastSavedJson.checksum]
+            lastChecksum = lastSavedJson.checksum
+            cachedProjects.delete(lastChecksum)
           }
 
           localStorage[json.checksum] = JSON.stringify(lastSavedJson = json)
 
+          cachedProjects.set(json.checksum, $.self as Project)
+
           services.$.refreshProjects()
+
+          if (lastChecksum && services.$.href.includes(lastChecksum)) {
+            const isPlaylist = location.pathname.startsWith('/playlist')
+            services.$.go(
+              location.pathname.replace(lastChecksum, json.checksum)
+              + (
+                isPlaylist
+                  ? ''
+                  : location.search.replace(lastChecksum, json.checksum)
+              ),
+              isPlaylist
+                ? app.$.getPlaylistSearchParams()
+                : {},
+              true
+            )
+          }
+
           console.timeEnd('saved')
         }
       }
@@ -576,7 +599,7 @@ export const Project = reactive('project',
 
     fx(({ author, checksum, title, isDraft }) => {
       if (isDraft) {
-        $.pathname = `/drafts/${$.id}`
+        $.pathname = `/drafts/${checksum}`
       } else {
         $.pathname = `/${author}/${checksum}/${slugify(title)}`
       }
@@ -585,6 +608,7 @@ export const Project = reactive('project',
 
     fx(() =>
       services.fx(({ projects }) => {
+        // TODO: move related to its own util
         const related = projects.filter((p) =>
           p.$.checksum !== $.checksum
           && (

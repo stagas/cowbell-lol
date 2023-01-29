@@ -66,7 +66,6 @@ export const ProjectView = web(view('project-view',
     pianoView: JSX.Element = false
   },
   function actions({ $, fns, fn }) {
-
     let presetsSmoothScrollTimeout: any
 
     return fns(new class actions {
@@ -981,7 +980,7 @@ export const ProjectView = web(view('project-view',
 
     fx(() => services.fx(({ loggedIn, likes }) =>
       fx(({ project }) =>
-        project.fx(({ id, isDraft, isDeleted, title, author, bpm, date, audioPlayer, players, originalAuthor, originalChecksum, remixCount, originalRemixCount }) =>
+        project.fx(({ id, isDraft, isDeleted, title, author, bpm, date, audioPlayer, players, originalAuthor, originalChecksum, remixCount, originalRemixCount, pathname }) =>
           audioPlayer.fx(({ state }) =>
             // .raf is needed otherwise waveforms have trouble displaying
             fx.raf(({ didExpand, expanded, focused, selected, editorVisible, controlsView, waveformView, editorView }) => {
@@ -1047,14 +1046,18 @@ export const ProjectView = web(view('project-view',
                       <div class="song-info">
                         {isDraft
                           ? <div
-                            class="song-title song-draft"
+                            key="a"
                             ref={refs.songTitleEl}
+                            class="song-title song-draft"
                             onclick={$.renameSong}
                           >
                             {title}
                           </div>
-                          : <div class="song-title">
-                            <a href={project.$.pathname || '/'} onclick={services.$.linkTo(project.$.pathname || '/')}>{title}</a>
+                          : <div
+                            key="b"
+                            class="song-title"
+                          >
+                            <a href={pathname} onclick={services.$.linkTo(pathname)}>{title}</a>
                           </div>
                         }
 
@@ -1075,6 +1078,7 @@ export const ProjectView = web(view('project-view',
 
                           {isDraft && loggedIn &&
                             <Button rounded small onClick={() => {
+                              project.$.title = $.songTitleEl!.textContent || 'Untitled'
                               project.$.publish()
                             }} title="Publish">
                               <span class={`i ph-upload-simple-duotone`} />
@@ -1107,19 +1111,25 @@ export const ProjectView = web(view('project-view',
                       </div>
                       {originalChecksum && originalAuthor && originalAuthor !== author
                         ? <div class="song-author">
+
                           <a href={`/${originalAuthor}`} onclick={services.$.linkTo(originalAuthor)}>
                             <span class="by">by</span>
                             <span class="author">{originalAuthor}</span>
                           </a>
+
                           <span class="dash">&mdash;</span>
+
                           <a href={`/${author}`} onclick={services.$.linkTo(author)}>
                             <span class="remix-by">remix by</span>
                             <span class="author">{author}</span>
                           </a>
+
                           <span class="dash">&mdash;</span>
+
                           <a href={`/${originalAuthor}/${project.$.originalChecksum}`} onclick={services.$.linkTo(`/${originalAuthor}/${project.$.originalChecksum}`)}>
                             <span class="original">original</span>
                           </a>
+
                           {project.$.isDraft && <>
                             <span class="dash">&mdash;</span>
                             <a href="javascript:;" onclick={(e) => {
@@ -1141,10 +1151,10 @@ export const ProjectView = web(view('project-view',
                     <div class="song-note">
                       {(relatedProjects.get(project)?.length ?? 0) > 0 &&
                         new URL(services.$.href).searchParams.get('expand') !== 'true'
-                        && <a href={(project.$.pathname || '/') + '?expand=true'} class="song-more" onclick={services.$.linkTo((project.$.pathname || '/') + '?expand=true')}>+{(relatedProjects.get(project)?.length ?? 0)} more</a>
+                        && <a href={pathname + '?expand=true'} class="song-more" onclick={services.$.linkTo((pathname) + '?expand=true')}>+{(relatedProjects.get(project)?.length ?? 0)} more</a>
                       }
 
-                      <a class="song-time-ago" title={new Date(`${date} GMT`).toLocaleString()} href={project.$.pathname || '/'} onclick={services.$.linkTo(project.$.pathname || '/')}>
+                      <a class="song-time-ago" title={new Date(`${date} GMT`).toLocaleString()} href={pathname} onclick={services.$.linkTo(pathname)}>
                         {timeAgo(date, new URL(services.$.href).pathname.split('/').length > 2)}
                       </a>
                     </div>
