@@ -276,31 +276,6 @@ export const Layout = web(view('layout',
         width: 100%;
         height: 100%;
       }
-/*
-      [part=app-selected] {
-        ${skin.styles.lowered}
-
-        &:focus-within {
-          &::before {
-            content: '';
-            box-shadow: inset 0 0 0 8px #34f;
-            z-index: 9999999;
-            width: 100%;
-            height: 100%;
-            position: absolute;
-            left: 0;
-            top: 0;
-            pointer-events: none;
-          }
-        }
-        &[state=errored] {
-          &:focus-within {
-            &::before {
-              box-shadow: inset 0 0 0 8px #f21;
-            }
-          }
-        }
-      } */
 
       [part=app-scroller] {
         position: absolute;

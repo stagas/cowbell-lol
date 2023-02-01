@@ -1,5 +1,6 @@
 // import { hslToRgb, rgbToHsl } from 'everyday-utils'
 import { anim } from './anim'
+import { hasOffscreenCanvas } from './util/has-offscreen-canvas'
 
 export interface WavetracerWorkerInit {
   id: string
@@ -115,10 +116,6 @@ function createWorkerTask(id: string, kind: WavetracerWorkerInit['kind'], canvas
     if (!didPaintBg) {
       didPaintBg = true
       c.globalCompositeOperation = 'source-over'
-      // c.fillStyle = bg
-      // c.fillRect(0, 0, width, height)
-      // c.fillStyle = 'rgba(0,0,0,0.3)'
-      // c.fillRect(0, height / 2, width, height / 2)
     }
   }
 
@@ -137,10 +134,6 @@ function createWorkerTask(id: string, kind: WavetracerWorkerInit['kind'], canvas
 
       didPaintBg = false
       setColors(bg)
-      // c.clearRect(0, 0, canvas.width, canvas.height)
-      // c.fillStyle = '#181522'
-      // c.fillRect(0, 0, canvas.width, canvas.height)
-      // c.strokeStyle = '#16e'
       c.imageSmoothingEnabled = false
     }
   }
@@ -150,8 +143,6 @@ function createWorkerTask(id: string, kind: WavetracerWorkerInit['kind'], canvas
   let h: number
 
   let drawFn: (start: number, end: number) => void
-  // c.fillStyle = '#181522'
-  // c.fillRect(0, 0, canvas.width, canvas.height)
 
   if (kind === 'tracer') drawFn = () => {
     const currentTime = performance.now() * 0.001 + offsetTime
@@ -193,14 +184,10 @@ function createWorkerTask(id: string, kind: WavetracerWorkerInit['kind'], canvas
       if (s > 0.5) {
         s = (((s - 0.5) * 2) ** 0.8)
         if (s > bottom) bottom = s
-        // s *= 0.65
-        // if (s > top) top = s
       } else if (s < 0.5) {
         s = 0.5 - s
         s = ((s * 2) ** 0.8)
         if (s > top) top = s
-        // s *= 0.65
-        // if (s > bottom) bottom = s
       }
     }
     top = 1 - top
@@ -235,9 +222,6 @@ function createWorkerTask(id: string, kind: WavetracerWorkerInit['kind'], canvas
       for (let i = 1; i < chunks; i++)
         drawFn(i * chunk, i * chunk + chunk)
 
-      // c.globalCompositeOperation = 'source-over'
-      // c.fillStyle = 'rgba(0,0,0,0.3)'
-      // c.fillRect(canvas.width - pr, canvas.height / 2, pr, canvas.height / 2)
     } else {
       h = bytes[0] / 256
 
@@ -245,12 +229,7 @@ function createWorkerTask(id: string, kind: WavetracerWorkerInit['kind'], canvas
       rgb[1] = (freqs[6] + freqs[7] + freqs[8] + freqs[9] + freqs[10]) / 5 / 256
       rgb[0] = (freqs[11] + freqs[12] + freqs[13] + freqs[14] + freqs[15]) / 5 / 256
 
-      // hsl = rgbToHsl([rgb[0], rgb[1] ** 0.8, rgb[2]])
-      // rgb = hslToRgb([hsl[0], hsl[1] ** 0.1, hsl[2] ** 1])
-
       c.strokeStyle = '#b9ff'
-      // `rgb(${rgb[0] ** 1.6 * 255},${rgb[1] ** 1.8 * 255},${rgb[2] ** 1.15 * 255})`
-      // c.strokeStyle = `rgb(${rgb[0] ** 0.2 * 255},${rgb[1] ** 0.8 * 255},${rgb[2] ** 1.15 * 255})`
 
       const normal = 1 - h * 2
       const sign = Math.sign(normal)
@@ -285,7 +264,7 @@ interface Task {
 
 const tasks = new Map<string, Task>()
 
-self.onmessage = (e: { data: WavetracerWorkerMessage }) => {
+export default function handler(e: { data: WavetracerWorkerMessage }) {
   if ('canvas' in e.data) {
     const task = createWorkerTask(e.data.id, e.data.kind, e.data.canvas)
     tasks.set(task.id, task)
@@ -330,4 +309,8 @@ self.onmessage = (e: { data: WavetracerWorkerMessage }) => {
     console.error(e)
     throw new TypeError('Invalid message received in Wavetracer worker.')
   }
+}
+
+if (hasOffscreenCanvas) {
+  self.onmessage = handler
 }

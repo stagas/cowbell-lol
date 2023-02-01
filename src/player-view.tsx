@@ -27,14 +27,6 @@ export const PlayerView = web(view('player-view',
 
   class local {
     host = element
-
-    // state?: AudioState
-    // sound?: EditorBuffer
-    // pattern?: EditorBuffer
-    // patterns?: EditorBuffer[]
-
-    // soundValue?: string
-
   },
 
   function actions({ $, fns, fn }) {
@@ -43,25 +35,6 @@ export const PlayerView = web(view('player-view',
   },
 
   function effects({ $, fx }) {
-    // fx(({ player }) => {
-    //   player.$.view = $.self
-    // })
-
-    // fx(({ player }) =>
-    //   chain(
-    //     player.fx(({ state }) => {
-    //       $.state = state
-    //     }),
-    //     player.fx(({ sound }) => {
-    //       $.sound = get(app.$.sounds, sound)!
-    //     }),
-    //     player.fx(({ pattern, patterns }) => {
-    //       $.pattern = get(app.$.patterns, patterns[pattern])!
-    //     }),
-    //   )
-    // )
-
-
     fx(() => services.fx(({ skin }) => {
       $.css = /*css*/`
       ${skin.css}
@@ -150,7 +123,6 @@ export const PlayerView = web(view('player-view',
 
             <div class="sound">
               <TrackView
-                // class={classes({ big: active })}
                 sliders
                 active={active && (
                   focused === 'sound'
@@ -161,9 +133,9 @@ export const PlayerView = web(view('player-view',
                 didDisplay={true}
                 player={player}
                 sound={get(sounds, sound)!}
+                pattern={false}
                 clickMeta={{ id: sound, y }}
                 onClick={onSoundSelect}
-              // onDblClick={app.$.onSoundSave}
               />
             </div>
 
@@ -180,16 +152,11 @@ export const PlayerView = web(view('player-view',
                     xPos={x}
                     services={services}
                     player={player}
+                    sound={false}
                     pattern={p}
                     didDisplay={true}
                     clickMeta={{ id, x, y }}
                     onClick={onPatternSelect}
-                  // onDblClick={app.$.onPatternSave}
-                  // onAltClick={
-                  //   (!active || pattern !== x)
-                  //   && app.$.onPlayerPatternPaste}
-                  // onCtrlAltClick={app.$.onPlayerPatternInsert}
-                  // onCtrlShiftClick={app.$.onPlayerPatternDelete}
                   />
                 })
               }

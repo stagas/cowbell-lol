@@ -13,21 +13,13 @@ import { services } from './services'
 import { fixed, markerForSlider } from './slider'
 import { areSlidersCompatible, getCodeWithoutArgs } from './util/args'
 import { add, del, derive, findEqual, get, getMany } from './util/list'
+import { MIDIMessageEvent } from './util/midi-message-event'
 import { noneOf, oneOf } from './util/one-of'
 import { spacer } from './util/storage'
 
 export const players = new Set<Player>()
 
 const { clamp } = Scalar
-
-class MIDIMessageEvent extends Event {
-  data!: Uint8Array
-  receivedTime!: number
-  constructor(kind: string, payload: { data: Uint8Array }) {
-    super(kind)
-    this.data = payload.data
-  }
-}
 
 export const Player = reactive('player',
   class props {
@@ -153,7 +145,6 @@ export const Player = reactive('player',
             $.project.$.stop()
           }
         }
-        // TODO: stop rest
       }
 
       toggle = () => {
@@ -174,7 +165,7 @@ export const Player = reactive('player',
       })
 
       updateMidiEvents =
-        fn(({ patternBuffers: patterns, groupNode }) => async (turn: number, total: number, clear?: boolean) => {
+        fn(({ patternBuffers: patterns }) => async (turn: number, total: number, clear?: boolean) => {
           let bars = 0
 
           const turns: WebMidi.MIDIMessageEvent[][] = Array.from({ length: total }, () => [])
@@ -199,7 +190,7 @@ export const Player = reactive('player',
 
           $.totalBars = bars
 
-          groupNode.eventGroup.setMidiEvents(turns, turn, clear)
+          $.groupNode?.eventGroup.setMidiEvents(turns, turn, clear)
         })
 
       compileCode = fn(({ id, monoNode }) => {
@@ -225,18 +216,11 @@ export const Player = reactive('player',
               }
 
               console.time(label)
-              await monoNode.setCode(code, $.isPreview)
+              await monoNode.setCode(code, true)
               console.timeEnd(label)
-
-              // if (!queue) {
-              // onCompileSuccess(id)
-              // }
             } catch (error) {
               console.timeEnd(label)
               console.warn(error)
-              // if (!queue) {
-              //   onCompileError(id, error as Error, code)
-              // }
             }
           } while (queue)
 
@@ -285,8 +269,9 @@ export const Player = reactive('player',
             $.sound = newBuffer.$.id!
           } else if (kind === 'pattern') {
             library.$.patterns = newBuffers as any
-            $.patterns[$.pattern] = newBuffer.$.id!
-            $.patterns = [...$.patterns]
+            const patterns = [...$.patterns]
+            patterns[$.pattern] = newBuffer.$.id!
+            $.patterns = patterns
           }
         } else {
           // @ts-ignore
@@ -523,7 +508,7 @@ export const Player = reactive('player',
 
     let suspendTimeout: any
 
-    fx(({ audio, audioPlayer, state, preview, monoNode, gainNode, groupNode }) => {
+    fx(({ audio, state, preview, monoNode, gainNode, groupNode }) => {
       if (oneOf(state, 'preparing', 'running') || preview) {
         audio.$.setParam(gainNode.gain, $.vol)
 
@@ -567,13 +552,14 @@ export const Player = reactive('player',
       groupNode.eventGroup.onRequestNotes = $.updateMidiEvents
     })
 
-    fx(({ audio, patternBuffers, groupNode: _ }) =>
+    fx(({ patternBuffers }) =>
       chain(
         patternBuffers.map((pattern) =>
           chain(
             fx(({ totalBars }) =>
               pattern.fx(({ value: _ }) => {
-                const turn = (audio.$.getTime() / totalBars) | 0
+                const now = services.$.audio!.$.getTime()
+                const turn = $.turn = (now / totalBars) | 0
                 $.updateMidiEvents(turn, 2, true)
               })
             ),

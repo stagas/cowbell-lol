@@ -12,6 +12,7 @@ import { Sliders } from './sliders'
 import { Spacer } from './spacer'
 import { services } from './services'
 import { observe } from './util/observe'
+import { replaceAtIndex } from './util/list'
 
 export type TrackViewHandler = (id: string, meta: any, byClick?: boolean) => void
 
@@ -74,6 +75,31 @@ export const TrackView = web(view('track-view',
       handleClick = fn(({ host, clickMeta }) => (e: PointerEvent) => {
         e.preventDefault()
         e.stopPropagation()
+
+        const { clipboardActive, clipboardId } = services.$
+        const { sound, pattern } = $
+
+        const isPasteable = (clipboardActive === 'sound' && !!sound && clipboardId !== sound.$.id)
+          || (clipboardActive === 'pattern' && !!pattern && clipboardId !== pattern.$.id)
+
+        if (isPasteable && $.player) {
+          if (clipboardActive === 'sound') {
+            $.player.$.sound = clipboardId || $.player.$.sound
+          } else if (clipboardActive === 'pattern' && clipboardId) {
+            $.player.$.patterns = replaceAtIndex(
+              $.player.$.patterns,
+              $.xPos || 0,
+              clipboardId
+            )
+          }
+          services.$.clipboardActive = false
+          return
+        }
+
+        if (clipboardActive) {
+          services.$.clipboardActive = false
+        }
+
         let fn: TrackViewHandler | false | void
         if ((e.ctrlKey || e.metaKey) && e.shiftKey) {
           fn = $.onCtrlShiftClick
@@ -119,7 +145,6 @@ export const TrackView = web(view('track-view',
 
       resize = fn(({ host }) => queue.raf(() => {
         $.rect = new Rect(host.getBoundingClientRect())
-        this.center()
       }))
     })
   },
@@ -154,22 +179,31 @@ export const TrackView = web(view('track-view',
       }
     })
 
+    fx(({ host }) =>
+      services.fx(({ clipboardActive, clipboardId }) =>
+        fx(({ sound, pattern }) => {
+          const isPasteable = (clipboardActive === 'sound' && !!sound && clipboardId !== sound.$.id)
+            || (clipboardActive === 'pattern' && !!pattern && clipboardId !== pattern.$.id)
+
+          host.toggleAttribute('pasteable', isPasteable)
+          host.toggleAttribute('forbidden', !!clipboardActive && !isPasteable)
+        })
+      )
+    )
+
+    fx(({ host, active }) => {
+      host.toggleAttribute('active', active)
+    })
+
     fx(({ host, active }) => {
       host.toggleAttribute('active', active)
 
-
       if (active) {
-        // try {
-        //   // @ts-ignore
-        //   host.scrollIntoViewIfNeeded(true)
-        // } catch {
         $.center()
         requestAnimationFrame(() => {
           $.center()
           requestAnimationFrame($.center)
         })
-        // host.scrollIntoView({ block: 'center', behavior: 'smooth' })
-        // }
       }
     })
 
@@ -193,7 +227,7 @@ export const TrackView = web(view('track-view',
       host.toggleAttribute('draft', isDraft)
     })
 
-    fx(({ host }) =>
+    fx.raf(({ host }) =>
       observe.intersection.root(host.offsetParent)(host, $.intersects)
     )
 
@@ -318,20 +352,7 @@ export const TrackView = web(view('track-view',
       $.patternLabel = false
     })
 
-    // fx(({ soundLabel, patternLabel, showLabel }) => {
-    //   const name = [soundLabel, patternLabel]
-    //   // $.labelView = showLabel &&
-    //   //   <div part="label">
-    //   //     <Stretchy width={70} height={40} padding={30}>
-    //   //       {[...name]}
-    //   //       <div part="outline">
-    //   //         {[...name]}
-    //   //       </div>
-    //   //     </Stretchy>
-    //   //   </div>
-    // })
-
-    fx(({ host, isDraft, active }) => {
+    fx(({ host }) => {
       $.buttonView = ($.onClick || $.onDblClick) &&
         <button
           part="button"
@@ -340,17 +361,6 @@ export const TrackView = web(view('track-view',
           onfocus={() => {
             host.focus()
           }}
-          title={isDraft ? [
-            $.onDblClick && 'Double click to Save.',
-            $.onCtrlAltClick && 'Ctrl+Alt+Click to Dupe Right.',
-            $.onCtrlShiftClick && (
-              'Ctrl+Shift+Click to Delete.' +
-              (active ? '\n  (cannot delete the active one,\n  you need to select another first).'
-                : '')
-            )
-          ].filter(Boolean).join('\n') : [
-            $.onAltClick && 'Alt+Click to Paste current pattern.',
-          ].filter(Boolean).join('\n')}
           onpointerdown={$.handleClick}
           oncontextmenu={prevent}
           ondblclick={$.handleDblClick}
@@ -399,31 +409,25 @@ export const TrackView = web(view('track-view',
         display: flex;
         align-items: center;
         justify-content: center;
-        /* border-bottom: 1px solid #333; */
         outline: none;
-        /* outline-offset: -8px; */
       }
 
       &([hoverable]:focus),
       &([hoverable]:hover) {
-        /* outline: 8px solid #fff2; */
         background: ${skin.colors.bgLight};
       }
 
       &([live]) {
         background: ${skin.colors.bgLight} !important;
-        /* background: #bcf3; */
       }
 
       &([live][hoverable]:focus),
       &([live][hoverable]:hover) {
-        /* outline: 8px solid #fff2; */
         background: ${skin.colors.bgLighter} !important;
       }
 
       &([active]) {
         background: ${skin.colors.bgLighter} !important;
-        /* outline: 8px solid #34f; */
       }
 
       &([error]):before,
@@ -441,10 +445,6 @@ export const TrackView = web(view('track-view',
       }
       &([error]):before {
         background: ${skin.colors.brightRed} !important;
-      }
-
-      &([active]:focus) {
-        /* outline-color: #67f; */
       }
 
       [part=button] {
@@ -480,6 +480,15 @@ export const TrackView = web(view('track-view',
         [part=canvas] {
           padding: 0 8px;
         }
+      }
+
+      &([pasteable]:hover) {
+        cursor: cell;
+        background: ${skin.colors.bgPale} !important;
+      }
+
+      &([forbidden]:hover) {
+        cursor: not-allowed;
       }
       `
     })

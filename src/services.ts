@@ -4,6 +4,7 @@ import { Matrix, Point, Rect } from 'geometrik'
 import { on, reactive } from 'minimal-view'
 import { Audio } from './audio'
 import { AudioPlayer } from './audio-player'
+import { EditorBuffer } from './editor-buffer'
 import { library, Library } from './library'
 import { Player } from './player'
 import { Preview, createPreview } from './preview-service'
@@ -42,7 +43,6 @@ export function projectsGroup(acc: Project[][], curr: Project) {
 
   return acc
 }
-
 
 export function getOrCreateProject(p: schemas.ProjectResponse | { id: string }) {
   let project = cachedProjects.get(p.id)
@@ -114,6 +114,10 @@ export const Services = reactive('services',
 
     previewAudioPlayer?: AudioPlayer
     previewPlayer?: Player
+
+    clipboardActive: string | false = false
+    clipboardId: string | false = false
+    clipboardBuffer: EditorBuffer | false = false
   },
   function actions({ $, fn, fns }) {
     const urlHistory: string[] = [location.href]

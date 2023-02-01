@@ -102,13 +102,18 @@ export const SliderView = web(view('slider-view',
         })
       })
 
-      handleWheel = (e: WheelEvent) => {
+      processWheel = queue.raf((e: WheelEvent) => {
         const normal = $.slider.$.onWheel(e)
         if ($.player) {
           $.player.$.onSliderNormal($.id, normal)
         } else {
           $.slider.$.normal = normal
         }
+      })
+
+      handleWheel = (e: WheelEvent) => {
+        e.preventDefault()
+        this.processWheel(e)
       }
 
       resize = fn(({ host }) => queue.raf(() => {

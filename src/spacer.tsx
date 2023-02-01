@@ -163,9 +163,6 @@ export const Spacer = web(view('spacer',
         &:hover {
           background-color: #5efa !important;
         }
-        /* transition:
-          left 3.5ms linear
-          ; */
       }
       `
     })

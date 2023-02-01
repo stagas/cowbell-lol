@@ -12,8 +12,6 @@ export const Stretchy = (
   },
 ): JSX.Element => (
   <svg
-    // width={width + padding * 2}
-    // height={height + padding * 2}
     viewBox={new Rect(0, 0, width, height).zoomLinear(padding).toString()}
     preserveAspectRatio="xMidYMid meet"
   >

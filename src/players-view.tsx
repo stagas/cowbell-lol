@@ -17,7 +17,7 @@ export const PlayersView = web(view('players',
     selected!: Selected
     editorEl!: Dep<HTMLElement>
     editorVisible!: boolean
-    editorView!: JSX.Element
+    EditorView!: () => JSX.Element
     onPlayerSoundSelect!: TrackViewHandler
     onPlayerPatternSelect!: TrackViewHandler
   },
@@ -44,14 +44,14 @@ export const PlayersView = web(view('players',
       }
       `
 
-      fx.raf(({ players, focused, selected, editorEl, editorVisible, editorView }) => {
+      fx(({ players, editorEl, editorVisible, selected, EditorView }) => {
         $.view = players.map((player, y) => <>
           <PlayerView
             key={player.$.id!}
             id={player.$.id!}
             y={y}
             player={player}
-            focused={focused}
+            focused={$.focused}
             selected={selected}
             active={editorVisible && selected.player === y}
             onSoundSelect={$.onPlayerSoundSelect}
@@ -65,8 +65,8 @@ export const PlayersView = web(view('players',
               hidden: !editorVisible
             })}
           >
-            {editorView}
-            {editorView && <Vertical
+            <EditorView />
+            {editorVisible && <Vertical
               align='y'
               id='editor'
               size={290}

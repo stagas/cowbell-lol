@@ -57,7 +57,6 @@ class Task {
   async fill(floats: Float32Array) {
     this.vm.exports.sampleRate.value = argContext.sampleRate
     this.vm.exports.currentTime.value = 1
-    // this.vm.exports.fill(0, argContext.sampleRate, 0, 0)
     this.vm.exports.midi_in?.(144, 40, 127)
     for (let i = 0; i < floats.length - 128; i += 128) {
       this.vm.exports.fill(0, argContext.sampleRate + i, 0, 128)
@@ -95,7 +94,6 @@ async function execTask(code: string, floats: Float32Array) {
         for (const [id, slider] of nextSliders) {
           const prev = prevSliders.get(id)!
           if (prev.value !== slider.value) {
-            // task.setParam(slider.id, slider.value)
             isDirty = true
           }
           task.setParam(slider.id!, slider.value)

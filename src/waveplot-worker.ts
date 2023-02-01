@@ -5,6 +5,9 @@ import { Scalar } from 'geometrik'
 import { createRunner } from 'pretty-fast-fft'
 
 import type { WaveplotSetup, WaveplotWorkerSetup } from './waveplot'
+// import { hasOffscreenCanvas } from './util/has-offscreen-canvas'
+
+const hasOffscreenCanvas = false
 
 const fftSize = 512
 const fftStep = 128
@@ -19,24 +22,10 @@ function createWorker({ sampleRate, canvas, width, height, pixelRatio, floats }:
   /** Device pixel ratio */
   const pr = pixelRatio
 
-  // let floats: Float32Array
-  // let freqs: Float32Array
-
   /** Previous y position */
   let py: number
 
-  // const rgb = [0, 0, 0]
-  // const hsl = [0, 0, 0]
-
-  // function setData(_floats: Float32Array, _freqs: Float32Array) {
-  //   floats = _floats
-  //   freqs = _freqs
-  // }
-
   c.lineWidth = pr / 2
-
-  // width = width //* pr | 0
-  // height = height * pr | 0
 
   py = 0.5 * height
 
@@ -194,4 +183,8 @@ export const WaveplotWorker: WaveplotWorker = {
   }
 }
 
-rpc(self as unknown as MessagePort, WaveplotWorker as any)
+export default WaveplotWorker
+
+if (hasOffscreenCanvas) {
+  rpc(self as unknown as MessagePort, WaveplotWorker as any)
+}

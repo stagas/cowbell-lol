@@ -37,16 +37,6 @@ export type ProjectJson = {
 
 export const projectsById = new Map<string, Project>()
 
-// export const putProjectOnTop = (project: Project) => {
-//   const entries = [...projects.entries()]
-
-//   projects = new Map([
-//     entries.find(([, p]) => p === project)!,
-//     ...entries
-//       .filter(([, p]) => p !== project)
-//   ])
-// }
-
 export const relatedProjects = new Map<Project, Project[]>()
 
 export const Project = reactive('project',
@@ -67,6 +57,7 @@ export const Project = reactive('project',
   },
   class local {
     state: AudioState = 'init'
+    firstChecksum?: string
     startedAt: number = 0
     pathname?: string
     audio?: Audio | null
@@ -172,7 +163,9 @@ export const Project = reactive('project',
 
         const data: schemas.PublishResponse = await res.json()
 
+
         $.isDraft = false
+        $.firstChecksum = data.project.item.originalId || data.project.item.id
         $.title = data.project.item.title
         $.author = data.project.item.author
         this.save(true)
@@ -267,10 +260,10 @@ export const Project = reactive('project',
               }
               this.fromJSON(json)
             } catch (error) {
-              if (checksum) {
-                console.warn('Error loading: ' + checksum)
-              }
-              console.warn(error)
+              // if (checksum) {
+              //   console.warn('Error loading: ' + checksum)
+              // }
+              // console.warn(error)
 
               if ($.remoteProject) {
                 this.loadRemote($.remoteProject)
@@ -328,7 +321,6 @@ export const Project = reactive('project',
 
               this.fromJSON(json)
             }
-
           })
         })
         return projectLoadPromise
@@ -521,37 +513,6 @@ export const Project = reactive('project',
       })
     })
 
-    // fx(({ audio, bpm }) => {
-    //   audio.$.bpm = bpm
-    // })
-
-    // fx(({ players }) =>
-    //   chain(
-    //     players.map((player) =>
-    //       player.fx(({ state }) => {
-    //         if (state === 'running' && !player.$.audio) {
-    //           $.audioPlayer.$.audio = services.$.audio!
-    //           player.$.audio = services.$.audio!
-    //           player.$.audioPlayer = $.audioPlayer
-    //         }
-    //       })
-    //     )
-    //   )
-    // )
-
-    // fx(({ audio, audioPlayer, players }) => {
-    //   players.forEach((player) => {
-    //     // player.$.isPreview = true
-    //     // player.$.audio = audio
-    //     player.$.audioPlayer = audioPlayer
-    //   })
-    //   return () => {
-    //     players.forEach((player) => {
-    //       player.$.audio = void 0 as any
-    //     })
-    //   }
-    // })
-
     fx(({ players }) =>
       chain(
         players.map((player) =>
@@ -574,14 +535,13 @@ export const Project = reactive('project',
       )
     )
 
-    let firstChecksum: string
     fx.once(({ checksum }) => {
-      firstChecksum = checksum
+      $.firstChecksum = checksum
     })
     fx(({ checksum, bpm: _b }, prev) => {
       if (prev.checksum && !$.isDraft) {
         $.isDraft = true
-        $.originalChecksum = $.originalChecksum || firstChecksum
+        $.originalChecksum = $.originalChecksum || $.firstChecksum || false
         $.originalAuthor = $.originalAuthor || $.author!
         $.author = services.$.username
         $.date = getDateTime()

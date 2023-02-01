@@ -8,7 +8,7 @@ import { compilePattern } from './pattern'
 import { Preview } from './preview-service'
 import { Slider } from './slider'
 import { Sliders } from './types'
-import { areSlidersCompatible } from './util/args'
+import { areSlidersCompatible, getCodeWithoutArgs } from './util/args'
 import { getTitle } from './util/parse'
 import { randomName } from './util/random-name'
 import { Waveplot } from './waveplot'
@@ -17,6 +17,7 @@ import { checksumId } from './util/checksum-id'
 const MidiOps = new Set(Object.values(MidiOp))
 
 export type EditorBuffer = typeof EditorBuffer.State
+
 export const EditorBuffer = reactive('editor-buffer',
   class props {
     kind!: 'sound' | 'pattern' | 'main'
@@ -36,7 +37,8 @@ export const EditorBuffer = reactive('editor-buffer',
 
   class local {
     title?: string
-    didDisplay?: boolean = false
+    didDisplay = false
+    didCompile = false
     compiledValue?: string
     originalValue?: string
     snapshot?: any
@@ -82,8 +84,9 @@ export const EditorBuffer = reactive('editor-buffer',
       derive =
         (props: Partial<typeof $>) =>
           [EditorBuffer, Object.assign(pick($, [
-            'value',
             'kind',
+            'value',
+            'compiledValue',
             'midiEvents',
             'numberOfBars',
           ]), props)] as const
@@ -101,6 +104,9 @@ export const EditorBuffer = reactive('editor-buffer',
         if (error) return error
 
         $.didPaint = true
+        if (!$.error) {
+          $.compiledValue = $.value
+        }
 
         this.copyCanvases()
       }))
@@ -130,7 +136,7 @@ export const EditorBuffer = reactive('editor-buffer',
         return code
       }
 
-      compilePattern = async (turn: number) => {
+      compilePattern = async (turn: number): Promise<WebMidi.MIDIMessageEvent[] | undefined> => {
         const result = await compilePattern(
           $.value,
           $.numberOfBars || 1,
@@ -138,6 +144,7 @@ export const EditorBuffer = reactive('editor-buffer',
         )
 
         if (result.success) {
+          $.compiledValue = $.value
           $.numberOfBars = result.numberOfBars
           $.error = false
 
@@ -162,9 +169,24 @@ export const EditorBuffer = reactive('editor-buffer',
           return result.midiEvents
         } else {
           const { error, sandboxCode } = result
-          console.warn(error)
+
           $.sandboxCode = sandboxCode || ''
           $.error = error
+
+          if ($.value !== $.compiledValue && $.compiledValue) {
+            const result = await compilePattern(
+              $.compiledValue,
+              $.numberOfBars || 1,
+              turn
+            )
+            if (result.success) {
+              $.midiEvents = $.midiEvents.set(turn, result.midiEvents)
+              return result.midiEvents
+            } else {
+              const { error: secondError } = result
+              console.info(error.message, secondError.message)
+            }
+          }
         }
       }
     })
@@ -206,11 +228,22 @@ export const EditorBuffer = reactive('editor-buffer',
         }
       })
 
-      fx(({ value }) => {
+      fx(({ value, error, didCompile }) => {
+        // TODO: a not very good way to get the initial compiled value
+        if (!didCompile && !error && value) {
+          $.compiledValue = value
+          $.didCompile = true
+        }
+      })
+
+      fx(({ value }, prev) => {
+        const prevCodeNoArgs = getCodeWithoutArgs(prev.value || '')
+        const nextCodeNoArgs = getCodeWithoutArgs(value)
+
         const nextSliders = services.$.getSliders(value)
         const prevSliders = $.sliders
 
-        if (!areSlidersCompatible(prevSliders, nextSliders)) {
+        if (prevCodeNoArgs !== nextCodeNoArgs || !areSlidersCompatible(prevSliders, nextSliders)) {
           $.sliders = new Map([...nextSliders].map(([id, slider]) => [id, Slider(slider)]))
         } else {
           for (const [id, slider] of nextSliders) {
@@ -219,12 +252,6 @@ export const EditorBuffer = reactive('editor-buffer',
             prevSlider.$.source = slider.source!
             prevSlider.$.sourceIndex = slider.sourceIndex!
           }
-        }
-      })
-
-      fx(({ value, error }) => {
-        if (!error) {
-          $.compiledValue = value
         }
       })
 

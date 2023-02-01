@@ -40,17 +40,34 @@ if (!g.didSetup) {
   }
 
   g.scales.minor.pentatonic = g.scales['minor pentatonic']
+  g.scales.pentatonic = g.scales['minor pentatonic']
+  g.scales.pentatonic.minor = g.scales['minor pentatonic']
   g.scales.minor.blues = g.scales['minor blues']
+  g.scales.blues = g.scales['minor blues']
+  g.scales.blues.minor = g.scales['minor blues']
   g.scales.minor.gypsy = g.scales['minor gypsy']
+  g.scales.gypsy = g.scales['minor gypsy']
+  g.scales.gypsy.minor = g.scales['minor gypsy']
   g.scales.minor.harmonic = g.scales['harmonic minor']
+  g.scales.harmonic = g.scales['harmonic minor']
+  g.scales.harmonic.minor = g.scales['harmonic minor']
   g.scales.minor.melodic = g.scales['melodic minor']
+  g.scales.melodic = g.scales['melodic minor']
+  g.scales.melodic.minor = g.scales['melodic minor']
   g.scales.minor.hungarian = g.scales['hungarian minor']
+  g.scales.hungarian = g.scales['hungarian minor']
+  g.scales.hungarian.minor = g.scales['hungarian minor']
   g.scales.major.pentatonic = g.scales['major pentatonic']
+  g.scales.pentatonic.major = g.scales['major pentatonic']
   g.scales.whole = {
     tone: g.scales['whole tone'],
     half: g.scales['whole half'],
   }
+  g.scales.tone = g.scales.whole.tone
+  g.scales.half = g.scales.whole.half
   g.scales.locrian.super = g.scales['super locrian']
+  g.scales.super = g.scales['super locrian']
+  g.scales.super.locrian = g.scales['super locrian']
   g.scales.insen = g.scales['in sen']
   g.scales.ionian.aeolian = g.scales['ion aeol']
   g.scales.aeolian.ionian = g.scales['ion aeol']

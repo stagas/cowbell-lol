@@ -101,18 +101,6 @@ export const Vertical = web(view('vertical',
                 }
               }
 
-              // const otherVertical = sibling.nextElementSibling! as HTMLElement
-              // if (heightSibling < 90) {
-              //   const clipElement = selectorsToNode([
-              //     'x-mono', 'x-spacer', 'x-layout'
-              //   ], sibling.shadowRoot!)
-              //   otherVertical.style.width = `calc(100% - ${clipElement.style.width})`
-              //   otherVertical.style.left = clipElement.style.width
-              // } else {
-              //   otherVertical.style.width = '100%'
-              //   otherVertical.style.left = '0'
-              // }
-
               if (size === 45 && sizeSibling >= 90) {
                 midi.style[dim] =
                   midi.style[min] =
@@ -122,9 +110,6 @@ export const Vertical = web(view('vertical',
                   midi.style[min] =
                   midi.style[max] = ''
               }
-
-              // // hides middle vertical when collapsing together
-              // sibling.nextElementSibling!.toggleAttribute('small', height <= 45 && heightSibling < 90)
             }
           } else {
             let prevSize = Math.floor(target.getBoundingClientRect()[dim] ?? 0)
@@ -172,11 +157,6 @@ export const Vertical = web(view('vertical',
               )
 
               host.classList.remove('dragging')
-              // app.setSize(id, size)
-
-              if (sibling && sizeSibling) {
-                // app.setSize(sibling.id, sizeSibling)
-              }
             })
           })
         }
@@ -221,27 +201,11 @@ export const Vertical = web(view('vertical',
       `
     })
 
-    // fx.raf(function updateAttrFixed({ host, fixed }) {
-    //   host.toggleAttribute('fixed', fixed)
-    // })
-
     fx(function updateTargetElement({ host }) {
       $.target = host.previousElementSibling as HTMLElement
-
-      // if (collapseSibling) {
-      //   $.sibling = host
-      //     .parentElement!
-      //     .previousElementSibling!
-      //     .firstElementChild!
-      //     .nextElementSibling! as HTMLElement
-      // }
     })
 
     fx.raf(function updateTargetSize({ align, target, size }) {
-      // if ($.sibling) {
-      //   // hides middle vertical when collapsing together
-      //   $.sibling.nextElementSibling!.toggleAttribute('small', height <= 45 && $.sibling?.getBoundingClientRect().height < 90)
-      // }
       const [dim, min, max] = [
         ['height', 'minHeight', 'maxHeight'] as const,
         ['width', 'minWidth', 'minHeight'] as const

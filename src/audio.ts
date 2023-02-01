@@ -219,10 +219,6 @@ export const Audio = reactive('audio',
       ) => {
           attempt(() => {
             sourceNode.disconnect(targetNode as any)
-            // if (targetNode instanceof SchedulerTargetNode) {
-            // } else if (sourceNode instanceof AudioNode) {
-            //   sourceNode.disconnect(targetNode)
-            // }
           }, true)
         }
 

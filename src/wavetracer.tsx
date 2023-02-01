@@ -2,6 +2,15 @@
 
 import { element, view, web } from 'minimal-view'
 import { services } from './services'
+import { hasOffscreenCanvas as hoc } from './util/has-offscreen-canvas'
+import { PseudoWorker } from './util/pseudo-worker'
+
+const isFirefox = navigator.userAgent.toLowerCase().indexOf('firefox') > -1;
+const hasOffscreenCanvas = isFirefox ? false : hoc
+
+const WorkerImpl = hasOffscreenCanvas
+  ? Worker
+  : PseudoWorker
 
 import type { WavetracerWorkerBytes, WavetracerWorkerColors, WavetracerWorkerCurrentTime, WavetracerWorkerInit, WavetracerWorkerLoopTime, WavetracerWorkerResize, WavetracerWorkerStart, WavetracerWorkerStop } from './wavetracer-worker'
 
@@ -11,7 +20,8 @@ function post<T>(target: MessagePort | Worker, message: T, transfer?: Structured
 
 let worker: Worker
 const getWavetracerPort = () => {
-  worker ??= new Worker(
+  // @ts-ignore
+  worker ??= new WorkerImpl(
     // @ts-ignore
     new URL('./wavetracer-worker.js', import.meta.url),
     {
@@ -143,7 +153,9 @@ export const Wavetracer = web(view('wavetracer',
     })
 
     fx(async function postCanvas({ id, kind, worker, canvas }) {
-      const offscreen = (canvas as any).transferControlToOffscreen() as HTMLCanvasElement
+      const offscreen = hasOffscreenCanvas
+        ? canvas.transferControlToOffscreen()
+        : canvas as any
       post<WavetracerWorkerInit>(worker, { id, kind, canvas: offscreen }, [offscreen] as any)
       $.sentCanvas = true
       return () => {

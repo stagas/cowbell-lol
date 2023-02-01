@@ -97,76 +97,80 @@ content: "\\e007";
 content: "\\e008";
 }
 
-&.la-forward:before {
+&.la-copy:before {
 content: "\\e009";
 }
 
-&.la-github:before {
+&.la-forward:before {
 content: "\\e00a";
 }
 
-&.la-heart:before {
+&.la-github:before {
 content: "\\e00b";
 }
 
-&.la-heart-solid:before {
+&.la-heart:before {
 content: "\\e00c";
 }
 
-&.la-list:before {
+&.la-heart-solid:before {
 content: "\\e00d";
 }
 
-&.la-pause:before {
+&.la-list:before {
 content: "\\e00e";
 }
 
-&.la-play:before {
+&.la-pause:before {
 content: "\\e00f";
 }
 
-&.la-save:before {
+&.la-play:before {
 content: "\\e010";
 }
 
-&.la-share:before {
+&.la-save:before {
 content: "\\e011";
 }
 
-&.la-sistrix:before {
+&.la-share:before {
 content: "\\e012";
 }
 
-&.la-stop:before {
+&.la-sistrix:before {
 content: "\\e013";
 }
 
-&.mdi-light-chevron-down:before {
+&.la-stop:before {
 content: "\\e014";
 }
 
-&.mdi-light-chevron-left:before {
+&.mdi-light-chevron-down:before {
 content: "\\e015";
 }
 
-&.mdi-light-chevron-right:before {
+&.mdi-light-chevron-left:before {
 content: "\\e016";
 }
 
-&.mdi-light-chevron-up:before {
+&.mdi-light-chevron-right:before {
 content: "\\e017";
 }
 
-&.mdi-light-repeat:before {
+&.mdi-light-chevron-up:before {
 content: "\\e018";
 }
 
-&.mdi-light-repeat-once:before {
+&.mdi-light-repeat:before {
 content: "\\e019";
 }
 
-&.ph-upload-simple-duotone:before {
+&.mdi-light-repeat-once:before {
 content: "\\e01a";
+}
+
+&.ph-upload-simple-duotone:before {
+content: "\\e01b";
 }
 
   }
@@ -273,8 +277,6 @@ ${Knob} {
 
 .hidden {
   position: fixed:
-  width: 0;
-  height: 0;
   opacity: 0;
   overflow: hidden;
   pointer-events: none;
@@ -351,6 +353,27 @@ ${PlayerView} {
         box-shadow: inset 0 0 0 8px #f21;
       }
     } */
+  }
+}
+
+.track {
+  &-toolbar {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    display: flex;
+    flex-flow: row wrap;
+    align-items: center;
+    justify-content: space-between;
+    padding: 11px 8px;
+    box-sizing: border-box;
+
+    &-controls {
+      display: flex;
+      flex-flow: row wrap;
+      gap: 9px;
+    }
   }
 }
 `

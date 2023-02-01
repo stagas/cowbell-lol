@@ -1,6 +1,7 @@
 import { queue, reactive } from 'minimal-view'
 import { demo } from './demo-code'
 import { EditorBuffer } from './editor-buffer'
+import { cachedProjects } from './services'
 import { checksumId } from './util/checksum-id'
 import { storage } from './util/storage'
 
@@ -73,6 +74,26 @@ export const Library = reactive('library',
       autoSaveSounds = queue.debounce(1000)(this.saveSounds)
       autoSavePatterns = queue.debounce(1000)(this.savePatterns)
 
+      toJSON = fn(({ sounds, patterns }) => () => {
+
+        const bufferToJson = (buffer: EditorBuffer) => [
+          buffer.$.checksum!,
+          buffer.$.value
+        ] as const
+
+        return {
+          sounds: Object.fromEntries(sounds.map(bufferToJson)),
+          patterns: Object.fromEntries(patterns.map(bufferToJson)),
+          projects: [...cachedProjects.values()].map((project) => ({
+            players: project.$.players.map((player) => ({
+              vol: player.$.vol,
+              sound: player.$.soundBuffer!.$.checksum!,
+              patterns: player.$.patternBuffers!.map((p) => p.$.checksum!)
+            })
+            )
+          }))
+        }
+      })
     })
   },
   function effects({ $, fx }) {
@@ -83,28 +104,6 @@ export const Library = reactive('library',
     fx(({ patterns }) => {
       $.autoSavePatterns()
     })
-
-    // fx(({ sounds, patterns }) => {
-    //   const bufferToJson = (buffer: EditorBuffer) => [
-    //     buffer.$.checksum!.toString(36),
-    //     buffer.$.value
-    //   ]
-
-    //   setTimeout(() => {
-    //     console.log({
-    //       sounds: Object.fromEntries(sounds.map(bufferToJson)),
-    //       patterns: Object.fromEntries(patterns.map(bufferToJson)),
-    //       projects: [...cachedProjects.values()].map((project) => ({
-    //         players: project.$.players.map((player) => ({
-    //           vol: player.$.vol,
-    //           sound: player.$.soundBuffer!.$.checksum!.toString(36),
-    //           patterns: player.$.patternBuffers!.map((p) => p.$.checksum!.toString(36))
-    //         })
-    //         )
-    //       }))
-    //     })
-    //   }, 1000)
-    // })
   }
 )
 

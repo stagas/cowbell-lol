@@ -7,36 +7,13 @@ import { lastRunningPlayers } from './audio'
 import { Button } from './button'
 import { Hint } from './hint'
 import { Player } from './player'
-import { Project, projectsById } from './project'
+import { Project } from './project'
 import { ProjectView } from './project-view'
 import { cachedProjects, getOrCreateProject, projectsByDate, projectsGroup, services } from './services'
 import { Toolbar } from './toolbar'
 import { filterState } from './util/filter-state'
 import { oneOf } from './util/one-of'
 import { storage } from './util/storage'
-
-// const projectButtonRefs = new Map<string, HTMLElement>()
-
-
-// function deepObj(o: any) {
-//   return Object.assign(o, { equals: isEqual })
-// }
-
-// function kindsOf(buffer: EditorBuffer) {
-//   if (buffer.$.kind === 'sound') return 'sounds'
-//   else if (buffer.$.kind === 'pattern') return 'patterns'
-//   else throw new Error('Unreachable: unknown buffer kind: ' + buffer.$.kind)
-// }
-
-// function sortPresets(arr: EditorBuffer[]) {
-//   return arr.sort((a, b) => {
-//     if (a.$.title === b.$.title) {
-//       return a.$.createdAt! - b.$.createdAt!
-//     }
-//     return a.$.title!.localeCompare(b.$.title!)
-//   })
-// }
-
 
 export const focusMap = new Map<string, HTMLElement>()
 
@@ -52,9 +29,6 @@ export const cachedRef = memoize((id: string) => ({
     }
   }
 }))
-
-export const projectsCounts = new Map<Project, number>()
-export const projectsOlderExpanded = new Set<Project>()
 
 export type Selected = {
   player: number,
@@ -221,6 +195,7 @@ export const App = web(view('app',
     app = $.self
 
     let initial = true
+
     // routes
     services.fx(async ({ apiUrl: _, audio, href }) => {
       const { pathname, searchParams } = new URL(href)
@@ -326,8 +301,6 @@ export const App = web(view('app',
             if (audio.$.state !== 'running') {
               $.project = $.projectBrowse
             }
-            $.tab = 'project'
-            return
           } else {
             const project = getOrCreateProject({ id: sub })
             await project.$.load()
@@ -335,9 +308,10 @@ export const App = web(view('app',
             if (audio.$.state !== 'running') {
               $.project = project
             }
-            $.tab = 'project'
-            return
           }
+
+          $.tab = 'project'
+          return
         }
       } catch (error) {
         console.warn(error)
@@ -730,19 +704,6 @@ export const App = web(view('app',
               }>
                 <img crossorigin={'anonymous'} src={`https://avatars.githubusercontent.com/${services.$.username}?s=40&v=4`} />
               </Button>}
-
-              {/*
-                <Button round onClick={
-                  mode === APP_MODE.NORMAL
-                    ? services.$.linkTo('/browse')
-                    : services.$.linkTo('/')
-                }>
-                  <span class={`i ${mode === APP_MODE.NORMAL
-                    ? 'la-list'
-                    : 'mdi-light-chevron-up'
-                    }`}
-                  />
-                </Button> */}
             </nav>
 
             <div>

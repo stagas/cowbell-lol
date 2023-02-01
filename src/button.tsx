@@ -11,6 +11,9 @@ export const Button = web(view('btn',
     small?= false
     pill?= false
     tab?= false
+    half?= false
+    up?= false
+    down?= false
     onClick?: () => void
     children?: JSX.Element
   },
@@ -152,6 +155,25 @@ export const Button = web(view('btn',
         }
       }
 
+      &([half]) {
+        button {
+          height: 13.5px;
+          border-radius: 0;
+        }
+      }
+
+      &([up]) {
+        button {
+          border-radius: 50% 50% 0 0 / 100% 100% 0 0;
+        }
+      }
+
+      &([down]) {
+        button {
+          border-radius: 0 0 50% 50% / 0 0 100% 100%;
+        }
+      }
+
       &([active]) {
         .shades {
           box-shadow:
@@ -255,6 +277,18 @@ export const Button = web(view('btn',
 
     fx(({ host, tab }) => {
       host.toggleAttribute('tab', tab)
+    })
+
+    fx(({ host, half }) => {
+      host.toggleAttribute('half', half)
+    })
+
+    fx(({ host, up }) => {
+      host.toggleAttribute('up', up)
+    })
+
+    fx(({ host, down }) => {
+      host.toggleAttribute('down', down)
     })
 
     fx(({ children }) => {

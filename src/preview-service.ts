@@ -16,7 +16,6 @@ export function getPreviewPort() {
 }
 
 export interface Preview {
-  // setActiveId(id: string): void
   draw(buffer: EditorBuffer): Promise<Error | void | false>
 }
 
@@ -31,20 +30,10 @@ export function createPreview(waveplot: Waveplot, sampleRate: number): Preview {
     numberOfBars: 1
   })
 
-  // let activeId: string
   return debugObjectMethods({
-    // setActiveId: (id) => {
-    //   activeId = id
-    // },
     draw: queue.atomic(async (buffer) => {
       const id = buffer.$.id!
 
-      // if (!waveplot.targets.has(id)) {
-      //   const { canvas } = await waveplot.create(id)
-      //   buffer.$.canvas = canvas
-      // }
-
-      // console.log('trying', id, buffer)
       try {
         const isDirty = await remote(
           'fillPreview',
@@ -58,14 +47,6 @@ export function createPreview(waveplot: Waveplot, sampleRate: number): Preview {
       }
 
       return waveplot.draw(id)
-      // .then(() => {
-      //   // if (activeId === id) {
-      //   //   waveplot.copy(id, 'main')
-      //   // }
-      //   buffer.$.canvases?.forEach((key) => {
-      //     waveplot.copy(id, key)
-      //   })
-      // })
     }),
   }, [], {
     before: (key, args) => {

@@ -182,7 +182,6 @@ export const Toolbar = web(view('toolbar',
         background: ${skin.colors.bg};
         border-radius: 8px;
         margin: 10px 0 10px;
-        /* padding: 0px 9px 0 11px; */
         box-sizing: border-box;
         height: 32px;
         box-shadow:
@@ -222,7 +221,6 @@ export const Toolbar = web(view('toolbar',
 
         .beats {
           margin-left: -18px;
-          /* padding-right: 5px; */
         }
 
         .value {
@@ -386,9 +384,6 @@ export const Toolbar = web(view('toolbar',
                       step={1}
                       align="x"
                     />
-                    {/*                 <span class="dec bpm-control i mdi-light-chevron-left"></span>
-                <span class="amt">125</span>
-                <span class="inc bpm-control i mdi-light-chevron-right"></span> */}
                   </div>
                 </div>
                 <div class="beats">

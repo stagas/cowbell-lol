@@ -38,94 +38,10 @@ export const KnobView = web(view('knob-view',
 
   function actions({ $, fn, fns }) {
     return fns(new class actions {
-      // handleDown = fn(({ host, id }) => (e: PointerEvent) => {
-      //   if (handling || !(e.buttons & 1)) return
-
-      //   if (e.type === 'pointerdown') {
-      //     downSlider = true
-      //   } else {
-      //     if (!downSlider) return
-      //     if (e.type === 'pointerenter' && !e.altKey) {
-      //       return
-      //     }
-      //   }
-
-      //   host.toggleAttribute('drag', true)
-
-      //   handling = true
-
-      //   host.classList.add('active')
-
-      //   const yDims = ['height', 'minHeight', 'maxHeight', 'y'] as const
-      //   const xDims = ['width', 'minWidth', 'maxWidth', 'x'] as const
-
-      //   const [[dim, , , n]] = vertical
-      //     ? [xDims, yDims]
-      //     : [yDims, xDims]
-
-      //   const getPointerPos = (e: PointerEvent) => {
-      //     const scrollTop = document.documentElement.scrollTop
-      //     return new Point(e.pageX, e.pageY - scrollTop)
-      //   }
-
-      //   const ownRect = $.rect!
-
-      //   const moveTo = (pos: Point) => {
-      //     let newSize = (pos[n] - ownRect[n])
-      //     if (!vertical) newSize = ownRect[dim] - newSize
-
-      //     const size = Math.max(0, Math.min(ownRect[dim], newSize))
-      //     const normal = size / ownRect[dim]
-      //     if ($.player) {
-      //       $.player.$.onSliderNormal(id, normal)
-      //     } else {
-      //       $.slider.$.normal = normal
-      //     }
-      //   }
-
-      //   moveTo(getPointerPos(e))
-
-      //   const off = on(e.altKey ? host : window, 'pointermove').raf(function verticalPointerMove(e) {
-      //     moveTo(getPointerPos(e))
-      //   })
-
-      //   on(window, 'pointerup').once((e) => {
-      //     off()
-      //     handling = false
-      //     downSlider = false
-      //     requestAnimationFrame(() => {
-      //       host.classList.remove('active')
-      //       host.toggleAttribute('drag', false)
-      //     })
-      //   })
-      // })
-
-      // handleWheel = (e: WheelEvent) => {
-      //   const normal = $.slider.$.onWheel(e)
-      //   if ($.player) {
-      //     $.player.$.onSliderNormal($.id, normal)
-      //   } else {
-      //     $.slider.$.normal = normal
-      //   }
-      // }
-
-      // // resize = fn(({ host }): ResizeObserverCallback => queue.raf((entries) => {
-      // //   $.rect = new Rect(host.getBoundingClientRect()).round()
-      // //   const aspect = $.rect.size.x / $.rect.size.y
-      // //   if (aspect < 0.5) {
-      // //     $.vertical = false
-      // //   } else {
-      // //     $.vertical = true
-      // //   }
-      // // }))
     })
   },
 
   function effect({ $, fx, refs }) {
-    // fx.raf(({ host, running }) => {
-    //   host.toggleAttribute('running', running)
-    // })
-
     fx(({ slider, vol }) =>
       slider.fx(({ normal }) => {
         vol.value = normal
