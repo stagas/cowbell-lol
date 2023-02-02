@@ -87,6 +87,7 @@ export const EditorBuffer = reactive('editor-buffer',
             'kind',
             'value',
             'compiledValue',
+            'didCompile',
             'midiEvents',
             'numberOfBars',
           ]), props)] as const
