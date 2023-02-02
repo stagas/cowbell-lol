@@ -129,48 +129,52 @@ content: "\\e00f";
 content: "\\e010";
 }
 
-&.la-save:before {
+&.la-redo-alt:before {
 content: "\\e011";
 }
 
-&.la-share:before {
+&.la-save:before {
 content: "\\e012";
 }
 
-&.la-sistrix:before {
+&.la-share:before {
 content: "\\e013";
 }
 
-&.la-stop:before {
+&.la-sistrix:before {
 content: "\\e014";
 }
 
-&.mdi-light-chevron-down:before {
+&.la-stop:before {
 content: "\\e015";
 }
 
-&.mdi-light-chevron-left:before {
+&.mdi-light-chevron-down:before {
 content: "\\e016";
 }
 
-&.mdi-light-chevron-right:before {
+&.mdi-light-chevron-left:before {
 content: "\\e017";
 }
 
-&.mdi-light-chevron-up:before {
+&.mdi-light-chevron-right:before {
 content: "\\e018";
 }
 
-&.mdi-light-repeat:before {
+&.mdi-light-chevron-up:before {
 content: "\\e019";
 }
 
-&.mdi-light-repeat-once:before {
+&.mdi-light-repeat:before {
 content: "\\e01a";
 }
 
-&.ph-upload-simple-duotone:before {
+&.mdi-light-repeat-once:before {
 content: "\\e01b";
+}
+
+&.ph-upload-simple-duotone:before {
+content: "\\e01c";
 }
 
   }

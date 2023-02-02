@@ -716,11 +716,19 @@ export const ProjectView = web(view('project-view',
 
             <div class="track-toolbar-controls">
 
-              {editorBuffer!.$.isDraft && <Button small onClick={() => {
-                $.onBufferSave(editorBuffer!.$.id!, editorBuffer!.$)
-              }}>
-                <span class="i la-check" style="font-size:17px; position: relative; -webkit-text-stroke: .1px;" />
-              </Button>}
+              {editorBuffer!.$.isDraft && <>
+                <Button small onClick={() => {
+                  player.$.monoNode!.setCode(sound.$.value, true)
+                }}>
+                  <span class="i la-redo-alt" />
+                </Button>
+
+                <Button small onClick={() => {
+                  $.onBufferSave(editorBuffer!.$.id!, editorBuffer!.$)
+                }}>
+                  <span class="i la-check" style="font-size:17px; position: relative; -webkit-text-stroke: .1px;" />
+                </Button>
+              </>}
 
               {(focus === 'sound'
                 ? players.length > 1
