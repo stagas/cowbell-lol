@@ -95,7 +95,7 @@
     "json-objectify": "^1.0.1",
     "minimal-view": "^1.4.0",
     "mono-worklet": "^2.1.0",
-    "monolang": "^3.1.0",
+    "monolang": "^3.2.0",
     "pretty-fast-fft": "^1.1.0",
     "rpc-mini": "^1.1.0",
     "scheduler-node": "^2.0.2",
