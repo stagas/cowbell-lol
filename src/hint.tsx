@@ -28,9 +28,11 @@ export const Hint = web(view('hint',
         )
 
         const rect = new Rect(host.getBoundingClientRect())
-        rect.bottom = e.pageY - 25
+        rect.bottom = e.pageY - 15
         rect.left = e.pageX + 10
-        rect.containSelf(viewportRect)
+        rect
+          .containSelf(viewportRect)
+          .translateSelf(viewportRect.pos.negate())
 
         Object.assign(host.style, rect.toStylePosition())
 

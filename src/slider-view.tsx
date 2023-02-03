@@ -2,6 +2,7 @@
 
 import { Point, Rect } from 'geometrik'
 import { chain, Dep, element, on, queue, view, web } from 'minimal-view'
+import { app } from './app'
 import { Player } from './player'
 import { Slider } from './slider'
 import { observe } from './util/observe'
@@ -40,7 +41,13 @@ export const SliderView = web(view('slider-view',
     let handling = false
 
     return fns(new class actions {
-      handleDown = fn(({ host, id, vertical }) => (e: PointerEvent) => {
+      handleLeave = () => {
+        app.$.hint = ''
+      }
+
+      handleDown = fn(({ host, id, vertical, slider }) => (e: PointerEvent) => {
+        app.$.hint = `${slider.$.name} ${slider.$.value.toFixed(3)}`
+
         if (handling || !(e.buttons & 1)) return
 
         if (e.type === 'pointerdown') {
@@ -83,6 +90,9 @@ export const SliderView = web(view('slider-view',
           } else {
             $.slider.$.normal = normal
           }
+          requestAnimationFrame(() => {
+            app.$.hint = `${slider.$.name} ${slider.$.value.toFixed(3)}`
+          })
         }
 
         moveTo(getPointerPos(e))
@@ -109,6 +119,9 @@ export const SliderView = web(view('slider-view',
         } else {
           $.slider.$.normal = normal
         }
+        requestAnimationFrame(() => {
+          app.$.hint = `${$.slider!.$.name} ${$.slider!.$.value.toFixed(3)}`
+        })
       })
 
       handleWheel = (e: WheelEvent) => {
@@ -316,6 +329,8 @@ export const SliderView = web(view('slider-view',
       return chain(
         on(host, 'pointerdown')($.handleDown),
         on(host, 'pointerenter')($.handleDown),
+        on(host, 'pointerleave')($.handleLeave),
+        on(host, 'pointercancel')($.handleLeave),
         on(host, 'wheel').not.passive($.handleWheel),
       )
     })

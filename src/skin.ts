@@ -282,6 +282,7 @@ ${Knob} {
 .hidden {
   position: fixed:
   opacity: 0;
+  z-index: -9999;
   overflow: hidden;
   pointer-events: none;
 }
