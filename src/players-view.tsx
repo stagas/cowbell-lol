@@ -8,6 +8,7 @@ import { Focused } from './project-view'
 import { services } from './services'
 import { TrackViewHandler } from './track-view'
 import { classes } from './util/classes'
+import { storage } from './util/storage'
 import { Vertical } from './vertical'
 
 export const PlayersView = web(view('players',
@@ -69,7 +70,7 @@ export const PlayersView = web(view('players',
             {editorVisible && <Vertical
               align='y'
               id='editor'
-              size={290}
+              size={storage.vertical.get('editor', 290)}
             />}
           </div>}
         </>)

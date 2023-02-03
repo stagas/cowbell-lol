@@ -2,7 +2,7 @@ import type { Selected } from '../app'
 
 export const spacer = {
   get: (id: string, fallbackSizes: number[]) => {
-    return fallbackSizes
+    // return fallbackSizes
     const cells: number[] = (localStorage[`spacer-${id}`] ?? '')
       .split(',')
       .filter((s: string) => s !== '')
@@ -11,7 +11,7 @@ export const spacer = {
     return cells
   },
   set: (id: string, sizes: number[]) => {
-    // localStorage[`spacer-${id}`] = sizes
+    localStorage[`spacer-${id}`] = sizes
   }
 }
 
@@ -29,6 +29,23 @@ export const vols = {
   },
   delete: (id: string) => {
     delete localStorage[`vol-${id}`]
+  }
+}
+
+export const vertical = {
+  get: (id: string, fallbackSize: number) => {
+    const size = localStorage[`vert-${id}`]
+    if (size == null) {
+      return fallbackSize
+    }
+
+    return parseFloat(size)
+  },
+  set: (id: string, size: number) => {
+    localStorage[`vert-${id}`] = `${size}`
+  },
+  delete: (id: string) => {
+    delete localStorage[`vert-${id}`]
   }
 }
 
@@ -105,5 +122,6 @@ export const storage = {
   vols,
   sampleRate,
   latencyHint,
-  previewSampleRate
+  previewSampleRate,
+  vertical
 }

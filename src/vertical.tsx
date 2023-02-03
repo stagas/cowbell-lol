@@ -3,6 +3,7 @@
 import { Point } from 'geometrik'
 import { getElementOffset } from 'get-element-offset'
 import { element, on, view, web } from 'minimal-view'
+import { storage } from './util/storage'
 
 function selectorsToNode(selectors: string[], rootNode = document as any) {
   // let rootNode = document as Document | ShadowRoot | Element | null
@@ -157,6 +158,8 @@ export const Vertical = web(view('vertical',
               )
 
               host.classList.remove('dragging')
+
+              storage.vertical.set($.id, size)
             })
           })
         }

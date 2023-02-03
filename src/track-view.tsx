@@ -373,20 +373,20 @@ export const TrackView = web(view('track-view',
     })
 
     fx(({ sound, sliders, rect, player }) => {
-      if (player && sound && sliders && rect.height > 150 && rect.width > 220) {
+      if (player && sound && sliders && rect.height > 150 && rect.width > 200) {
         $.slidersView =
           <Spacer
             key={player.$.id!}
-            ref={cachedRef(`sliders-outer-${player.$.id}`)}
-            id={sound.$.id + 'outer'}
+            ref={cachedRef('sliders-outer-track-view')}
+            id="sliders-outer-track-view"
             class="sliders-outer"
             align="y"
             initial={[0, 0.5]}
           >
             <div />
             <Spacer
-              ref={cachedRef(`sliders-${player.$.id}`)}
-              id={sound.$.id!}
+              ref={cachedRef(`sliders-inner-track-view`)}
+              id={`sliders-inner-track-view`}
               class="sliders"
               align="x"
               initial={[0, 0.45]}
