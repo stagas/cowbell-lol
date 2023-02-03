@@ -52,13 +52,19 @@ export const schemas = {
     bpm: z.number(),
     title: z.string(),
     trackIds: z.array(z.string()),
-    mixer: z.any(),
+    mixer: z.array(z.object({
+      vol: z.number(),
+      pages: z.array(z.number()),
+    })),
   }),
   postPublishRequest: z.object({
     ...PostItem,
     bpm: z.number(),
     title: z.string(),
-    mixer: z.any(),
+    mixer: z.array(z.object({
+      vol: z.number(),
+      pages: z.array(z.number()),
+    })),
     tracks: z.array(
       z.object({
         sound: z.string(),

@@ -19,6 +19,11 @@ import { spacer } from './util/storage'
 
 export const players = new Set<Player>()
 
+export interface PlayerPage {
+  sound: string
+  patterns: string[]
+}
+
 const { clamp } = Scalar
 
 export const Player = reactive('player',
@@ -32,9 +37,11 @@ export const Player = reactive('player',
     patterns!: string[]
     pattern!: number
 
+    page?: number = 1
+    pages?: PlayerPage[]
+
     project?: Project
     audioPlayer?: AudioPlayer
-    // view?: PlayerView
   },
 
   class local {
@@ -406,6 +413,32 @@ export const Player = reactive('player',
         $.library = library
       })
     )
+
+    fx(({ page, pages }) => {
+      const p = pages[page - 1]
+      Object.assign($, p)
+    })
+
+    fx(({ sound, patterns, page, pages }) => {
+      const p = pages[page - 1]
+      if (p && p.sound === sound && p.patterns.join() === patterns.join()) return
+
+      pages[page - 1] = {
+        sound,
+        patterns: patterns.slice()
+      }
+
+      pages = pages.filter((p) => p != null && p.sound && p.patterns)
+
+      while (
+        [pages.at(-1)?.sound, pages.at(-1)?.patterns].join()
+        === [pages.at(-2)?.sound, pages.at(-2)?.patterns].join()
+      ) {
+        pages.pop()
+      }
+
+      $.pages = [...pages]
+    })
 
     fx(({ sound, library }) => {
       $.soundBuffer = get(library.$.sounds, sound)!

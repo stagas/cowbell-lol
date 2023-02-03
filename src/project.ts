@@ -2,9 +2,9 @@ import { cheapRandomId, pick } from 'everyday-utils'
 import { chain, queue, reactive } from 'minimal-view'
 import { Audio, AudioState } from './audio'
 import { EditorBuffer } from './editor-buffer'
-import { Player } from './player'
+import { Player, PlayerPage } from './player'
 import { cachedProjects, services } from './services'
-import { getByChecksum } from './util/list'
+import { get, getByChecksum, getMany } from './util/list'
 import { Library, toBuffer } from './library'
 import { demo } from './demo-code'
 import { checksumId } from './util/checksum-id'
@@ -26,8 +26,9 @@ export type ProjectJson = {
   author: string
   players: {
     vol: number,
-    sound: string,
-    patterns: string[]
+    sound?: string,
+    patterns?: string[],
+    pages?: PlayerPage[]
   }[],
   remixCount: number,
   originalRemixCount: number
@@ -58,6 +59,7 @@ export const Project = reactive('project',
   class local {
     state: AudioState = 'init'
     firstChecksum?: string
+    vols?: string
     startedAt: number = 0
     pathname?: string
     audio?: Audio | null
@@ -130,21 +132,26 @@ export const Project = reactive('project',
 
       // Storage/JSON
 
-      publish = async () => {
+      publish = fn(({ library }) => async () => {
         const payload: schemas.PostPublishRequest = {
           originalId: $.originalChecksum || undefined,
           bpm: $.bpm!,
           title: $.title!,
-          mixer: $.players.map((player) => ({
-            vol: player.$.vol
+          mixer: $.players.map((player, y) => ({
+            vol: player.$.vol,
+            pages: player.$.pages!.map((_, x) =>
+              x + $.players.slice(0, y).reduce((p, n) => p + (n.$.pages?.length || 1), 0)
+            )
           })),
-          tracks: $.players.map((player) => ({
-            sound: player.$.soundBuffer!.$.checksum!,
-            patterns: player.$.patternBuffers!.map((p) => p.$.checksum!)
-          })),
+          tracks: $.players.flatMap((player) => player.$.pages!.map((page) => ({
+            sound: get(library.$.sounds, page.sound)!.$.checksum!,
+            patterns: getMany(library.$.patterns, page.patterns).map((p) => p!.$.checksum!)
+          }))),
           buffers: $.players.flatMap((player) => [...new Set([
-            player.$.soundBuffer!.$.value,
-            ...player.$.patternBuffers!.map((p) => p.$.value)
+            ...player.$.pages!.flatMap((page) => [
+              get(library.$.sounds, page.sound)!.$.value!,
+              ...getMany(library.$.patterns, page.patterns).map((p) => p!.$.value!)
+            ])
           ])])
         }
 
@@ -163,13 +170,12 @@ export const Project = reactive('project',
 
         const data: schemas.PublishResponse = await res.json()
 
-
         $.isDraft = false
         $.firstChecksum = data.project.item.originalId || data.project.item.id
         $.title = data.project.item.title
         $.author = data.project.item.author
         this.save(true)
-      }
+      })
 
       save = (force?: boolean) => {
         if (!force && !lastSavedJson && !$.players.length) return
@@ -222,10 +228,12 @@ export const Project = reactive('project',
 
       delete = () => {
         $.isDeleted = true
+        delete localStorage[$.checksum!]
       }
 
       undelete = () => {
         $.isDeleted = false
+        this.save(true)
       }
 
       load = () => {
@@ -297,20 +305,26 @@ export const Project = reactive('project',
                 players: [
                   {
                     vol: 0.45,
-                    sound: checksumId(demo.kick.sound),
-                    patterns: [demo.kick.patterns[0], demo.kick.patterns[0], demo.kick.patterns[0], demo.kick.patterns[1]].map(checksumId)
+                    pages: [{
+                      sound: checksumId(demo.kick.sound),
+                      patterns: [demo.kick.patterns[0], demo.kick.patterns[0], demo.kick.patterns[0], demo.kick.patterns[1]].map(checksumId)
+                    }]
                   },
 
                   {
                     vol: 0.3,
-                    sound: checksumId(demo.snare.sound),
-                    patterns: [demo.snare.patterns[0], demo.snare.patterns[0], demo.snare.patterns[0], demo.snare.patterns[1]].map(checksumId)
+                    pages: [{
+                      sound: checksumId(demo.snare.sound),
+                      patterns: [demo.snare.patterns[0], demo.snare.patterns[0], demo.snare.patterns[0], demo.snare.patterns[1]].map(checksumId)
+                    }]
                   },
 
                   {
                     vol: 0.52,
-                    sound: checksumId(demo.bass.sound),
-                    patterns: [demo.bass.patterns[0]].map(checksumId)
+                    pages: [{
+                      sound: checksumId(demo.bass.sound),
+                      patterns: [demo.bass.patterns[0]].map(checksumId)
+                    }]
                   },
                 ],
                 remixCount: 0,
@@ -361,26 +375,42 @@ export const Project = reactive('project',
         const newSounds: EditorBuffer[] = []
         const newPatterns: EditorBuffer[] = []
 
-        const players: ProjectJson['players'] = (p.mixer as { vol: number }[]).map(({ vol }, i) => {
-          const t: schemas.TrackResponse = tracks.find((t) => t.id === p.trackIds[i])!
+        const tracksOrdered = p.trackIds.map((trackId) =>
+          tracks.find((t) => t.id === trackId)!
+        )
 
-          const soundBuffer = getByChecksum(library.$.sounds, t.soundId)
-
-          if (!soundBuffer) {
-            newSounds.push(toBuffer('sound')([0, t.soundId]))
+        const players: ProjectJson['players'] = (p.mixer as { vol: number, pages?: number[] }[]).map(({ vol, pages }, i) => {
+          if (!pages || pages.length === 0) {
+            pages = [i]
           }
 
-          t.patternIds.forEach((patternId) => {
-            const patternBuffer = getByChecksum(library.$.patterns, patternId)
-            if (!patternBuffer) {
-              newPatterns.push(toBuffer('pattern')([0, patternId]))
+          const trackPages = pages.map((trackIndex) => {
+            const t: schemas.TrackResponse = tracksOrdered[trackIndex]
+
+            const soundBuffer = getByChecksum(library.$.sounds, t.soundId)
+
+            if (!soundBuffer) {
+              newSounds.push(toBuffer('sound')([0, t.soundId]))
+            }
+
+            t.patternIds.forEach((patternId) => {
+              const patternBuffer = getByChecksum(library.$.patterns, patternId)
+              if (!patternBuffer) {
+                newPatterns.push(toBuffer('pattern')([0, patternId]))
+              }
+            })
+
+            return {
+              sound: t.soundId,
+              patterns: t.patternIds
             }
           })
 
           return {
             vol,
-            sound: t.soundId,
-            patterns: t.patternIds,
+            sound: trackPages[0].sound,
+            patterns: [...trackPages[0].patterns],
+            pages: trackPages
           }
         })
 
@@ -407,6 +437,34 @@ export const Project = reactive('project',
       })
 
       fromJSON = fn(({ players, library }) => (json: ProjectJson) => {
+        try {
+          json.players.forEach((player) => {
+            if (!player.pages || player.pages.length === 0) {
+              if (!player.sound || !player.patterns) return
+
+              player.pages = [{
+                sound: player.sound,
+                patterns: player.patterns.slice()
+              }]
+
+              player.sound = getByChecksum(library.$.sounds, player.sound)!.$.id!
+              player.patterns.forEach((pattern, i) => {
+                player.patterns![i] = getByChecksum(library.$.patterns, pattern)!.$.id!
+              })
+            }
+
+            player.pages.forEach((page) => {
+              page.sound = getByChecksum(library.$.sounds, page.sound)!.$.id!
+              page.patterns.forEach((pattern, i) => {
+                page.patterns[i] = getByChecksum(library.$.patterns, pattern)!.$.id!
+              })
+            })
+          })
+        } catch (error) {
+          console.warn(error)
+          return
+        }
+
         $.checksum = json.checksum
         $.bpm = json.bpm
         $.date = json.date
@@ -418,20 +476,13 @@ export const Project = reactive('project',
         $.originalChecksum = json.originalChecksum || false
         $.originalAuthor = json.originalAuthor || false
 
-        json.players.forEach((player) => {
-          player.sound = getByChecksum(library.$.sounds, player.sound)!.$.id!
-
-          player.patterns.forEach((pattern, i) => {
-            player.patterns[i] = getByChecksum(library.$.patterns, pattern)!.$.id!
-          })
-        })
-
         players?.forEach((player) => {
           player.dispose()
         })
 
         $.players = json.players.map((player) => Player({
           ...player,
+          ...player.pages![0],
           pattern: 0,
           project: $.self as Project,
         }))
@@ -440,7 +491,7 @@ export const Project = reactive('project',
       /**
        * Get a JSON representation of the project.
        */
-      toJSON = fn(({ players }) => (): ProjectJson => ({
+      toJSON = fn(({ players, library }) => (): ProjectJson => ({
         ...pick($ as Required<typeof $>, [
           'checksum',
           'bpm',
@@ -456,10 +507,28 @@ export const Project = reactive('project',
         players: players.map((player) => ({
           vol: player.$.vol,
           sound: player.$.soundBuffer!.$.checksum!,
-          patterns: player.$.patternBuffers!.map((p) => p.$.checksum!)
+          patterns: player.$.patternBuffers!.map((p) => p.$.checksum!),
+          pages: player.$.pages!.map((page) => ({
+            sound: get(library.$.sounds, page.sound)!.$.checksum!,
+            patterns: getMany(library.$.patterns, page.patterns).map((p) => p!.$.checksum!)
+          }))
         }))
       }))
 
+      updateChecksum = fn(({ library }) => () => {
+        const trackIds = $.players.map((p) =>
+          checksumId(
+            p.$.pages!.flatMap((page) => [
+              get(library.$.sounds, page.sound)!.$.checksum!,
+              ...getMany(library.$.patterns, page.patterns).map((p) => p!.$.checksum!)
+            ]).join()
+          )
+        )
+
+        if (trackIds.every((c) => c != null)) {
+          $.checksum = checksumId(trackIds.join())
+        }
+      })
     })
   },
   function effects({ $, fx }) {
@@ -513,24 +582,19 @@ export const Project = reactive('project',
       })
     })
 
-    fx(({ players }) =>
+    fx(({ players, library }) =>
       chain(
         players.map((player) =>
-          player.fx(({ soundBuffer, patternBuffers }) => chain(
-            ...[soundBuffer, ...patternBuffers].map((b) => b.fx(({ checksum: _ }) => {
-
-              const trackIds = players.map((p) =>
-                checksumId([
-                  p.$.soundBuffer?.$.checksum,
-                  p.$.patternBuffers?.map((pat) => pat.$.checksum)
-                ].join())
-              )
-
-              if (trackIds.every((c) => c != null)) {
-                $.checksum = checksumId(trackIds.join())
-              }
-            }))
-          ))
+          chain(
+            player.fx(({ soundBuffer, patternBuffers, pages }) => chain(
+              ...[soundBuffer, ...patternBuffers].map((b) => b.fx(({ checksum: _ }) => {
+                $.updateChecksum()
+              }))
+            )),
+            player.fx(({ vol }) => {
+              $.vols = players.map((p) => p.$.vol).join()
+            })
+          )
         )
       )
     )
@@ -538,15 +602,17 @@ export const Project = reactive('project',
     fx.once(({ checksum }) => {
       $.firstChecksum = checksum
     })
-    fx(({ checksum, bpm: _b }, prev) => {
+    fx(({ checksum, bpm: _b, vols }, prev) => {
       if (prev.checksum && !$.isDraft) {
         $.isDraft = true
         $.originalChecksum = $.originalChecksum || $.firstChecksum || false
         $.originalAuthor = $.originalAuthor || $.author!
         $.author = services.$.username
         $.date = getDateTime()
-        // cachedProjects.set(firstChecksum, Project({ checksum: firstChecksum }))
-        // cachedProjects.set(checksum, $.self)
+        if ($.originalChecksum) {
+          cachedProjects.delete($.originalChecksum)
+          cachedProjects.set(checksum, $.self)
+        }
       }
       $.autoSave()
     })

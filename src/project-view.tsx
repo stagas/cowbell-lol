@@ -612,6 +612,8 @@ export const ProjectView = web(view('project-view',
 
       if (players.length) return fx(({ selected, focused: _ }) => {
         const player: Player = players[selected.player]!
+        if (!player) return
+
         return player.fx(({ sound, pattern, patterns: playerPatterns }) => {
           const focus = $.getFocus()
 

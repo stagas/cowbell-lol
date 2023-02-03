@@ -9,6 +9,7 @@ import { services } from './services'
 import { get } from './util/list'
 import { Volume } from './volume'
 import { Focused } from './project-view'
+import { NumberInput } from './number-input'
 
 export type PlayerView = typeof PlayerView.State
 
@@ -34,7 +35,7 @@ export const PlayerView = web(view('player-view',
     })
   },
 
-  function effects({ $, fx }) {
+  function effects({ $, fx, deps }) {
     fx(() => services.fx(({ skin }) => {
       $.css = /*css*/`
       ${skin.css}
@@ -96,6 +97,39 @@ export const PlayerView = web(view('player-view',
         &[live],
         &[active] {
           ${skin.styles.lowered}
+        }
+      }
+
+      .page-select {
+        font-family: ${skin.fonts.slab};
+        font-size: 48px;
+        letter-spacing: -2.5px;
+        background: ${skin.colors.bg};
+
+        ${skin.styles.raised};
+
+        position: relative;
+        --padding: 12px;
+
+        &::part(left),
+        &::part(right) {
+          width: 30px;
+          color: ${skin.colors.fgPale};
+          font-size: 32px;
+          padding-top: 8px;
+        }
+
+        &::part(left) {
+          padding-right: var(--padding);
+        }
+
+        &::part(right) {
+          padding-left: var(--padding);
+        }
+
+        &::part(value) {
+          top: -2px;
+          left: -1px;
         }
       }
       `
@@ -161,6 +195,8 @@ export const PlayerView = web(view('player-view',
                 })
               }
             </div>
+
+            <NumberInput class="page-select" min={1} max={99} step={1} value={player.deps.page} align="x" />
           </>
         })
       ))
