@@ -51,7 +51,6 @@ export const Vertical = web(view('vertical',
         sibling
       }) =>
         (e: PointerEvent) => {
-          console.log('yea??')
           host.classList.add('dragging')
 
           const getPointerPos = (e: PointerEvent) => {

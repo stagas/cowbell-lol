@@ -3,7 +3,7 @@
 import { cheapRandomId } from 'everyday-utils'
 import { Rect } from 'geometrik'
 import { chain, element, event, on, queue, view, web } from 'minimal-view'
-import { app, cachedRef, focusMap } from './app'
+import { app, focusMap } from './app'
 import { EditorBuffer } from './editor-buffer'
 import { Midi } from './midi'
 import { Player } from './player'
@@ -377,7 +377,6 @@ export const TrackView = web(view('track-view',
         $.slidersView =
           <Spacer
             key={player.$.id!}
-            ref={cachedRef('sliders-outer-track-view')}
             id="sliders-outer-track-view"
             class="sliders-outer"
             align="y"
@@ -385,8 +384,7 @@ export const TrackView = web(view('track-view',
           >
             <div />
             <Spacer
-              ref={cachedRef(`sliders-inner-track-view`)}
-              id={`sliders-inner-track-view`}
+              id="sliders-inner-track-view"
               class="sliders"
               align="x"
               initial={[0, 0.45]}
