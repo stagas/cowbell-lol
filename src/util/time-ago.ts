@@ -17,13 +17,14 @@ export function timeAgo(input: any, withTime = false): string {
   let date: Date
 
   if (typeof input === 'string' && !input.includes('T')) {
-    date = new Date(`${input} GMT`)
+    const [d, t] = input.split(' ')
+    date = new Date(`${d}T${t}Z`)
   } else {
     date = new Date(input)
   }
 
   let duration = (date.getTime() - Date.now()) / 1000
-  for (let i = 0; i <= DIVISIONS.length; i++) {
+  for (let i = 0; i < DIVISIONS.length; i++) {
     const division = DIVISIONS[i]
     if (Math.abs(duration) < division.amount) {
       return `${formatter.format(Math.round(duration), division.name)
