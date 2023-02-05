@@ -3,6 +3,7 @@ import { Scalar } from 'geometrik'
 import { chain, queue, reactive } from 'minimal-view'
 import { MonoNode } from 'mono-worklet'
 import { LoopKind, SchedulerEventGroupNode } from 'scheduler-node'
+import { anim } from './anim'
 import { app } from './app'
 import { Audio, AudioState } from './audio'
 import { AudioPlayer } from './audio-player'
@@ -474,13 +475,15 @@ export const Player = reactive('player',
 
     fx(({ state, audio, totalBars }) => {
       if (state === 'running') {
-        const iv = setInterval(() => {
+        const tick = () => {
+          anim.schedule(tick)
           const now = audio.$.getTime()
           $.currentTime = (now % totalBars) * 1000
           $.turn = (now / totalBars) | 0
-        }, 12)
+        }
+        anim.schedule(tick)
         return () => {
-          clearInterval(iv)
+          anim.remove(tick)
         }
       }
     })

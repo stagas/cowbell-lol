@@ -1,6 +1,6 @@
 /** @jsxImportSource minimal-view */
 
-import { element, view, web } from 'minimal-view'
+import { chain, element, view, web } from 'minimal-view'
 import { Selected } from './app'
 import { Button } from './button'
 import { Player } from './player'
@@ -10,6 +10,8 @@ import { get } from './util/list'
 import { Volume } from './volume'
 import { Focused } from './project-view'
 import { NumberInput } from './number-input'
+import { observe } from './util/observe'
+import { anim } from './anim'
 
 export type PlayerView = typeof PlayerView.State
 
@@ -28,14 +30,20 @@ export const PlayerView = web(view('player-view',
 
   class local {
     host = element
+    patternsEl?: HTMLDivElement
+    patternsWidth?: number
+    rulerEl?: HTMLDivElement
   },
 
   function actions({ $, fns, fn }) {
     return fns(new class actions {
+      resize = fn(({ patternsEl }) => () => {
+        $.patternsWidth = patternsEl.getBoundingClientRect().width
+      })
     })
   },
 
-  function effects({ $, fx, deps }) {
+  function effects({ $, fx, deps, refs }) {
     fx(() => services.fx(({ skin }) => {
       $.css = /*css*/`
       ${skin.css}
@@ -84,9 +92,19 @@ export const PlayerView = web(view('player-view',
       }
 
       .patterns {
+        position: relative;
         display: flex;
         width: 100%;
         height: 100%;
+      }
+
+      .ruler {
+        position: absolute;
+        height: 100%;
+        width: 1px;
+        background: ${skin.colors.brightCyan};
+        box-shadow: 0 0 2.8px .1px ${skin.colors.brightCyan};
+        z-index: 9;
       }
 
       ${TrackView} {
@@ -139,6 +157,48 @@ export const PlayerView = web(view('player-view',
       host.toggleAttribute('active', active)
     })
 
+    fx(({ patternsEl }) =>
+      observe.resize.initial(patternsEl, $.resize)
+    )
+
+    let lastAnimTurn: number
+    let lastAnim: Animation
+    fx(({ player, rulerEl, patternsWidth }) =>
+      chain(
+        () => {
+          lastAnimTurn = -1
+        },
+        player.fx(({ state, totalBars, currentTime, turn }, prev) => {
+          if (currentTime && currentTime < 0) {
+            lastAnimTurn = -1
+            lastAnim?.cancel()
+            anim.schedule(() => {
+              rulerEl.style.transform = 'translateX(0)'
+            })
+          }
+          if (state === 'running' && (lastAnimTurn !== turn || (prev.currentTime && Math.abs(currentTime - prev.currentTime) > 100)) && currentTime > 0) {
+            lastAnimTurn = turn
+            anim.schedule(() => {
+              const x = (currentTime * 0.001) / totalBars
+              lastAnim?.pause()
+              lastAnim = rulerEl.animate([
+                { transform: `translateX(${x * patternsWidth}px)` },
+                { transform: `translateX(${patternsWidth}px)` }],
+                {
+                  fill: 'forwards',
+                  easing: 'linear',
+                  duration: ((totalBars - x * totalBars) / services.$.audio!.$.coeff) * 1000
+                }
+              )
+            })
+          } else if (state === 'suspended') {
+            lastAnimTurn = -1
+            lastAnim?.pause()
+          }
+        })
+      )
+    )
+
     fx(() => services.$.library.fx(({ sounds, patterns }) =>
       fx(({ player, y, active, focused, selected, onSoundSelect, onPatternSelect }) =>
         player.fx(({ state, sound, pattern, patterns: _ }) => {
@@ -173,7 +233,8 @@ export const PlayerView = web(view('player-view',
               />
             </div>
 
-            <div class="patterns">
+            <div class="patterns" ref={refs.patternsEl}>
+              <div class="ruler" ref={refs.rulerEl} />
               {
                 player.$.patterns.map((id, x) => {
                   const p = get(patterns, id)!

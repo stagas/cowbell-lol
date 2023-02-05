@@ -180,7 +180,7 @@ export const Midi = web(view('midi',
     const notesMap = new Map<SVGRectElement, MidiRect>()
 
     fx(({ player, pattern, xPos }) =>
-      player.fx.raf(({ patternOffsets, patternBuffers, currentTime, turn }) => {
+      player.fx(({ patternOffsets, patternBuffers, currentTime, turn }) => {
         if (!patternBuffers.includes(pattern)) return
 
         $.turn = turn
