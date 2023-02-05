@@ -102,6 +102,15 @@ export const Button = web(view('btn',
         }
       }
 
+      button:active:hover {
+        top: 0.75px;
+        box-shadow:
+          0px 0px 2px 1.15px ${skin.colors.shadeBlack}
+          ,2px 1px 2.5px -3.5px ${skin.colors.shadeBlackHalf}
+          ;
+
+      }
+
       &([rounded]) {
         --backlight-width: 2.3px;
 
@@ -122,6 +131,13 @@ export const Button = web(view('btn',
             0px 0px 2px 1.15px ${skin.colors.shadeBlack}
             ,2px 2.5px 3.5px -2.7px ${skin.colors.shadeBlackHalf}
             ;
+
+          &:active:hover {
+            box-shadow:
+              0px 0px 2px 1.15px ${skin.colors.shadeBlack}
+              ,2px 1px 2.5px -3.5px ${skin.colors.shadeBlackHalf}
+              ;
+          }
         }
       }
 
@@ -182,7 +198,8 @@ export const Button = web(view('btn',
               ,inset 0px -1px 3.5px -1.5px var(--backlight-color-trans)
               ;
         }
-        button {
+        button,
+        button:active:hover {
           text-shadow:
             0px 0px 3px var(--backlight-color)
             ,0px -.75px 2px ${skin.colors.shadeBlack}
