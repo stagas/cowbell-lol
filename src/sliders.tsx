@@ -22,6 +22,7 @@ export const Sliders = web(view('sliders',
       display: flex;
       pointer-events: none;
       flex-flow: row nowrap;
+      justify-content: flex-end;
       box-sizing: border-box;
       padding: 15px 0 15px 15px;
       width: 100%;

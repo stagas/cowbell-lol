@@ -163,7 +163,7 @@ export const SliderView = web(view('slider-view',
         position: relative;
         box-sizing: border-box;
         width: 100%;
-        /* max-width: 80px; */
+        max-width: 80px;
         height: 100%;
         /* margin: 0 -17.5px 0 0; */
         pointer-events: none;
