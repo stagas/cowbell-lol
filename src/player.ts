@@ -398,7 +398,7 @@ export const Player = reactive('player',
       derive = () =>
         Object.assign(
           pick($, ['sound', 'pattern', 'vol']),
-          { patterns: [...$.patterns] }
+          { patterns: [...$.patterns], pages: [...$.pages!] }
         )
     })
   },
