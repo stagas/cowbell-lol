@@ -40,6 +40,8 @@ export const projectsById = new Map<string, Project>()
 
 export const relatedProjects = new Map<Project, Project[]>()
 
+export type Project = typeof Project.State
+
 export const Project = reactive('project',
   class props {
     id?= cheapRandomId()
@@ -517,8 +519,8 @@ export const Project = reactive('project',
 
       updateChecksum = fn(({ library }) => () => {
         const trackIds = $.players.map((p) =>
-          checksumId(
-            p.$.pages!.flatMap((page) => [
+          !p.$.pages ? null : checksumId(
+            p.$.pages.flatMap((page) => [
               get(library.$.sounds, page.sound)!.$.checksum!,
               ...getMany(library.$.patterns, page.patterns).map((p) => p!.$.checksum!)
             ]).join()
@@ -582,18 +584,18 @@ export const Project = reactive('project',
       })
     })
 
-    fx(({ players, library }) =>
+    fx(({ players, library: _ }) =>
       chain(
         players.map((player) =>
           chain(
-            player.fx(({ soundBuffer, patternBuffers, pages }) => chain(
+            player.fx(({ soundBuffer, patternBuffers, pages: _ }) => chain(
               ...[soundBuffer, ...patternBuffers].map((b) => b.fx(({ checksum: _ }) => {
                 $.updateChecksum()
               }))
             )),
             player.fx(({ vol }) => {
               $.vols = players.map((p) => p.$.vol).join()
-            })
+            }),
           )
         )
       )
@@ -602,7 +604,8 @@ export const Project = reactive('project',
     fx.once(({ checksum }) => {
       $.firstChecksum = checksum
     })
-    fx(({ checksum, bpm: _b, vols }, prev) => {
+
+    fx(({ checksum, bpm: _b, vols: _v }, prev) => {
       if (prev.checksum && !$.isDraft) {
         $.isDraft = true
         $.originalChecksum = $.originalChecksum || $.firstChecksum || false
@@ -650,4 +653,3 @@ export const Project = reactive('project',
     )
   }
 )
-export type Project = typeof Project.State
