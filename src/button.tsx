@@ -14,6 +14,7 @@ export const Button = web(view('btn',
     half?= false
     up?= false
     down?= false
+    back?= false
     onClick?: () => void
     children?: JSX.Element
   },
@@ -141,27 +142,6 @@ export const Button = web(view('btn',
         }
       }
 
-      &([round]) {
-        button {
-          width: 40px;
-          height: 39.5px;
-          cursor: pointer;
-          border-radius: 100%;
-          font-size: 21.5px;
-
-          .la-list {
-            font-size: 26.5px;
-          }
-
-          .mdi-light-chevron-up {
-            font-size: 34px;
-            position: relative;
-            top: -2.5px;
-            left: 1px;
-          }
-        }
-      }
-
       &([small]) {
         button {
           width: 34px;
@@ -233,16 +213,17 @@ export const Button = web(view('btn',
       }
 
       &([tab]) {
-        border-radius: 5px;
-        overflow: hidden;
-
         button {
           all: unset;
+          border-radius: 5px;
+          overflow: hidden;
+          position: relative;
           width: auto;
           font-family: ${skin.fonts.sans};
           font-size: 18px;
           padding: 5px 15px;
           cursor: pointer;
+          box-sizing: border-box;
           pointer-events: all;
 
           display: flex;
@@ -257,16 +238,62 @@ export const Button = web(view('btn',
             width: 26px;
             height: 26px;
           }
+        }
+
+        button,
+        button:active:hover {
+          box-shadow: none;
+          text-shadow: none;
 
           .shades {
             display: none;
+            border-radius: inherit;
           }
         }
       }
       &([tab]:hover),
       &([active][tab]) {
-        background: ${skin.colors.shadeSoft};
+        button,
+        button:active:hover {
+          background: ${skin.colors.shadeSoft};
+        }
+      }
+
+      &([round]) {
         button {
+          width: 40px;
+          height: 39.5px;
+          cursor: pointer;
+          border-radius: 100% !important;
+          font-size: 21.5px;
+
+          .la-list {
+            font-size: 26.5px;
+          }
+
+          .mdi-light-chevron-up {
+            font-size: 34px;
+            position: relative;
+            top: -2.5px;
+            left: 1px;
+          }
+        }
+      }
+
+      &([back]) {
+        .shades {
+          display: none;
+        }
+        button,
+        button:active:hover {
+          background: ${skin.colors.bgLighter};
+          box-shadow: none;
+        }
+      }
+      &([back]:hover) {
+        button,
+        button:active:hover {
+          background: ${skin.colors.bgPale};
         }
       }
       `
@@ -308,11 +335,15 @@ export const Button = web(view('btn',
       host.toggleAttribute('down', down)
     })
 
+    fx(({ host, back }) => {
+      host.toggleAttribute('back', back)
+    })
+
     fx(({ children }) => {
       $.view =
-        <button onpointerdown={$.handleClick}>
+        <button part="btn" onpointerdown={$.handleClick}>
           {children}
-          <div class="shades" />
+          <div part="shades" class="shades" />
         </button>
     })
   }
