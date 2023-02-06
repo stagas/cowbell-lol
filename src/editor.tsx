@@ -15,17 +15,19 @@ import { getErrorInputLine, getErrorToken } from './util/parse'
 export const Editor = web(view('editor',
   class props {
     name!: string
-    player!: Player
+    player!: Player | false
     buffer!: EditorBuffer
     readableOnly?= false
+    initialFontSize?= window.innerHeight > 900 ? 15.5 : 14
   },
 
   class local {
     host = element
+    state: 'init' | 'compiled' | 'errored' = 'init'
     editor?: CanvyElement
     editorBuffer?: EditorBuffer
     hoveringMarker?: Marker | false = false
-    state: 'init' | 'compiled' | 'errored' = 'init'
+    fontSize?: number
 
     markers: Marker[] = []
     lenses: Lens[] = []
@@ -43,7 +45,9 @@ export const Editor = web(view('editor',
           if (!slider) return
 
           const normal = slider.$.onWheel(e, slider.$.normal)
-          $.player.$.onSliderNormal(sliderId, normal)
+          if ($.player) {
+            $.player.$.onSliderNormal(sliderId, normal)
+          }
         }
       }
 
@@ -193,7 +197,6 @@ export const Editor = web(view('editor',
                   }
                 }
               })
-
             )
           } else if (kind === 'pattern') {
             return chain(
@@ -269,7 +272,7 @@ export const Editor = web(view('editor',
       )
     )
 
-    fx(({ editorBuffer, buffer, player }, prev) =>
+    fx(({ editorBuffer, buffer, player }) =>
       editorBuffer.fx(({ kind, value }) => {
         if (value === buffer.$.value) return
 
@@ -285,16 +288,18 @@ export const Editor = web(view('editor',
       })
     )
 
-    const initialFontSize = window.innerHeight > 900 ? 15.5 : 14
+    fx.once(({ initialFontSize }) => {
+      $.fontSize = initialFontSize
+    })
 
-    fx(function $view({ name, editorBuffer }) {
+    fx(function $view({ name, editorBuffer, fontSize }) {
       $.view = <div style="width:100%; height: 100%; display: flex;">
         <Code
           style="width: 100%; height: 100%; flex: 1;"
           name={name}
           font={`${app.$.distRoot}/fonts/JetBrainsMono-Light.ttf`}
           // fontName="JetBrains Mono"
-          fontSize={initialFontSize}
+          fontSize={fontSize}
           singleComment="\"
           scene={services.$.editorScene}
           editor={deps.editor}
