@@ -71,7 +71,7 @@ export const Slider = reactive('slider',
           ))
       }
 
-      toJSON() {
+      toJSON = () => {
         return pick($, [
           'id',
           'name',
