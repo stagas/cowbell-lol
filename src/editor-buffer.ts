@@ -112,7 +112,7 @@ export const EditorBuffer = reactive('editor-buffer',
         this.copyCanvases()
       }))
 
-      copyCanvases = fn(({ id, waveplot, canvas: _, canvases, noDraw }) => async () => {
+      copyCanvases = fn(({ id, waveplot, canvas: _, canvases, noDraw }) => () => {
         if (noDraw) return
 
         canvases.forEach((dest) => {
