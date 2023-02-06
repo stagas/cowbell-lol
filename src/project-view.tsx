@@ -16,7 +16,7 @@ import { Spacer } from './spacer'
 import { TrackView } from './track-view'
 import { classes } from './util/classes'
 import { delById, get, replaceAtIndex } from './util/list'
-import { timeAgo } from './util/time-ago'
+import { timeAgo, toDate } from './util/time-ago'
 import { Volume } from './volume'
 import { Wavetracer } from './wavetracer'
 
@@ -104,7 +104,6 @@ export const ProjectView = web(view('project-view',
           }
         })
       })
-
 
       // player
 
@@ -1318,7 +1317,7 @@ export const ProjectView = web(view('project-view',
                       && <a href={pathname + '?expand=true'} class="song-more" onclick={services.$.linkTo((pathname) + '?expand=true')}>+{(relatedProjects.get(project)?.length ?? 0)} more</a>
                     }
 
-                    <a class="song-time-ago" title={new Date(`${date} GMT`).toLocaleString()} href={pathname} onclick={services.$.linkTo(pathname)}>
+                    <a class="song-time-ago" title={toDate(date).toLocaleString()} href={pathname} onclick={services.$.linkTo(pathname)}>
                       {timeAgo(date, new URL(services.$.href).pathname.split('/').length > 2)}
                     </a>
                   </div>

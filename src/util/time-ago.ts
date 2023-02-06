@@ -13,15 +13,19 @@ const DIVISIONS = [
   { amount: Number.POSITIVE_INFINITY, name: 'years' },
 ] as const
 
-export function timeAgo(input: any, withTime = false): string {
+export function toDate(input: any) {
   let date: Date
-
   if (typeof input === 'string' && !input.includes('T')) {
     const [d, t] = input.split(' ')
     date = new Date(`${d}T${t}Z`)
   } else {
     date = new Date(input)
   }
+  return date
+}
+
+export function timeAgo(input: any, withTime = false): string {
+  const date = toDate(input)
 
   let duration = (date.getTime() - Date.now()) / 1000
   for (let i = 0; i < DIVISIONS.length; i++) {
