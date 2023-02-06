@@ -77,104 +77,108 @@ content: "\\e002";
 content: "\\e003";
 }
 
-&.clarity-trash-line:before {
+&.clarity-plus-line:before {
 content: "\\e004";
 }
 
-&.fluent-padding-down-24-regular:before {
+&.clarity-trash-line:before {
 content: "\\e005";
 }
 
-&.fluent-padding-right-24-regular:before {
+&.fluent-padding-down-24-regular:before {
 content: "\\e006";
 }
 
-&.la-backward:before {
+&.fluent-padding-right-24-regular:before {
 content: "\\e007";
 }
 
-&.la-check:before {
+&.la-backward:before {
 content: "\\e008";
 }
 
-&.la-copy:before {
+&.la-check:before {
 content: "\\e009";
 }
 
-&.la-forward:before {
+&.la-copy:before {
 content: "\\e00a";
 }
 
-&.la-github:before {
+&.la-forward:before {
 content: "\\e00b";
 }
 
-&.la-heart:before {
+&.la-github:before {
 content: "\\e00c";
 }
 
-&.la-heart-solid:before {
+&.la-heart:before {
 content: "\\e00d";
 }
 
-&.la-list:before {
+&.la-heart-solid:before {
 content: "\\e00e";
 }
 
-&.la-pause:before {
+&.la-list:before {
 content: "\\e00f";
 }
 
-&.la-play:before {
+&.la-pause:before {
 content: "\\e010";
 }
 
-&.la-redo-alt:before {
+&.la-play:before {
 content: "\\e011";
 }
 
-&.la-save:before {
+&.la-redo-alt:before {
 content: "\\e012";
 }
 
-&.la-share:before {
+&.la-save:before {
 content: "\\e013";
 }
 
-&.la-sistrix:before {
+&.la-share:before {
 content: "\\e014";
 }
 
-&.la-stop:before {
+&.la-sistrix:before {
 content: "\\e015";
 }
 
-&.mdi-light-chevron-down:before {
+&.la-stop:before {
 content: "\\e016";
 }
 
-&.mdi-light-chevron-left:before {
+&.mdi-light-chevron-down:before {
 content: "\\e017";
 }
 
-&.mdi-light-chevron-right:before {
+&.mdi-light-chevron-left:before {
 content: "\\e018";
 }
 
-&.mdi-light-chevron-up:before {
+&.mdi-light-chevron-right:before {
 content: "\\e019";
 }
 
-&.mdi-light-repeat:before {
+&.mdi-light-chevron-up:before {
 content: "\\e01a";
 }
 
-&.mdi-light-repeat-once:before {
+&.mdi-light-repeat:before {
 content: "\\e01b";
 }
 
-&.ph-upload-simple-duotone:before {
+&.mdi-light-repeat-once:before {
 content: "\\e01c";
+}
+
+&.ph-upload-simple-duotone:before {
+content: "\\e01d";
 }
 
   }
