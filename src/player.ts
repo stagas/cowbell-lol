@@ -12,6 +12,7 @@ import { Library } from './library'
 import { Project } from './project'
 import { services } from './services'
 import { fixed, markerForSlider } from './slider'
+import { Sliders } from './types'
 import { areSlidersCompatible, getCodeWithoutArgs } from './util/args'
 import { add, del, derive, findEqual, get, getMany } from './util/list'
 import { MIDIMessageEvent } from './util/midi-message-event'
@@ -67,6 +68,8 @@ export const Player = reactive('player',
     monoNode?: MonoNode
     gainNode?: GainNode
     groupNode?: SchedulerEventGroupNode
+
+    sliders?: Sliders
   },
 
   function actions({ $, fx, fns, fn }) {
@@ -331,7 +334,6 @@ export const Player = reactive('player',
       })
 
       onSliderNormal = services.fn(({ library }) => (sliderId: string, normal: number) => {
-
         const bufferId = $.sound
 
         const buffer = get(library.$.sounds, bufferId)
@@ -623,17 +625,21 @@ export const Player = reactive('player',
       )
     })
 
-    fx(({ audio, soundBuffer, monoNode }) =>
-      soundBuffer.fx(({ sliders }) =>
-        chain(
-          [...sliders.values()].map((slider) =>
-            slider.fx(({ id, normal }) => {
-              const monoParam = monoNode.params.get(id)
-              if (monoParam) {
-                audio.$.setParam(monoParam.audioParam, normal)
-              }
-            })
-          )
+    fx(({ soundBuffer }) =>
+      soundBuffer.fx(({ sliders }) => {
+        $.sliders = sliders
+      })
+    )
+
+    fx(({ audio, monoNode, sliders }) =>
+      chain(
+        [...sliders.values()].map((slider) =>
+          slider.fx(({ id, normal }) => {
+            const monoParam = monoNode.params.get(id)
+            if (monoParam) {
+              audio.$.setParam(monoParam.audioParam, normal)
+            }
+          })
         )
       )
     )
