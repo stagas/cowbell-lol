@@ -6,7 +6,7 @@ import { Player } from './player'
 import { PlayerView } from './player-view'
 import { Focused } from './project-view'
 import { services } from './services'
-import { TrackViewHandler } from './track-view'
+import { TrackView, TrackViewHandler } from './track-view'
 import { classes } from './util/classes'
 import { storage } from './util/storage'
 import { Vertical } from './vertical'
@@ -19,6 +19,7 @@ export const PlayersView = web(view('players',
     editorEl!: Dep<HTMLElement>
     editorVisible!: boolean
     EditorView!: () => JSX.Element
+    SendsView!: () => JSX.Element
     onPlayerSoundSelect!: TrackViewHandler
     onPlayerPatternSelect!: TrackViewHandler
   },
@@ -43,9 +44,38 @@ export const PlayersView = web(view('players',
         width: 100%;
         height: 100%;
       }
+
+      .player {
+        &-routes {
+          display: flex;
+          flex-flow: row wrap;
+          width: 100%;
+          height: 69px;
+        }
+        &-sends {
+          display: flex;
+          position: relative;
+          width: 15%;
+          padding-left: 30px;
+          ${TrackView} {
+            position: absolute;
+            left: 0;
+            top: 0;
+            z-index: 0;
+            width: 100%;
+            height: 100%;
+          }
+          &-sliders {
+            display: flex;
+            flex-flow: row nowrap;
+            width: 100%;
+            position: relative;
+          }
+        }
+      }
       `
 
-      fx(({ players, editorEl, editorVisible, selected, EditorView }) => {
+      fx(({ players, editorEl, editorVisible, selected, EditorView, SendsView }) => {
         $.view = players.map((player, y) => <>
           <PlayerView
             key={player.$.id!}
@@ -66,6 +96,7 @@ export const PlayersView = web(view('players',
               hidden: !editorVisible
             })}
           >
+            <SendsView />
             <EditorView />
             {editorVisible && <Vertical
               align='y'

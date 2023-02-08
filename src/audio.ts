@@ -261,6 +261,10 @@ export const Audio = reactive('audio',
     fx(async ({ audioContext, schedulerNode, fftSize }) => {
       $.gainNodePool = new ObjectPool(() => {
         return new GainNode(audioContext, { channelCount: 1, gain: 1 })
+      }, (gainNode) => {
+        gainNode.disconnect()
+        gainNode.gain.value = 1
+        return gainNode
       })
 
       $.monoNodePool = new ObjectPool(async () => {
@@ -271,11 +275,14 @@ export const Audio = reactive('audio',
             metrics: 0,
           }
         })
+      }, (monoNode) => {
+        monoNode.disconnect()
+        return monoNode
       })
 
       $.groupNodePool = new ObjectPool(() => {
         return new SchedulerEventGroupNode(schedulerNode)
-      })
+      }, (node) => node)
 
       $.analyserNodePool = new ObjectPool(() => {
         return new AnalyserNode(audioContext, {
@@ -283,7 +290,7 @@ export const Audio = reactive('audio',
           fftSize,
           smoothingTimeConstant: 0
         })
-      })
+      }, (node) => node)
     })
   }
 )

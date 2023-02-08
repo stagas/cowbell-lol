@@ -64,6 +64,13 @@ export const schemas = {
     mixer: z.array(z.object({
       vol: z.number(),
       pages: z.array(z.number()),
+      routes: z.array(
+        z.tuple([
+          z.number(),
+          z.string(),
+          z.number(),
+        ])
+      )
     })),
     tracks: z.array(
       z.object({

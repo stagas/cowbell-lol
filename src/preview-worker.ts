@@ -17,6 +17,10 @@ class Task {
   constructor() {
     this.access()
     this.vm.setPort(vmPort)
+    this.vm.setNumberOfChannels(1)
+    for (let i = 0; i < this.vm.inputs[0].length; i++) {
+      this.vm.inputs[0][i] = Math.random() * 2 - 1
+    }
   }
 
   access() {

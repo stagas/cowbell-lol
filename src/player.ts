@@ -1,4 +1,4 @@
-import { cheapRandomId, Deferred, pick } from 'everyday-utils'
+import { cheapRandomId, checksum, Deferred, filterMap, pick } from 'everyday-utils'
 import { Scalar } from 'geometrik'
 import { chain, queue, reactive } from 'minimal-view'
 import { MonoNode } from 'mono-worklet'
@@ -9,9 +9,9 @@ import { Audio, AudioState } from './audio'
 import { AudioPlayer } from './audio-player'
 import { EditorBuffer } from './editor-buffer'
 import { Library } from './library'
-import { Project } from './project'
+import { Project, Route } from './project'
 import { services } from './services'
-import { fixed, markerForSlider } from './slider'
+import { fixed, markerForSlider, Slider } from './slider'
 import { Sliders } from './types'
 import { areSlidersCompatible, getCodeWithoutArgs } from './util/args'
 import { add, del, derive, findEqual, get, getMany } from './util/list'
@@ -19,14 +19,16 @@ import { MIDIMessageEvent } from './util/midi-message-event'
 import { noneOf, oneOf } from './util/one-of'
 import { spacer } from './util/storage'
 
-export const players = new Set<Player>()
+const { clamp } = Scalar
 
 export interface PlayerPage {
   sound: string
   patterns: string[]
 }
 
-const { clamp } = Scalar
+export const players = new Set<Player>()
+
+export type Player = typeof Player.State
 
 export const Player = reactive('player',
   class props {
@@ -41,6 +43,8 @@ export const Player = reactive('player',
 
     page?: number = 1
     pages?: PlayerPage[]
+
+    routes?: Map<string, Route> = new Map()
 
     project?: Project
     audioPlayer?: AudioPlayer
@@ -70,6 +74,8 @@ export const Player = reactive('player',
     groupNode?: SchedulerEventGroupNode
 
     sliders?: Sliders
+    sendSliders?: Map<string, Sliders>
+    cachedSliders: Map<string, Slider> = new Map()
   },
 
   function actions({ $, fx, fns, fn }) {
@@ -400,6 +406,27 @@ export const Player = reactive('player',
           pick($, ['sound', 'pattern', 'vol']),
           { patterns: [...$.patterns], pages: [...$.pages!] }
         )
+
+      toJSON = fn(({ project, library }) => () => ({
+        ...pick($ as Required<typeof $>, [
+          'vol'
+        ]),
+        sound: $.soundBuffer!.$.checksum!,
+        patterns: $.patternBuffers!.map((p) => p.$.checksum!),
+        pages: $.pages!.map((page) => ({
+          sound: get(library.$.sounds, page.sound)!.$.checksum!,
+          patterns: getMany(library.$.patterns, page.patterns).map((p) => p!.$.checksum!)
+        })),
+        routes: [...$.routes!].filter(([id, route]) =>
+          route.$.targetId === 'dest'
+            ? route.$.amount < 1
+            : route.$.amount > 0
+        ).map(([id, route]): [number, string, number] => {
+          const [playerId, targetId] = id.split('::')
+          const playerIndex: number = project.$.players!.findIndex((p) => p.$.id === playerId)
+          return [playerIndex, targetId, route.$.amount]
+        }),
+      }))
     })
   },
 
@@ -494,53 +521,51 @@ export const Player = reactive('player',
       $.audioPlayer = project.$.audioPlayer
     })
 
-    fx(({ audio, audioPlayer }) =>
-      audioPlayer.fx(({ destNode }) =>
-        audio.fx(({ disconnect, monoNodePool, gainNodePool, groupNodePool }) =>
-          fx(async ({ id }) => {
-            const monoNode = $.monoNode = await monoNodePool.acquire()
-            const gainNode = $.gainNode = await gainNodePool.acquire()
-            const groupNode = $.groupNode = await groupNodePool.acquire()
-            // const analyserNode = $.analyserNode = await analyserNodePool.acquire()
+    fx(({ audio }) =>
+      audio.fx(({ disconnect, monoNodePool, gainNodePool, groupNodePool }) =>
+        fx(async ({ id }) => {
+          const monoNode = $.monoNode = await monoNodePool.acquire()
+          const gainNode = $.gainNode = await gainNodePool.acquire()
+          const groupNode = $.groupNode = await groupNodePool.acquire()
+          // const analyserNode = $.analyserNode = await analyserNodePool.acquire()
 
-            audio.$.connectedNodes.add(monoNode)
-            audio.$.connectedNodes.add(gainNode)
-            audio.$.connectedNodes.add(groupNode)
+          audio.$.connectedNodes.add(monoNode)
+          audio.$.connectedNodes.add(gainNode)
+          audio.$.connectedNodes.add(groupNode)
 
-            groupNode.connect(monoNode)
-            groupNode.suspend(monoNode)
-            gainNode.connect(destNode)
-            monoNode.connect(gainNode)
+          groupNode.connect(monoNode)
+          groupNode.suspend(monoNode)
+          // gainNode.connect(destNode)
+          monoNode.connect(gainNode)
 
-            console.log('create', $.sound)
+          console.log('create', $.sound)
 
-            console.log('connect mononode:', id, '- sound:', $.sound)
-            return () => {
-              console.log('disconnect mononode:', id, '- sound:', $.sound)
+          console.log('connect mononode:', id, '- sound:', $.sound)
+          return () => {
+            console.log('disconnect mononode:', id, '- sound:', $.sound)
 
-              audio.$.connectedNodes.delete(monoNode)
-              audio.$.connectedNodes.delete(gainNode)
-              audio.$.connectedNodes.delete(groupNode)
+            audio.$.connectedNodes.delete(monoNode)
+            audio.$.connectedNodes.delete(gainNode)
+            audio.$.connectedNodes.delete(groupNode)
 
-              audio.$.setParam(gainNode.gain, 0)
-              groupNode.destroy()
+            audio.$.setParam(gainNode.gain, 0)
+            groupNode.destroy()
 
-              $.monoNode = $.gainNode = $.groupNode = void 0 as any
-              $.compileState = 'init'
+            $.monoNode = $.gainNode = $.groupNode = void 0 as any
+            $.compileState = 'init'
 
-              setTimeout(() => {
-                monoNode.suspend()
-                disconnect(monoNode, gainNode)
-                disconnect(gainNode, destNode)
-                disconnect(groupNode, monoNode)
+            setTimeout(() => {
+              monoNode.suspend()
+              disconnect(monoNode, gainNode)
+              // disconnect(gainNode, destNode)
+              disconnect(groupNode, monoNode)
 
-                monoNodePool.release(monoNode)
-                gainNodePool.release(gainNode)
-                // groupNodePool.release(groupNode)
-              }, 250)
-            }
-          })
-        )
+              monoNodePool.release(monoNode)
+              gainNodePool.release(gainNode)
+              // groupNodePool.release(groupNode)
+            }, 250)
+          }
+        })
       )
     )
 
@@ -643,7 +668,142 @@ export const Player = reactive('player',
         )
       )
     )
+
+    fx(({ project, routes, cachedSliders }) =>
+      project.fx(({ players }) =>
+        chain(
+          players.map((player) =>
+            player.fx(({ sliders: _ }) => {
+              const paramId = `${$.id!}::dest`
+              let slider = cachedSliders.get(paramId)
+              if (!slider) {
+                const route = routes.get(paramId)
+                slider = Slider({
+                  id: paramId,
+                  min: 0,
+                  max: 1,
+                  value: route?.$.amount ?? 1,
+                  hue: checksum('dest') % 300 + 20,
+                  name: 'dest'
+                })
+                cachedSliders.set(paramId, slider)
+              }
+
+              $.sendSliders = new Map([
+                ['dest', new Map([[paramId, slider]])],
+                ...filterMap(players, (player) =>
+                  player !== $.self
+                  && player.$.sliders
+                  && [player.$.id!, new Map([
+                    ...['vol', 'input'].map((name) => {
+                      const paramId = `${player.$.id!}::${name}`
+                      const route = routes.get(paramId)
+                      let slider = cachedSliders.get(paramId)
+                      if (!slider) {
+                        slider = Slider({
+                          id: paramId,
+                          min: 0,
+                          max: 1,
+                          value: route?.$.amount ?? 0,
+                          hue: checksum(name) % 300 + 20,
+                          name: name
+                        })
+                        cachedSliders.set(paramId, slider)
+                      }
+                      return [paramId, slider] as const
+                    }),
+                    ...[...player.$.sliders!].map(([sliderId, s]) => {
+                      const paramId = `${player.$.id!}::${sliderId}`
+                      const route = routes.get(paramId)
+                      let slider = cachedSliders.get(paramId)
+                      if (!slider) {
+                        slider = Slider({
+                          id: paramId,
+                          min: 0,
+                          max: 1,
+                          value: route?.$.amount ?? 0,
+                          hue: s.$.hue,
+                          name: s.$.name
+                        })
+                        cachedSliders.set(paramId, slider)
+                      }
+                      return [paramId, slider] as const
+                    })
+                  ])] as const
+                )
+              ])
+            })
+          )
+        )
+      )
+    )
+
+    fx(({ project, audioPlayer }) =>
+      audioPlayer.fx(({ destNode }) =>
+        project.fx(({ players }) =>
+          chain(
+            players.map((player) =>
+              player.fx(({ audioPlayer }) =>
+                audioPlayer.fx(({ destNode }) => {
+                  if (players.every((p) => p.$.audioPlayer?.$.destNode)) {
+                    players.forEach((p) => {
+                      const paramId = `${p.$.id}::dest`
+                      if (!p.$.routes!.has(paramId)) {
+                        p.$.routes!.set(paramId,
+                          Route({
+                            sourcePlayer: p,
+                            targetPlayer: p,
+                            targetId: 'dest',
+                            amount: 1,
+                          })
+                        )
+                      }
+                    })
+                    return fx(({ sendSliders, routes }) => {
+                      return chain([...sendSliders].flatMap(([targetId, sliders]) => [...sliders].map(([paramId, slider]) =>
+                        slider.fx(({ value }) => {
+                          const [targetPlayerId, targetId] = paramId.split('::')
+
+                          const targetPlayer = players.find((p) => p.$.id === targetPlayerId)!
+
+                          let route = routes.get(paramId)
+
+                          if (value > 0) {
+                            if (!route) {
+                              route = Route({
+                                sourcePlayer: $.self,
+                                targetPlayer,
+                                targetId,
+                                amount: value
+                              })
+                              routes.set(paramId, route)
+                            } else {
+                              route!.$.amount = value
+                            }
+                          } else {
+                            if (targetId !== 'dest') {
+                              if (route) {
+                                route.dispose()
+                                routes.delete(paramId)
+                              }
+                            } else {
+                              if (route) {
+                                route!.$.amount = 0
+                              }
+                            }
+                          }
+
+                          project.$.updateChecksum()
+                          project.$.autoSave()
+                        })
+                      )))
+                    })
+                  }
+                })
+              )
+            )
+          )
+        )
+      ))
   }
 )
-
-export type Player = typeof Player.State

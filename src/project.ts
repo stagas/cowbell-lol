@@ -1,4 +1,4 @@
-import { cheapRandomId, pick } from 'everyday-utils'
+import { attempt, cheapRandomId, pick } from 'everyday-utils'
 import { chain, queue, reactive } from 'minimal-view'
 import { Audio, AudioState } from './audio'
 import { EditorBuffer } from './editor-buffer'
@@ -18,27 +18,110 @@ import { slugify } from './util/slugify'
 import { app } from './app'
 
 export type ProjectJson = {
-  checksum: string,
-  isDraft: boolean,
-  bpm: number,
+  checksum: string
+  isDraft: boolean
+  bpm: number
   date: string
   title: string
   author: string
   players: {
-    vol: number,
-    sound?: string,
-    patterns?: string[],
+    vol: number
+    sound?: string
+    patterns?: string[]
     pages?: PlayerPage[]
-  }[],
-  remixCount: number,
+    routes?: [number, string, number][]
+  }[]
+  remixCount: number
   originalRemixCount: number
-  originalChecksum: string | false,
-  originalAuthor: string | false,
+  originalChecksum: string | false
+  originalAuthor: string | false
+}
+
+function logAndReturn<T>(x: T): T {
+  console.log(x)
+  return x
 }
 
 export const projectsById = new Map<string, Project>()
 
 export const relatedProjects = new Map<Project, Project[]>()
+
+export type Route = typeof Route.State
+export const Route = reactive('route',
+  class props {
+    sourcePlayer!: Player
+    targetPlayer?: Player
+    targetNode?: AudioNode | AudioParam
+    targetId!: string
+    amount!: number
+  },
+
+  class local {
+    sourceNode?: AudioNode
+    gainNode?: GainNode
+  },
+
+  function actions({ $, fns, fn }) {
+    return fns(new class actions {
+    })
+  },
+
+  function effects({ $, fx }) {
+    fx(({ targetPlayer, targetId }) => {
+      if (targetId === 'vol') {
+        return targetPlayer.fx(({ gainNode }) => {
+          $.targetNode = gainNode.gain
+        })
+      } else if (targetId === 'input') {
+        return targetPlayer.fx(({ monoNode }) => {
+          $.targetNode = monoNode
+        })
+      } else if (targetId === 'dest') {
+        return targetPlayer.fx(({ audioPlayer }) =>
+          audioPlayer.fx(({ destNode }) => {
+            $.targetNode = destNode
+          })
+        )
+      } else {
+        return targetPlayer.fx(({ monoNode, compileState }) => {
+          if (compileState === 'compiled') {
+            $.targetNode = monoNode.params.get(targetId)!.audioParam
+          }
+        })
+      }
+    })
+
+    fx(({ sourcePlayer }) =>
+      sourcePlayer.fx(({ gainNode }) => {
+        $.sourceNode = gainNode
+      })
+    )
+
+    fx(() => services.fx(({ audio }) =>
+      audio.fx(async ({ gainNodePool }) => {
+        const gainNode = $.gainNode = await gainNodePool.acquire()
+        gainNode.gain.value = $.amount
+        return () => {
+          attempt(() => gainNode.disconnect(), true)
+          attempt(() => gainNodePool.release(gainNode), true)
+        }
+      })
+    ))
+
+    fx(({ gainNode, amount }) => {
+      services.$.audio!.$.setParam(gainNode.gain, amount)
+    })
+
+    fx(({ sourceNode, targetNode, gainNode }) => {
+      sourceNode.connect(gainNode)
+      gainNode.connect(targetNode as AudioNode) // TODO: why doesn't AudioParam overload here?
+      return () => {
+        attempt(() => sourceNode.disconnect(gainNode), true)
+        attempt(() => gainNode.disconnect(targetNode as AudioNode), true)
+      }
+    })
+  }
+)
 
 export type Project = typeof Project.State
 
@@ -143,7 +226,8 @@ export const Project = reactive('project',
             vol: player.$.vol,
             pages: player.$.pages!.map((_, x) =>
               x + $.players.slice(0, y).reduce((p, n) => p + (n.$.pages?.length || 1), 0)
-            )
+            ),
+            routes: player.$.toJSON().routes
           })),
           tracks: $.players.flatMap((player) => player.$.pages!.map((page) => ({
             sound: get(library.$.sounds, page.sound)!.$.checksum!,
@@ -381,7 +465,7 @@ export const Project = reactive('project',
           tracks.find((t) => t.id === trackId)!
         )
 
-        const players: ProjectJson['players'] = (p.mixer as { vol: number, pages?: number[] }[]).map(({ vol, pages }, i) => {
+        const players: ProjectJson['players'] = (p.mixer as { vol: number, pages?: number[], routes?: [number, string, number][] }[]).map(({ vol, pages, routes }, i) => {
           if (!pages || pages.length === 0) {
             pages = [i]
           }
@@ -412,7 +496,8 @@ export const Project = reactive('project',
             vol,
             sound: trackPages[0].sound,
             patterns: [...trackPages[0].patterns],
-            pages: trackPages
+            pages: trackPages,
+            routes: routes ?? []
           }
         })
 
@@ -485,15 +570,44 @@ export const Project = reactive('project',
         $.players = json.players.map((player) => Player({
           ...player,
           ...player.pages![0],
+          routes: new Map(),
           pattern: 0,
           project: $.self as Project,
         }))
+
+        json.players.forEach((player, i) => {
+          if (player.routes?.length) {
+            for (const [targetPlayerIndex, targetId, amount] of player.routes) {
+              const sourcePlayer = $.players[i]
+              const routes = sourcePlayer.$.routes!
+              const targetPlayer = $.players[targetPlayerIndex]
+
+              const paramId = `${targetPlayer.$.id}::${targetId}`
+
+              let route = routes.get(paramId)
+
+              if (route) {
+                route.$.amount = amount
+                continue
+              }
+
+              route = Route({
+                sourcePlayer,
+                targetPlayer,
+                targetId,
+                amount,
+              })
+
+              routes.set(paramId, route)
+            }
+          }
+        })
       })
 
       /**
        * Get a JSON representation of the project.
        */
-      toJSON = fn(({ players, library }) => (): ProjectJson => ({
+      toJSON = fn(({ players }) => (): ProjectJson => logAndReturn({
         ...pick($ as Required<typeof $>, [
           'checksum',
           'bpm',
@@ -506,15 +620,9 @@ export const Project = reactive('project',
           'originalChecksum',
           'originalRemixCount',
         ]),
-        players: players.map((player) => ({
-          vol: player.$.vol,
-          sound: player.$.soundBuffer!.$.checksum!,
-          patterns: player.$.patternBuffers!.map((p) => p.$.checksum!),
-          pages: player.$.pages!.map((page) => ({
-            sound: get(library.$.sounds, page.sound)!.$.checksum!,
-            patterns: getMany(library.$.patterns, page.patterns).map((p) => p!.$.checksum!)
-          }))
-        }))
+        players: players.map((player) =>
+          player.$.toJSON()
+        ),
       }))
 
       updateChecksum = fn(({ library }) => () => {
@@ -527,8 +635,10 @@ export const Project = reactive('project',
           )
         )
 
+        const routes = $.players.flatMap((player) => player.$.toJSON().routes)
+
         if (trackIds.every((c) => c != null)) {
-          $.checksum = checksumId(trackIds.join())
+          $.checksum = checksumId(trackIds.join() + routes.join())
         }
       })
     })
@@ -595,6 +705,9 @@ export const Project = reactive('project',
             )),
             player.fx(({ vol }) => {
               $.vols = players.map((p) => p.$.vol).join()
+            }),
+            player.fx(({ routes }) => {
+              $.autoSave()
             }),
           )
         )

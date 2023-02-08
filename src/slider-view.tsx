@@ -187,6 +187,9 @@ export const SliderView = web(view('slider-view',
         font-family: monospace;
         font-weight: bold;
         text-shadow: 1px 1px #000;
+        pointer-events: none;
+        user-select: none;
+        touch-action: none;
       }
 
       &:before {
@@ -197,6 +200,8 @@ export const SliderView = web(view('slider-view',
         ${dim}: max(${small}, 12px);
         ${opp}: 100%;
         background: ${showBg ? '#aaf2' : '#fff0'};
+        user-select: none;
+        touch-action: none;
       }
 
       [part=hoverable] {
@@ -206,6 +211,8 @@ export const SliderView = web(view('slider-view',
         width: 100%;
         height: 100%;
         pointer-events: all;
+        user-select: none;
+        touch-action: none;
 
         ${line}: calc(50% - max(${small}, 12px) / 2);
         ${oppLine}: 0;

@@ -105,6 +105,7 @@ function createWorker({ sampleRate, canvas, width, height, pixelRatio, floats }:
 
     const gradient = c.createLinearGradient(0, 0, width, 0)
     for (const [pos, rgb] of colorStops) {
+      if (rgb.includes('NaN')) continue
       const np = Math.max(
         0,
         Math.min(

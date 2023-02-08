@@ -1,5 +1,6 @@
 /** @jsxImportSource minimal-view */
 
+import { filterMap } from 'everyday-utils'
 import { web, view, element, chain, part } from 'minimal-view'
 import { PianoKeys } from 'x-pianokeys'
 import { cachedRef, Selected } from './app'
@@ -12,6 +13,7 @@ import { Player } from './player'
 import { PlayersView } from './players-view'
 import { Project, relatedProjects } from './project'
 import { services } from './services'
+import { SliderView } from './slider-view'
 import { Spacer } from './spacer'
 import { TrackView } from './track-view'
 import { classes } from './util/classes'
@@ -872,6 +874,66 @@ export const ProjectView = web(view('project-view',
       })
     })
 
+    const SendsView = part((update) => {
+      fx(({ player }) =>
+        player.fx(({ sendSliders }) =>
+          fx(({ players }) => {
+            const playerSliders = filterMap(
+              [...sendSliders],
+              ([playerId, sliders]) => {
+                const player = players.find((p) => p.$.id === playerId)
+                if (!player) return
+                return [player, sliders] as const
+              }
+            )
+
+            return chain(
+              playerSliders.map(([player]) => player.fx(({ soundBuffer: _ }) => {
+                update(<div class="player-routes">
+                  <div class="player-sends">
+                    <div class="player-sends-sliders">
+                      {[...sendSliders.get('dest')!].map(([paramId, slider]) =>
+                        <SliderView
+                          key={paramId}
+                          id={paramId}
+                          slider={slider}
+                          vertical={false}
+                          running={true}
+                          showBg={true}
+                        />
+                      )}
+                    </div>
+                  </div>
+                  {playerSliders.map(([player, sliders]) =>
+                    <div class="player-sends">
+                      <TrackView
+                        services={services}
+                        player={player}
+                        sound={player.$.soundBuffer!}
+                        active={false}
+                        pattern={false}
+                      />
+                      <div class="player-sends-sliders">
+                        {[...sliders].map(([paramId, slider]) =>
+                          <SliderView
+                            key={paramId}
+                            id={paramId}
+                            slider={slider}
+                            vertical={false}
+                            running={true}
+                            showBg={true}
+                          />
+                        )}
+                      </div>
+                    </div>
+                  )}</div>)
+              }))
+            )
+          })
+        )
+      )
+    })
+
     fx(() => services.fx(({ skin }) => {
       $.css = /*css*/`
       ${skin.css}
@@ -1146,6 +1208,7 @@ export const ProjectView = web(view('project-view',
             editorEl={deps.editorEl}
             EditorView={EditorView}
             editorVisible={editorVisible}
+            SendsView={SendsView}
             onPlayerSoundSelect={$.onPlayerSoundSelect}
             onPlayerPatternSelect={$.onPlayerPatternSelect}
           />
