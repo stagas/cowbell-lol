@@ -174,7 +174,7 @@ export const Toolbar = web(view('toolbar',
         display: flex;
         flex-flow: row nowrap;
         align-items: center;
-        gap: 14px;
+        gap: 10px;
       }
 
       .display {

@@ -4,6 +4,7 @@ import { Point, Rect } from 'geometrik'
 import { chain, Dep, element, on, queue, view, web } from 'minimal-view'
 import { app } from './app'
 import { Player } from './player'
+import { services } from './services'
 import { Slider } from './slider'
 import { observe } from './util/observe'
 
@@ -145,145 +146,149 @@ export const SliderView = web(view('slider-view',
   },
 
   function effect({ $, fx, refs }) {
-    fx(function sliderCss({ vertical, showBg }) {
-      const [small, big] = ['70%', '95%']
+    services.fx(({ skin }) =>
+      fx(function sliderCss({ vertical, showBg }) {
+        const [small, big] = ['70%', '95%']
 
-      const [dim, opp, pos, oppPos, line, oppLine] = vertical
-        ? ['height', 'width', 'left', 'bottom', 'top', 'left']
-        : ['width', 'height', 'bottom', 'left', 'left', 'top']
+        const [dim, opp, pos, oppPos, line, oppLine] = vertical
+          ? ['height', 'width', 'left', 'bottom', 'top', 'left']
+          : ['width', 'height', 'bottom', 'left', 'left', 'top']
 
-      $.css = /*css*/`
+        $.css = /*css*/`
+        ${skin.css}
 
-      & {
-        --hue: #f00;
-        --sat: 85%;
-        --lum: 65%;
-        z-index: 1;
-        display: flex;
-        position: relative;
-        box-sizing: border-box;
-        width: 100%;
-        max-width: 80px;
-        height: 100%;
-        /* margin: 0 -17.5px 0 0; */
-        pointer-events: none;
-        user-select: none;
-        touch-action: none;
-      }
-
-      [part=name] {
-        position: absolute;
-        ${vertical ? 'right' : 'top'}: 0px;
-        color: #fff;
-        ${vertical ? 'top' : 'left'}: calc(50% - 10px);
-        line-height: 20px;
-        vertical-align: middle;
-        white-space: nowrap;
-        ${vertical ? '' : `
-        writing-mode: vertical-lr;
-        text-orientation: upright;
-        `}
-        direction: ltr;
-        font-family: monospace;
-        font-weight: bold;
-        text-shadow: 1px 1px #000;
-        pointer-events: none;
-        user-select: none;
-        touch-action: none;
-      }
-
-      &:before {
-        content: ' ';
-        position: absolute;
-        ${line}: calc(50% - max(${small}, 12px) / 2);
-        ${oppLine}: 0;
-        ${dim}: max(${small}, 12px);
-        ${opp}: 100%;
-        background: ${showBg ? '#aaf2' : '#fff0'};
-        user-select: none;
-        touch-action: none;
-      }
-
-      [part=hoverable] {
-        position: absolute;
-        left: 0;
-        top: 0;
-        width: 100%;
-        height: 100%;
-        pointer-events: all;
-        user-select: none;
-        touch-action: none;
-
-        ${line}: calc(50% - max(${small}, 12px) / 2);
-        ${oppLine}: 0;
-        ${dim}: max(${small}, 12px);
-        ${opp}: 100%;
-
-        &:hover {
-          ${line}: calc(50% - max(${big}, 20px) / 2);
-          ${oppLine}: 0;
-          ${dim}: max(${big}, 20px);
-          ${opp}: 100%;
+        & {
+          --hue: #f00;
+          --sat: 85%;
+          --lum: 65%;
+          z-index: 1;
+          display: flex;
+          position: relative;
+          box-sizing: border-box;
+          width: 100%;
+          max-width: 80px;
+          height: 100%;
+          /* margin: 0 -17.5px 0 0; */
+          pointer-events: none;
+          user-select: none;
+          touch-action: none;
         }
-      }
 
-      &(:not([drag])) {
-        [part=fill] {
-          transition:
-            height 30ms linear,
-            min-height 30ms linear,
-            max-height 30ms linear
-            ;
+        [part=name] {
+          position: absolute;
+          ${vertical ? 'right' : 'bottom'}: 4px;
+          color: #fff;
+          ${vertical ? 'top' : 'left'}: calc(50% - 10px);
+          line-height: 20px;
+          vertical-align: middle;
+          white-space: nowrap;
+          ${vertical ? '' : `
+          writing-mode: vertical-lr;
+          /*text-orientation: upright;*/
+          `}
+          transform: scaleY(-1) scaleX(-1);
+          direction: ltr;
+          font-family: ${skin.fonts.slab};
+          font-weight: bold;
+          text-shadow: -1px 1px #000;
+          pointer-events: none;
+          user-select: none;
+          touch-action: none;
         }
-      }
 
-      [part=fill] {
-        position: absolute;
-        ${dim}: 100%;
-        ${opp}: auto;
-        ${pos}: 0;
-        ${oppPos}: auto;
         &:before {
-          box-shadow: 5px 5px 0 0px #000;
           content: ' ';
           position: absolute;
           ${line}: calc(50% - max(${small}, 12px) / 2);
           ${oppLine}: 0;
           ${dim}: max(${small}, 12px);
           ${opp}: 100%;
-          background: hsl(var(--hue), var(--sat), calc(var(--lum) - 5%));
+          background: ${showBg ? '#aaf2' : '#fff0'};
+          user-select: none;
+          touch-action: none;
         }
-      }
 
-      &(.active),
-      &(:hover) {
-        cursor: ns-resize;
-        z-index: 2;
-        &:before {
-          ${line}: calc(50% - max(${big}, 20px) / 2);
+        [part=hoverable] {
+          position: absolute;
+          left: 0;
+          top: 0;
+          width: 100%;
+          height: 100%;
+          pointer-events: all;
+          user-select: none;
+          touch-action: none;
+
+          ${line}: calc(50% - max(${small}, 12px) / 2);
           ${oppLine}: 0;
-          ${dim}: max(${big}, 20px);
+          ${dim}: max(${small}, 12px);
           ${opp}: 100%;
-          background: #aaf2;
+
+          &:hover {
+            ${line}: calc(50% - max(${big}, 20px) / 2);
+            ${oppLine}: 0;
+            ${dim}: max(${big}, 20px);
+            ${opp}: 100%;
+          }
         }
+
+        &(:not([drag])) {
+          [part=fill] {
+            transition:
+              height 30ms linear,
+              min-height 30ms linear,
+              max-height 30ms linear
+              ;
+          }
+        }
+
         [part=fill] {
+          position: absolute;
+          ${dim}: 100%;
+          ${opp}: auto;
+          ${pos}: 0;
+          ${oppPos}: auto;
+          &:before {
+            box-shadow: 5px 5px 0 0px #000;
+            content: ' ';
+            position: absolute;
+            ${line}: calc(50% - max(${small}, 12px) / 2);
+            ${oppLine}: 0;
+            ${dim}: max(${small}, 12px);
+            ${opp}: 100%;
+            background: hsl(var(--hue), var(--sat), calc(var(--lum) - 5%));
+          }
+        }
+
+        &(.active),
+        &(:hover) {
+          cursor: ns-resize;
+          z-index: 2;
           &:before {
             ${line}: calc(50% - max(${big}, 20px) / 2);
             ${oppLine}: 0;
             ${dim}: max(${big}, 20px);
             ${opp}: 100%;
-            background: hsl(var(--hue), var(--sat), calc(var(--lum) + 5%));
+            background: #aaf2;
+          }
+          [part=fill] {
+            &:before {
+              ${line}: calc(50% - max(${big}, 20px) / 2);
+              ${oppLine}: 0;
+              ${dim}: max(${big}, 20px);
+              ${opp}: 100%;
+              background: hsl(var(--hue), var(--sat), calc(var(--lum) + 5%));
+            }
           }
         }
-      }
 
-      &([running]:hover) {
-        &:before {
-          background: #aaf3;
+        &([running]:hover) {
+          &:before {
+            background: #aaf3;
+          }
         }
-      }
-      `
-    })
+        `
+      })
+    )
 
     fx.raf(function updateAttrRunning({ host, running }) {
       host.toggleAttribute('running', running)

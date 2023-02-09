@@ -6,6 +6,16 @@ const MAX_TASKS = 6
 
 let argContext: ArgContext
 
+let randomInput: Float32Array
+
+let seed = 1
+const rand = (amt = 1) => {
+  let t = seed += 0x6D2B79F5
+  t = Math.imul(t ^ t >>> 15, t | 1)
+  t ^= t + Math.imul(t ^ t >>> 7, t | 61)
+  return (((t ^ t >>> 14) >>> 0) / 4294967296) * amt
+}
+
 class Task {
   vm = new VM()
   code!: string
@@ -18,8 +28,13 @@ class Task {
     this.access()
     this.vm.setPort(vmPort)
     this.vm.setNumberOfChannels(1)
-    for (let i = 0; i < this.vm.inputs[0].length; i++) {
-      this.vm.inputs[0][i] = Math.random() * 2 - 1
+    if (!randomInput) {
+      for (let i = 0; i < this.vm.inputs[0].length; i++) {
+        this.vm.inputs[0][i] = rand(2) - 1
+      }
+      randomInput = this.vm.inputs[0]
+    } else {
+      this.vm.inputs[0].set(randomInput)
     }
   }
 

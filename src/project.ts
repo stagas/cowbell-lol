@@ -625,22 +625,24 @@ export const Project = reactive('project',
         ),
       }))
 
-      updateChecksum = fn(({ library }) => () => {
-        const trackIds = $.players.map((p) =>
-          !p.$.pages ? null : checksumId(
-            p.$.pages.flatMap((page) => [
+      updateChecksum = fn(({ library }) => queue.task(() => {
+        const trackIds = $.players.flatMap((p) =>
+          !p.$.pages ? null : p.$.pages.flatMap((page) =>
+            checksumId([
               get(library.$.sounds, page.sound)!.$.checksum!,
               ...getMany(library.$.patterns, page.patterns).map((p) => p!.$.checksum!)
-            ]).join()
+            ].join())
           )
         )
 
         const routes = $.players.flatMap((player) => player.$.toJSON().routes)
 
         if (trackIds.every((c) => c != null)) {
-          $.checksum = checksumId(trackIds.join() + routes.join())
+          const payload = trackIds.join() + routes.join()
+          // console.log('CHECKSUM:', payload)
+          $.checksum = checksumId(payload)
         }
-      })
+      }))
     })
   },
   function effects({ $, fx }) {

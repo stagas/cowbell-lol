@@ -51,12 +51,17 @@ export const PlayersView = web(view('players',
           flex-flow: row wrap;
           width: 100%;
           height: 69px;
+          gap: 10px;
         }
         &-sends {
           display: flex;
           position: relative;
-          width: 15%;
-          padding-left: 30px;
+          flex: 1;
+          &:first-child {
+            width: 100px;
+            flex: 0;
+            padding: 0 10px;
+          }
           ${TrackView} {
             position: absolute;
             left: 0;
@@ -96,13 +101,13 @@ export const PlayersView = web(view('players',
               hidden: !editorVisible
             })}
           >
-            <SendsView />
             <EditorView />
             {editorVisible && <Vertical
               align='y'
               id='editor'
               size={storage.vertical.get('editor', 290)}
             />}
+            <SendsView />
           </div>}
         </>)
 

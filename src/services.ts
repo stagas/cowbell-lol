@@ -348,6 +348,11 @@ export const Services = reactive('services',
       })
       $.previewPlayer.$.audio = audio
       $.previewPlayer.$.audioPlayer!.$.audio = audio
+      $.previewPlayer.fx(({ gainNode, audioPlayer }) =>
+        audioPlayer.fx(({ destNode }) => {
+          gainNode.connect(destNode)
+        })
+      )
     })
 
     fx(({ likes }) => {

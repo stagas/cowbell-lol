@@ -10,6 +10,18 @@ const ghError = z.object({
   error_uri: z.string()
 })
 
+const postMixer = z.array(z.object({
+  vol: z.number(),
+  pages: z.array(z.number()),
+  routes: z.array(
+    z.tuple([
+      z.number(),
+      z.string(),
+      z.number(),
+    ])
+  )
+}))
+
 export const schemas = {
   // oauth
   oauthStart: z.object({
@@ -38,7 +50,7 @@ export const schemas = {
   ]),
 
   // crud
-  PostBufferRequest: z.object({
+  postBufferRequest: z.object({
     ...PostItem,
     value: z.string(),
   }),
@@ -52,26 +64,13 @@ export const schemas = {
     bpm: z.number(),
     title: z.string(),
     trackIds: z.array(z.string()),
-    mixer: z.array(z.object({
-      vol: z.number(),
-      pages: z.array(z.number()),
-    })),
+    mixer: postMixer,
   }),
   postPublishRequest: z.object({
     ...PostItem,
     bpm: z.number(),
     title: z.string(),
-    mixer: z.array(z.object({
-      vol: z.number(),
-      pages: z.array(z.number()),
-      routes: z.array(
-        z.tuple([
-          z.number(),
-          z.string(),
-          z.number(),
-        ])
-      )
-    })),
+    mixer: postMixer,
     tracks: z.array(
       z.object({
         sound: z.string(),
@@ -103,7 +102,7 @@ interface ItemResponse {
 }
 
 export namespace schemas {
-  export type PostBufferRequest = z.infer<typeof schemas.PostBufferRequest>
+  export type PostBufferRequest = z.infer<typeof schemas.postBufferRequest>
   export type PostTrackRequest = z.infer<typeof schemas.postTrackRequest>
   export type PostProjectRequest = z.infer<typeof schemas.postProjectRequest>
   export type PostPublishRequest = z.infer<typeof schemas.postPublishRequest>
@@ -121,7 +120,7 @@ export namespace schemas {
     title: string
     bpm: number
     trackIds: string[]
-    mixer: any
+    mixer: z.infer<typeof postMixer>
   }
 
   export interface PublishResponse {
