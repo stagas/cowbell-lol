@@ -313,6 +313,7 @@ export const PlayerEditor = web(view('player-editor',
                       if (index >= players.length) {
                         project.$.selectedPlayer = players.length - 1
                       }
+                      project.$.selectedPreset = players[project.$.selectedPlayer].$.soundBuffer!
                     }
                   } : () => {
                     const patterns = [...player.$.patterns]
@@ -320,6 +321,7 @@ export const PlayerEditor = web(view('player-editor',
                       patterns.splice(player.$.pattern, 1)
                       player.$.patterns = patterns
                       player.$.pattern = Math.min(patterns.length - 1, player.$.pattern)
+                      project.$.selectedPreset = player.$.patternBuffers![player.$.pattern]
                     }
                   }}>
                   <span class={`i clarity-trash-line`} style="font-size:17px; position: relative;" />
