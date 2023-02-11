@@ -30,7 +30,7 @@ export const Toolbar = web(view('toolbar',
     return fns(new class actions {
       drawTime = services.fn(({ audio }) => fn(({ mins, secs, mill, bar, beat, sixt }) => () => {
         const elapsed = audio.$.getTime()
-        const time = new Date(Math.max(0, elapsed / audio.$.coeff * 1000))
+        const time = new Date(Math.max(0, elapsed / audio.$.clock.coeff * 1000))
 
         mins.textContent = `${time.getMinutes()}`
         secs.textContent = `${time.getSeconds()}`.padStart(2, '0')

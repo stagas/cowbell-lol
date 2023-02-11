@@ -20,7 +20,7 @@ export type EditorBuffer = typeof EditorBuffer.State
 
 export const EditorBuffer = reactive('editor-buffer',
   class props {
-    kind!: 'sound' | 'pattern' | 'main'
+    kind!: 'sound' | 'pattern'
     id?= cheapRandomId()
     checksum?: string
     value!: string
@@ -315,7 +315,10 @@ export const EditorBuffer = reactive('editor-buffer',
         }
 
         if (!$.midiRange || $.midiRange[0] !== minNote || $.midiRange[1] !== maxNote) {
-          $.midiRange = [Math.max(0, minNote), Math.max(0, maxNote)]
+          $.midiRange = [
+            Math.max(0, minNote),
+            Math.max(0, maxNote)
+          ]
         }
       })
     }

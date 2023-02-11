@@ -7,73 +7,21 @@ import { AudioPlayer } from './audio-player'
 import { EditorBuffer } from './editor-buffer'
 import { library, Library } from './library'
 import { Player } from './player'
-import { Preview, createPreview } from './preview-service'
+import { createPreview, Preview } from './preview-service'
 import { Project } from './project'
+import { cachedProjects, getOrCreateProject, projectsByDate } from './projects'
 import { schemas } from './schemas'
 import { Skin, skin } from './skin'
 import { getSliders } from './util/args'
 import { storage } from './util/storage'
-import { Waveplot, createWaveplot } from './waveplot'
+import { createWaveplot, Waveplot } from './waveplot'
 
-export const cachedProjects = new Map<string, Project>()
-
-const receivedRemixesOf = new Set<string>()
-
-export function projectsByDate(a: Project, b: Project) {
-  return new Date(b.$.date!).getTime() - new Date(a.$.date!).getTime()
-}
-
-export function projectsRelated(a: Project, b: Project) {
-  return new Date(b.$.date!).getTime() - new Date(a.$.date!).getTime()
-}
-
-export function projectsGroup(acc: Project[][], curr: Project) {
-  const group = acc.find((g) =>
-    g[0].$.originalChecksum === curr.$.checksum
-    || curr.$.originalChecksum === g[0].$.checksum
-    || (g[0].$.originalChecksum && g[0].$.originalChecksum === curr.$.originalChecksum)
-    || (g[0].$.title === curr.$.title && g[0].$.author === curr.$.author)
-  )
-
-  if (group) {
-    group.push(curr)
-  } else {
-    acc.push([curr])
-  }
-
-  return acc
-}
-
-export function getOrCreateProject(p: schemas.ProjectResponse | { id: string }) {
-  let project = cachedProjects.get(p.id)
-  if (!project) {
-    if ('title' in p) {
-      project = Project({
-        checksum: p.id,
-        title: p.title,
-        bpm: p.bpm,
-        author: p.author,
-        date: p.updatedAt,
-        isDraft: false,
-        remoteProject: p,
-        remixCount: p.remixCount || 0,
-        originalRemixCount: p.originalRemixCount || 0,
-        originalChecksum: p.originalId || false,
-        originalAuthor: p.originalAuthor || false,
-      })
-    } else {
-      project = Project({
-        checksum: p.id,
-      })
-    }
-  }
-  cachedProjects.set(p.id, project)
-  return project
-}
+export type Services = typeof Services.State
 
 export const Services = reactive('services',
   class props {
     apiUrl?: string
+    distRoot?= '/example'
     sampleRate?= storage.sampleRate.get(44100)
     latencyHint?= storage.latencyHint.get(0.04)
     previewSampleRate?= storage.previewSampleRate.get(22050)
@@ -121,6 +69,7 @@ export const Services = reactive('services',
   },
   function actions({ $, fn, fns }) {
     const urlHistory: string[] = [location.href]
+    const receivedRemixesOf = new Set<string>()
 
     return fns(new class actions {
       // backend
@@ -202,6 +151,8 @@ export const Services = reactive('services',
         $.projects = [...cachedProjects.values()].sort(projectsByDate)
       }
 
+      // auth
+
       tryLogin = async () => {
         try {
           const res = await this.apiRequest('/whoami')
@@ -214,6 +165,33 @@ export const Services = reactive('services',
           $.username = 'guest'
         }
       }
+
+      loginWithGithub = fn(({ distRoot }) => () => {
+        const h = 700
+        const w = 500
+        const x = window.outerWidth / 2 + window.screenX - (w / 2)
+        const y = window.outerHeight / 2 + window.screenY - (h / 2)
+
+        const popup = window.open(
+          `${distRoot}/login.html`,
+          'oauth',
+          `width=${w}, height=${h}, top=${y}, left=${x}`
+        )!
+
+        // Hack to detect when login is done so that we can automatically
+        // close the window.
+        //
+        // Since the user navigates away to GitHub we lose communication with
+        // the popup. However, we can detect whenever something accesses the
+        // localStorage in our domain. The oauth callback page is in our
+        // domain and writes to it when it loads, we detect it here and
+        // close the popup.
+        const off = on(window, 'storage')(() => {
+          off()
+          popup.close()
+          this.tryLogin()
+        })
+      })
 
       // navigation
 
@@ -295,7 +273,7 @@ export const Services = reactive('services',
                 new MIDIMessageEvent('message', {
                   data: new Uint8Array([144, 40, 127])
                 }),
-                { receivedTime: 0 }
+                { receivedTime: -1 }
               ) as any)
             }, delay)
             off()
@@ -308,7 +286,7 @@ export const Services = reactive('services',
 
       onMidiEvent = fn(({ previewPlayer }) => (e: WebMidi.MIDIMessageEvent) => {
         previewPlayer.$.startPreview()
-        previewPlayer.$.monoNode!.processMidiEvent(e)
+        previewPlayer.$.monoNode?.processMidiEvent(e)
       })
     })
   },
@@ -337,22 +315,15 @@ export const Services = reactive('services',
     })
 
     fx(({ audio }) => {
-      $.previewAudioPlayer = AudioPlayer({})
+      $.previewAudioPlayer = AudioPlayer({ audio })
       $.previewPlayer = Player({
         vol: 0.45,
         sound: 'sk',
         pattern: 0,
         patterns: ['k'],
         isPreview: true,
-        audioPlayer: $.previewAudioPlayer
       })
       $.previewPlayer.$.audio = audio
-      $.previewPlayer.$.audioPlayer!.$.audio = audio
-      $.previewPlayer.fx(({ gainNode, audioPlayer }) =>
-        audioPlayer.fx(({ destNode }) => {
-          gainNode.connect(destNode)
-        })
-      )
     })
 
     fx(({ likes }) => {
@@ -400,6 +371,5 @@ export const Services = reactive('services',
     })
   }
 )
-export type Services = typeof Services.State
 
 export const services = Services({})

@@ -1,31 +1,26 @@
 /** @jsxImportSource minimal-view */
 
-import { web, view, element, Dep } from 'minimal-view'
-import { Selected } from './app'
+import { cheapRandomId } from 'everyday-utils'
+import { element, view, web } from 'minimal-view'
 import { Player } from './player'
+import { PlayerEditor } from './player-editor'
 import { PlayerView } from './player-view'
-import { Focused } from './project-view'
+import { Project } from './project'
 import { services } from './services'
-import { TrackView, TrackViewHandler } from './track-view'
-import { classes } from './util/classes'
-import { storage } from './util/storage'
-import { Vertical } from './vertical'
+import { TrackViewHandler } from './track-view'
+import { cachedRef } from './util/cached-ref'
 
 export const PlayersView = web(view('players',
   class props {
-    players!: Player[]
-    focused!: Focused
-    selected!: Selected
-    editorEl!: Dep<HTMLElement>
-    editorVisible!: boolean
-    EditorView!: () => JSX.Element
-    SendsView!: () => JSX.Element
+    id?= cheapRandomId()
+    project!: Project
     onPlayerSoundSelect!: TrackViewHandler
     onPlayerPatternSelect!: TrackViewHandler
   },
 
   class local {
     host = element
+    players?: Player[]
   },
 
   function actions({ $, fns, fn }) {
@@ -38,80 +33,41 @@ export const PlayersView = web(view('players',
       $.css = /*css*/`
       ${skin.css}
 
-      & {
-        display: block;
+      & > div {
+        display: flex;
         background: ${skin.colors.bgLight};
         width: 100%;
         height: 100%;
-      }
-
-      .player {
-        &-routes {
-          display: flex;
-          flex-flow: row wrap;
-          width: 100%;
-          height: 69px;
-          gap: 10px;
-        }
-        &-sends {
-          display: flex;
-          position: relative;
-          flex: 1;
-          &:first-child {
-            width: 100px;
-            flex: 0;
-            padding: 0 10px;
-          }
-          ${TrackView} {
-            position: absolute;
-            left: 0;
-            top: 0;
-            z-index: 0;
-            width: 100%;
-            height: 100%;
-          }
-          &-sliders {
-            display: flex;
-            flex-flow: row nowrap;
-            width: 100%;
-            position: relative;
-          }
-        }
+        flex-flow: column nowrap;
       }
       `
 
-      fx(({ players, editorEl, editorVisible, selected, EditorView, SendsView }) => {
-        $.view = players.map((player, y) => <>
-          <PlayerView
-            key={player.$.id!}
-            id={player.$.id!}
-            y={y}
-            player={player}
-            focused={$.focused}
-            selected={selected}
-            active={editorVisible && selected.player === y}
-            onSoundSelect={$.onPlayerSoundSelect}
-            onPatternSelect={$.onPlayerPatternSelect}
-          />
+      fx(({ id, project }) =>
+        project.fx(({ players, selectedPlayer, editorVisible }) => {
+          $.view = <div>{players.flatMap((player, y) => [
+            <PlayerView
+              key={player.$.id!}
+              id={player.$.id!}
+              ref={cachedRef(`player-${player.$.id}`)}
+              y={y}
+              player={player}
+              active={editorVisible && selectedPlayer === y}
+              onSoundSelect={$.onPlayerSoundSelect}
+              onPatternSelect={$.onPlayerPatternSelect}
+            />,
 
-          {selected.player === y && <div
-            ref={editorEl}
-            class={classes({
-              'player-view': true,
-              hidden: !editorVisible
-            })}
-          >
-            <EditorView />
-            {editorVisible && <Vertical
-              align='y'
-              id='editor'
-              size={storage.vertical.get('editor', 290)}
-            />}
-            <SendsView />
-          </div>}
-        </>)
-
-      })
+            selectedPlayer === y &&
+            <PlayerEditor
+              key="player-editor"
+              ref={cachedRef(`player-editor-${id}`)}
+              id={id}
+              player={player}
+              editorVisible={editorVisible}
+            />
+          ].filter(Boolean))
+          }</div>
+        })
+      )
     })
   }
 ))

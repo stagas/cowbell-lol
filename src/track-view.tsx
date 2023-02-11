@@ -3,16 +3,16 @@
 import { cheapRandomId } from 'everyday-utils'
 import { Rect } from 'geometrik'
 import { chain, element, event, on, queue, view, web } from 'minimal-view'
-import { app, focusMap } from './app'
+import { app } from './app'
 import { EditorBuffer } from './editor-buffer'
 import { Midi } from './midi'
 import { Player } from './player'
-import { Services } from './services'
+import { focusMap } from './util/focus-map'
+import { services } from './services'
 import { Sliders } from './sliders'
 import { Spacer } from './spacer'
-import { services } from './services'
-import { observe } from './util/observe'
 import { replaceAtIndex } from './util/list'
+import { observe } from './util/observe'
 
 export type TrackViewHandler = (id: string, meta: any, byClick?: boolean) => void
 
@@ -20,14 +20,11 @@ export const TrackView = web(view('track-view',
   class props {
     id?: string = cheapRandomId()
 
-    services?: Services
-
     active!: boolean
     hoverable?: boolean = true
     live?: boolean
     padded?: boolean = false
     sliders?: boolean = false
-    autoscroll?: boolean = false
     showLabel?: boolean = true
     showNotes?: boolean = false
     canFocus?: boolean = false
@@ -191,19 +188,30 @@ export const TrackView = web(view('track-view',
       )
     )
 
-    fx(({ host, active }) => {
-      host.toggleAttribute('active', active)
-    })
-
-    fx(({ host, active }) => {
+    let initial = true
+    fx.raf(async ({ host, active }) => {
       host.toggleAttribute('active', active)
 
-      if (active) {
+      // dom fix below
+      if (initial) {
+        initial = false
         $.center()
-        requestAnimationFrame(() => {
-          $.center()
-          requestAnimationFrame($.center)
-        })
+        await new Promise<number>(requestAnimationFrame)
+        $.center()
+        await new Promise<number>(requestAnimationFrame)
+        $.center()
+        await new Promise<number>(requestAnimationFrame)
+        $.center()
+        await new Promise<number>(requestAnimationFrame)
+        $.center()
+        await new Promise<number>(requestAnimationFrame)
+        $.center()
+        await new Promise<number>(requestAnimationFrame)
+        $.center()
+      } else {
+        $.center()
+        await new Promise<number>(requestAnimationFrame)
+        $.center()
       }
     })
 
@@ -301,7 +309,7 @@ export const TrackView = web(view('track-view',
       $.midiView = false
     })
 
-    fx(({ services, didDisplay }) =>
+    fx(({ didDisplay }) =>
       !didDisplay ? void 0 : services.fx(({ waveplot }) =>
         fx(async ({ id, sound }, prev) => {
 

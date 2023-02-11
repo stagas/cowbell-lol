@@ -1,5 +1,3 @@
-import type { Selected } from '../app'
-
 export const spacer = {
   get: (id: string, fallbackSizes: number[]) => {
     // return fallbackSizes
@@ -93,7 +91,6 @@ function bufferStorage<T>(key: string): BufferStorage<T> {
   }
 }
 
-export const selected = kvStorage<Selected>('selected')
 export const focused = kvStorage<string>('focused')
 export const editorVisible = kvStorage<boolean>('editorVisible')
 export const username = kvStorage<string>('username')
@@ -109,7 +106,6 @@ export const latencyHint = kvStorage<number>('latencyHint')
 
 export const storage = {
   spacer,
-  selected,
   focused,
   editorVisible,
   username,

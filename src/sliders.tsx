@@ -20,12 +20,19 @@ export const Sliders = web(view('sliders',
     $.css = /*css*/`
     & {
       display: flex;
+      width: 100%;
+      height: 100%;
+      position: relative;
+    }
+    & > div {
+      display: flex;
       pointer-events: none;
       flex-flow: row nowrap;
       justify-content: flex-end;
       box-sizing: border-box;
       padding: 15px 0 15px 15px;
       width: 100%;
+      height: 100%;
       position: absolute;
       bottom: 0;
       opacity: 0.85;
@@ -38,7 +45,7 @@ export const Sliders = web(view('sliders',
 
     fx(({ player, sound }) =>
       sound.fx(({ sliders }) => {
-        $.view = [...sliders].map(([id, slider]) =>
+        $.view = <div>{[...sliders].map(([id, slider]) =>
           <SliderView
             key={id}
             id={id}
@@ -47,7 +54,7 @@ export const Sliders = web(view('sliders',
             running={true}
             vertical={false}
             showBg={false}
-          />)
+          />)}</div>
       })
     )
   }

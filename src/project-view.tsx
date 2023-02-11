@@ -1,23 +1,16 @@
 /** @jsxImportSource minimal-view */
 
-import { filterMap } from 'everyday-utils'
-import { web, view, element, chain, part } from 'minimal-view'
-import { PianoKeys } from 'x-pianokeys'
-import { cachedRef, Selected } from './app'
+import { chain, element, part, view, web } from 'minimal-view'
 import { Audio, AudioState } from './audio'
 import { Button } from './button'
-import { demo } from './demo-code'
-import { Editor } from './editor'
 import { EditorBuffer } from './editor-buffer'
-import { Player, players } from './player'
+import { Player } from './player'
 import { PlayersView } from './players-view'
 import { Project, relatedProjects } from './project'
+import { Route } from './route'
 import { services } from './services'
-import { SliderView } from './slider-view'
-import { Spacer } from './spacer'
-import { TrackView } from './track-view'
+import { cachedRef } from './util/cached-ref'
 import { classes } from './util/classes'
-import { delById, get, replaceAtIndex } from './util/list'
 import { timeAgo, toDate } from './util/time-ago'
 import { Volume } from './volume'
 import { Wavetracer } from './wavetracer'
@@ -33,9 +26,6 @@ export const ProjectView = web(view('project-view',
     controlsView?: JSX.Element = false
   },
   class local {
-    selected: Selected = { player: 0, preset: '' }
-    focused: Focused = 'sound'
-
     host = element
     state?: AudioState = 'init'
     audio?: Audio
@@ -46,31 +36,13 @@ export const ProjectView = web(view('project-view',
     waveformView: JSX.Element = false
     songTitleEl?: HTMLDivElement
 
-    editor?: InstanceType<typeof Editor.Element>
-    editorEl?: HTMLElement
-    editorBuffer?: EditorBuffer
-    editorVisible = false
-
-    main = EditorBuffer({ id: 'main', kind: 'main', value: demo.main, isDraft: false, isNew: false, isIntent: true })
-
-    playersView: JSX.Element = false
     players: Player[] = []
     player?: Player
-    // playerPatterns?: string[]
 
     sounds: EditorBuffer[] = []
-    sound?: EditorBuffer
-
     patterns: EditorBuffer[] = []
-    pattern?: EditorBuffer
-
-    presetsScrollEl?: HTMLDivElement
-
-    pianoView: JSX.Element = false
   },
   function actions({ $, fns, fn }) {
-    let presetsSmoothScrollTimeout: any
-
     return fns(new class actions {
       renameSong = fn(({ songTitleEl }) => () => {
         const p = songTitleEl
@@ -107,218 +79,32 @@ export const ProjectView = web(view('project-view',
         })
       })
 
-      // player
+      onProjectExpand = (e: PointerEvent & { target: Element }) => {
+        if ($.isRenamingSong) return
 
-      onPlayerSoundSelect = (_: string, { y }: { y: number }) => {
-        const player = $.players[y]
+        // TODO: left here for development to catch target classes that
+        // didn't work and add them to the list below.
+        console.log(e.target)
 
-        if ($.editorVisible && $.focused === 'sound' && $.selected.player === y) {
-          $.editorVisible = false
-        } else {
-          $.editorVisible = true
-          $.selected = {
-            ...$.selected,
-            player: y,
-            preset: player.$.sound
-          }
-          $.focused = 'sound'
+        const clickThroughClasses = [
+          'song',
+          'song-header',
+          'project',
+          'half',
+          'controls',
+          'controls-secondary',
+          'waveform-over',
+          'reactions',
+          'song-note',
+          'song-author'
+        ]
+
+        if (
+          clickThroughClasses.some((c) => e.target.classList.contains(c))
+          || (e.target.classList.contains('song-title') && !$.project.$.isDraft)
+        ) {
+          $.expanded = !$.expanded
         }
-      }
-
-      onPlayerPatternSelect = (id: string, { x, y }: { x: number, y: number }) => {
-        const player = $.players[y]
-
-        if ($.editorVisible && $.focused === 'pattern' && $.selected.player === y && player.$.pattern === x) {
-          $.editorVisible = false
-        } else {
-          $.editorVisible = true
-
-          $.selected = {
-            ...$.selected,
-            player: y,
-            preset: player.$.patterns[player.$.pattern = x]
-          }
-          $.focused = 'pattern'
-        }
-      }
-
-      onPlayerPatternPaste = (id: string, { x, y }: { x: number, y: number }) => {
-        const selectedPlayer = $.players[$.selected.player]
-
-        const p = selectedPlayer.$.pattern
-
-        if (x !== p || y !== $.selected.player) {
-          const targetPlayer = $.players[y]
-
-          const pattern = selectedPlayer.$.patterns[p]
-
-          targetPlayer.$.patterns = replaceAtIndex(
-            targetPlayer.$.patterns,
-            x,
-            pattern
-          )
-
-          // trigger render
-          $.selected = { ...$.selected }
-        }
-      }
-
-      onPlayerPatternInsert = (id: string, { x, y }: { x: number, y: number }) => {
-        const player = $.players[y]
-        const patterns = [...player.$.patterns]
-        const pattern = patterns[x]
-        patterns.splice(x + 1, 0, pattern)
-        player.$.patterns = patterns
-
-        // trigger render
-        $.selected = { ...$.selected }
-      }
-
-      onPlayerPatternDelete = (id: string, { x, y }: { x: number, y: number }) => {
-        const player = $.players[y]
-        const patterns = player.$.patterns
-
-        if (patterns.length === 1) return
-
-        patterns.splice(x, 1)
-
-        player.$.pattern = Math.min(player.$.pattern, patterns.length - 1)
-
-        // trigger render
-        $.selected = { ...$.selected }
-      }
-
-      // presets
-
-      onPresetsRearrange = services.fn(({ library }) => (id: string, { dir, kinds }: { dir: 1 | -1, kinds: 'sounds' | 'patterns' }) => {
-        const buffers = $[kinds]
-
-        const index = buffers.findIndex((buffer) => buffer.$.id === id)
-
-        const dest = index + dir
-        if (dest >= 0 && dest < buffers.length) {
-          const bufs = [...buffers]
-          const [buffer] = bufs.splice(index, 1)
-          bufs.splice(dest, 0, buffer)
-          library.$[kinds] = [...bufs]
-        }
-      })
-
-      startTemporaryPresetsSmoothScroll = () => {
-        const el = cachedRef(`presets-${$.id}`)?.current
-        if (el) {
-          el.style.scrollBehavior = 'smooth'
-          clearTimeout(presetsSmoothScrollTimeout)
-          presetsSmoothScrollTimeout = setTimeout(() => {
-            el.style.scrollBehavior = 'auto'
-          }, 100)
-        }
-      }
-
-      // buffers
-
-      onBufferSave = (id: string, { kind }: { kind: string }) => {
-        if (kind === 'sound') {
-          this.onSoundSave(id)
-        } else if (kind === 'pattern') {
-          this.onPatternSave(id)
-        }
-        // trigger render
-        $.selected = { ...$.selected }
-      }
-
-      // sound
-
-      onSoundSelect = (id: string, { noPreview }: { noPreview?: boolean } = {}) => {
-        this.startTemporaryPresetsSmoothScroll()
-        $.focused = 'sounds'
-        $.selected = { ...$.selected, preset: id }
-
-        if (noPreview) return
-
-        if (id !== services.$.previewPlayer!.$.sound) {
-          queueMicrotask(() => {
-            services.$.sendTestNote()
-          })
-        } else {
-          services.$.sendTestNote()
-        }
-      }
-
-      onSoundUse = fn(({ player }) => (id: string) => {
-        player.$.sound = id
-        this.onSoundSelect(id, { noPreview: true })
-        queueMicrotask(() => {
-          $.focused = 'sound'
-        })
-      })
-
-      onSoundSave = (id: string) => {
-        get($.sounds, id)!.$.isDraft = false
-      }
-
-      onSoundDelete = services.fn(({ library }) => (id: string) => {
-        const index = $.players.map((player) => player.$.sound).indexOf(id)
-        if (!~index) {
-          library.$.sounds = delById($.sounds, id)
-        }
-      })
-
-      onSoundRearrange = (id: string, { dir }: { dir: 1 | -1 }) => {
-        this.onPresetsRearrange(id, { dir, kinds: 'sounds' })
-      }
-
-      // pattern
-
-      onPatternSelect = (id: string) => {
-        this.startTemporaryPresetsSmoothScroll()
-        $.focused = 'patterns'
-        $.selected = { ...$.selected, preset: id }
-      }
-
-      onPatternUse = fn(({ player }) => (id: string) => {
-        player.$.patterns = replaceAtIndex(
-          player.$.patterns,
-          player.$.pattern,
-          id
-        )
-
-        this.onPatternSelect(id)
-
-        queueMicrotask(() => {
-          $.focused = 'pattern'
-        })
-      })
-
-      onPatternSave = (id: string) => {
-        get($.patterns, id)!.$.isDraft = false
-      }
-
-      onPatternDelete = services.fn(({ library }) => (id: string) => {
-        const index = $.players.flatMap((player) => player.$.patterns).indexOf(id)
-        if (!~index) {
-          library.$.patterns = delById($.patterns, id)
-        }
-      })
-
-      onPatternRearrange = (id: string, { dir }: { dir: 1 | -1 }) => {
-        this.onPresetsRearrange(id, { dir, kinds: 'patterns' })
-      }
-
-
-      // editor
-
-      focusEditor = fn(({ editor }) => () => {
-        editor.$.editor?.focus()
-      })
-
-      getFocus = () => {
-        const { focused } = $
-        return focused === 'sound' || focused === 'sounds'
-          ? 'sound'
-          : focused === 'pattern' || focused === 'patterns'
-            ? 'pattern'
-            : 'main'
       }
     })
   },
@@ -346,40 +132,62 @@ export const ProjectView = web(view('project-view',
       )
     )
 
-    fx(({ browsing, players }) => {
-      if (browsing && players.length) {
-        $.expanded = true
+    fx(({ project, players }) =>
+      project.fx(({ selectedPlayer }) => {
+        $.player = players[selectedPlayer]
+      })
+    )
 
+    fx(({ browsing, project }) => {
+      if (browsing) {
         const sel = new URL(location.href).searchParams.get('sel')
         if (sel) {
-          const [player, pattern] = sel.split('.')
-          $.selected = { player: +player, preset: '' }
-          if (pattern != null) {
-            $.focused = 'pattern'
-            players[+player].$.pattern = +pattern
-            $.selected.preset = players[+player].$.patterns[+pattern]
-          } else {
-            $.focused = 'sound'
-            $.selected.preset = players[+player].$.sound
-          }
-          $.editorVisible = true
+          project.$.editorVisible = true
         }
       }
     })
 
-    fx(({ browsing, selected, focused, player, editorVisible }) => {
+    fx(({ browsing, project }) => {
       if (browsing) {
-        services.$.go(
-          location.pathname,
-          !editorVisible ? {} : {
-            sel: [
-              selected.player,
-              focused === 'pattern' || focused === 'patterns'
-                ? player.$.pattern : null
-            ].filter((x) => x != null).join('.')
-          },
-          true
-        )
+        $.expanded = true
+
+        return project.fx(({ players }) => {
+          if (players.length) {
+            const sel = new URL(location.href).searchParams.get('sel')
+            if (sel) {
+              const [player, pattern] = sel.split('.')
+              project.$.selectedPlayer = +player
+              if (pattern != null) {
+                players[+player].$.pattern = +pattern
+                project.$.selectedPreset = players[+player].$.patternBuffers![+pattern]
+              } else {
+                project.$.selectedPreset = players[+player].$.soundBuffer!
+              }
+              project.$.editorVisible = true
+            }
+          }
+        })
+      }
+    })
+
+    fx(({ browsing, project }) => {
+      if (browsing) {
+        return project.fx(({ players, selectedPlayer, selectedPreset, editorVisible }) => {
+          if (!players.length) return
+
+          services.$.go(
+            location.pathname,
+            !editorVisible ? {} : {
+              sel: [
+                selectedPlayer,
+                selectedPreset.$.kind === 'pattern'
+                  ? players[selectedPlayer].$.pattern
+                  : null
+              ].filter((x) => x != null).join('.')
+            },
+            true
+          )
+        })
       }
     })
 
@@ -394,17 +202,6 @@ export const ProjectView = web(view('project-view',
         $.audio = audio
       })
     )
-
-    fx(() => services.fx(({ library }) =>
-      chain(
-        library.fx(({ sounds }) => {
-          $.sounds = sounds
-        }),
-        library.fx(({ patterns }) => {
-          $.patterns = patterns
-        })
-      )
-    ))
 
     fx(() => services.fx(({ loggedIn, username }) =>
       fx(({ project }) =>
@@ -425,6 +222,17 @@ export const ProjectView = web(view('project-view',
         })
       }
     })
+
+    fx(() => services.fx(({ library }) =>
+      chain(
+        library.fx(({ sounds }) => {
+          $.sounds = sounds
+        }),
+        library.fx(({ patterns }) => {
+          $.patterns = patterns
+        })
+      )
+    ))
 
     const off = fx(({ project, sounds, patterns, expanded }) => {
       if (sounds.length
@@ -460,19 +268,49 @@ export const ProjectView = web(view('project-view',
       })
     )
 
-    fx(() => services.fx(({ previewPlayer }) =>
-      fx(({ player, selected, focused }) => {
-        if (focused === 'sounds') {
-          previewPlayer.$.sound = selected.preset
-        } else {
-          previewPlayer.$.sound = player.$.sound
-        }
-      })
-    ))
+    fx(() => services.fx(({ previewPlayer, previewAudioPlayer }) =>
+      fx(({ player, project }) =>
+        player.fx(({ routes, sound }) =>
+          project.fx(({ selectedPreset }) => {
+            // route the preview player with the same routes as the
+            // current player.
 
-    fx(({ players, selected }) => {
-      $.player = players[selected.player]
-    })
+            previewPlayer.$.audioPlayer = player.$.audioPlayer?.$.audio
+              ? player.$.audioPlayer
+              : previewAudioPlayer
+            previewPlayer.$.routes?.forEach((route) => {
+              route.dispose()
+            })
+
+            // but only if the player has audio loaded
+            if (player.$.audioPlayer?.$.audio) {
+              previewPlayer.$.routes = new Map([...routes].map(([id, route]) => [id, Route({
+                ...route.$.toJSON(),
+                sourcePlayer: previewPlayer
+              })]))
+            } else {
+              // otherwise use default routes directly to audio dest out
+              const paramId = `${previewPlayer.$.id}::dest`
+
+              previewPlayer.$.routes = new Map([
+                [paramId, Route({
+                  sourcePlayer: previewPlayer,
+                  targetPlayer: previewPlayer,
+                  targetId: 'dest',
+                  amount: 1,
+                })]
+              ])
+            }
+
+            if (selectedPreset.$.kind === 'sound') {
+              previewPlayer.$.sound = selectedPreset.$.id!
+            } else {
+              previewPlayer.$.sound = sound
+            }
+          })
+        )
+      )
+    ))
 
     fx(() => services.fx(({ previewPlayer }) =>
       fx(({ player }) =>
@@ -502,437 +340,6 @@ export const ProjectView = web(view('project-view',
         )
       )
     )
-
-    const PianoView = part((update) => {
-      fx(() => services.fx(({ audio }) =>
-        audio.fx(({ audioContext }) =>
-          fx(({ id, pattern }) =>
-            pattern.fx(({ midiRange }) => {
-              const hasRange = isFinite(midiRange[0]) && isFinite(midiRange[1])
-              const halfOctaves = !hasRange
-                ? 3
-                : Math.round(
-                  (midiRange[1] - midiRange[0]) / 6
-                )
-
-              const startHalfOctave = !hasRange ? 8 : Math.round(midiRange[0] / 6)
-
-              update(
-                <PianoKeys
-                  ref={cachedRef(`piano-${id}`)}
-                  halfOctaves={halfOctaves}
-                  startHalfOctave={startHalfOctave}
-                  audioContext={audioContext}
-                  onMidiEvent={services.$.onMidiEvent}
-                  vertical
-                />
-              )
-            })
-          )
-        )
-      ))
-    })
-
-    const SoundPresets = part((update) => {
-      fx(({ id, focused: _, selected, sounds }) => {
-        const focus = $.getFocus()
-        const soundId = selected.preset
-
-        update(<div
-          key="sounds"
-          ref={cachedRef(`sounds-${id}`)}
-          part="app-presets"
-          class={classes({
-            hidden: focus !== 'sound'
-          })}
-        >
-          {sounds.map((s) =>
-            <TrackView
-              key={s.$.id!}
-              ref={cachedRef(`sound-${id}-${s.$.id}`)}
-              canFocus
-              active={
-                focus === 'sound'
-                && soundId === s.$.id
-              }
-              live={soundId === s.$.id}
-              services={services}
-              sound={s}
-              clickMeta={s.$}
-              onClick={$.onSoundSelect}
-              // onDblClick={$.onSoundSave}
-              onCtrlClick={$.onSoundUse}
-              onCtrlShiftClick={$.onSoundDelete}
-              onRearrange={$.onSoundRearrange}
-            />
-          )}
-        </div>)
-      })
-    })
-
-    const PatternPresets = part((update) => {
-      fx(({ id, focused: _, selected, patterns }) => {
-        const focus = $.getFocus()
-        const patternId = selected.preset
-
-        update(<div
-          key="patterns"
-          ref={cachedRef(`patterns-${id}`)}
-          part="app-presets"
-          class={classes({
-            hidden: focus !== 'pattern'
-          })}
-        >
-          {patterns.map((p) =>
-            <TrackView
-              key={p.$.id!}
-              ref={cachedRef(`pattern-${id}-${p.$.id}`)}
-              canFocus
-              active={
-                focus === 'pattern'
-                && patternId === p.$.id
-              }
-              live={patternId === p.$.id}
-              pattern={p}
-              clickMeta={p.$}
-              onClick={$.onPatternSelect}
-              // onDblClick={$.onPatternSave}
-              onCtrlClick={$.onPatternUse}
-              onCtrlShiftClick={$.onPatternDelete}
-              onRearrange={$.onPatternRearrange}
-            />
-          )}
-        </div>)
-      })
-    })
-
-    fx(({ players, sounds, patterns, main }) => {
-      let prevPlayer: Player
-      let prevSound: string
-      let prevPattern: string
-
-      if (players.length) return fx(({ selected, focused: _ }) => {
-        const player: Player = players[selected.player]!
-        if (!player) return
-
-        return player.fx(({ sound, pattern, patterns: playerPatterns }) => {
-          const focus = $.getFocus()
-
-          if (prevPlayer === player) {
-            if (prevSound && prevSound !== sound) {
-              selected.preset = sound
-              $.selected = { ...selected }
-            }
-            if (prevPattern && prevPattern !== playerPatterns[pattern]) {
-              selected.preset = playerPatterns[pattern]
-              $.selected = { ...selected }
-            }
-          }
-
-          prevPlayer = player
-          prevSound = sound
-          prevPattern = player.$.patterns[pattern]
-
-          if (focus === 'sound') {
-            $.sound = get(sounds, selected.preset)!
-            $.pattern ??= get(patterns, playerPatterns[pattern])!
-          } else if (focus === 'pattern') {
-            $.sound ??= get(sounds, sound)!
-            $.pattern = get(patterns, selected.preset)!
-          }
-
-          $.editorBuffer = (
-            focus === 'sound'
-              ? $.sound
-              : focus === 'pattern'
-                ? $.pattern
-                : main)
-            || $.editorBuffer!
-        })
-      })
-    })
-
-    const TrackViews = part((update) => {
-      fx(({ id, project, focused, selected, player, players, sound, pattern, editorBuffer }) => {
-        const focus = $.getFocus()
-
-        const playerSoundId = sound.$.id
-        const playerPatternId = pattern.$.id
-
-        const readableOnly =
-          (focus === 'sound' && player.$.sound !== playerSoundId)
-          || (focus === 'pattern' && player.$.patterns[player.$.pattern] !== playerPatternId)
-
-        update(<div class="wrapper">
-          <TrackView
-            key="trackview-sound"
-            ref={cachedRef(`trackview-${id}-sound`)}
-            class={classes({
-              hidden: focus !== 'sound'
-            })}
-            style="max-width:100%"
-            active={false}
-            hoverable={false}
-            showNotes={false}
-            sliders={!readableOnly}
-            player={selected.preset === player.$.sound && player}
-            services={services}
-            main={false}
-            sound={sound}
-            pattern={false}
-            xPos={0}
-            clickMeta={editorBuffer.$}
-          />
-
-          <TrackView
-            key="trackview-pattern"
-            class={classes({
-              hidden: focus !== 'pattern'
-            })}
-            ref={cachedRef(`trackview-${id}-pattern`)}
-            style="max-width:100%"
-            active={false}
-            hoverable={false}
-            showNotes={true}
-            sliders={false}
-            player={selected.preset === player.$.patterns[player.$.pattern] && player}
-            services={services}
-            main={false}
-            sound={false}
-            pattern={pattern}
-            xPos={player.$.pattern}
-            clickMeta={editorBuffer.$}
-          />
-
-          <div class="track-toolbar">
-            <div class="track-toolbar-controls">
-              {readableOnly && <Button small onClick={() => {
-                if (focused === 'sounds') {
-                  $.onSoundUse(selected.preset)
-                } else if (focused === 'patterns') {
-                  $.onPatternUse(selected.preset)
-                }
-              }}>
-                <span class="i mdi-light-chevron-up" style="font-size:26px; position: relative; left: 0.75px; top: -2.25px;" />
-              </Button>}
-            </div>
-
-            <div class="track-toolbar-controls">
-
-              {editorBuffer!.$.isDraft && <>
-                <Button small onClick={() => {
-                  player.$.monoNode!.setCode(sound.$.value, true)
-                }}>
-                  <span class="i la-redo-alt" />
-                </Button>
-
-                <Button small onClick={() => {
-                  $.onBufferSave(editorBuffer!.$.id!, editorBuffer!.$)
-                }}>
-                  <span class="i la-check" style="font-size:17px; position: relative; -webkit-text-stroke: .1px;" />
-                </Button>
-              </>}
-
-              {(focus === 'sound'
-                ? players.length > 1
-                : focus === 'pattern'
-                  ? player.$.patterns.length > 1
-                  : false) && <Button small onClick={focus === 'sound' ? () => {
-                    const players = [...project.$.players]
-                    if (players.length > 1) {
-                      const index = players.indexOf(player)
-                      players.splice(index, 1)
-                      project.$.players = players
-                      if (selected.player >= players.length) {
-                        $.selected = { ...$.selected, player: players.length - 1 }
-                      }
-                    }
-                  } : () => {
-                    const patterns = [...player.$.patterns]
-                    if (patterns.length > 1) {
-                      patterns.splice(player.$.pattern, 1)
-                      player.$.patterns = patterns
-                      player.$.pattern = Math.min(patterns.length - 1, player.$.pattern)
-                    }
-                  }}>
-                  <span class={`i clarity-trash-line`} style="font-size:17px; position: relative;" />
-                </Button>}
-
-              <div style="display: flex; flex-flow: column nowrap">
-                <Button small half up onClick={() => {
-                  const players = [...project.$.players]
-                  if (players.length > 1) {
-                    const index = players.indexOf(player)
-                    if (index >= 1) {
-                      players.splice(index, 1)
-                      players.splice(index - 1, 0, player)
-                      project.$.players = players
-                      $.selected = { ...$.selected, player: index - 1 }
-                    }
-                  }
-                }}>
-                  <span class="i mdi-light-chevron-up" />
-                </Button>
-                <Button small half down onClick={() => {
-                  const players = [...project.$.players]
-                  if (players.length > 1) {
-                    const index = players.indexOf(player)
-                    if (index <= players.length - 2) {
-                      players.splice(index, 1)
-                      players.splice(index + 1, 0, player)
-                      project.$.players = players
-                      $.selected = { ...$.selected, player: index + 1 }
-                    }
-                  }
-                }}>
-                  <span class="i mdi-light-chevron-down" />
-                </Button>
-              </div>
-
-              <Button small onClick={() => {
-                const focus = $.getFocus()
-                services.$.clipboardActive = focus
-                services.$.clipboardId = focus === 'sound'
-                  ? player.$.sound
-                  : player.$.patterns[player.$.pattern]
-                services.$.clipboardBuffer = (focus === 'sound'
-                  ? player.$.soundBuffer
-                  : player.$.patternBuffers?.[player.$.pattern]) || false
-              }}>
-                <span class="i la-copy" style="font-size: 16px" />
-              </Button>
-
-              <Button small onClick={
-                focused === 'sound' ? () => {
-                  const players = [...project.$.players]
-                  const index = players.indexOf(player)
-                  players.splice(index + 1, 0, Player({
-                    ...player.$.derive(),
-                    project
-                  }))
-                  project.$.players = players
-                  $.selected = { ...$.selected, player: index + 1 }
-                } : () => {
-                  const patterns = [...player.$.patterns]
-                  patterns.splice(player.$.pattern + 1, 0, pattern.$.id!)
-                  player.$.patterns = patterns
-                }}>
-                <span class={`i fluent-padding-${focused === 'sound' || focused === 'sounds' ? 'down' : 'right'
-                  }-24-regular`} style="font-size:17px; position: relative;" />
-              </Button>
-            </div>
-          </div>
-        </div>)
-      })
-    })
-
-    const EditorView = part((update) => {
-      fx(({ id, player, sound, pattern, focused: _f, editorBuffer, expanded: _e }) => {
-        const focus = $.getFocus()
-
-        const soundPresets = <SoundPresets />
-        const patternPresets = <PatternPresets />
-
-        const playerSoundId = sound.$.id
-        const playerPatternId = pattern.$.id
-
-        const readableOnly =
-          (focus === 'sound' && player.$.sound !== playerSoundId)
-          || (focus === 'pattern' && player.$.patterns[player.$.pattern] !== playerPatternId)
-
-        update(<Spacer
-          ref={cachedRef(`spacer-${id}`)}
-          id="app-selected"
-          part="app-selected"
-          align="x"
-          initial={[
-            0,
-            .0825,
-            .225,
-            .60
-          ]}
-        >
-          <PianoView />
-
-          <div ref={cachedRef(`presets-${id}`)} style="height:100%; position:relative; overflow-y: scroll; overscroll-behavior: contain;">
-            {soundPresets}
-            {patternPresets}
-          </div>
-
-          <TrackViews />
-
-          <Editor
-            ref={refs.editor}
-            part="app-editor"
-            name="editor"
-            player={player}
-            buffer={editorBuffer}
-            readableOnly={readableOnly}
-          />
-
-        </Spacer>)
-      })
-    })
-
-    const SendsView = part((update) => {
-      fx(({ player }) =>
-        player.fx(({ sendSliders }) =>
-          fx(({ players }) => {
-            const playerSliders = filterMap(
-              [...sendSliders],
-              ([playerId, sliders]) => {
-                const player = players.find((p) => p.$.id === playerId)
-                if (!player) return
-                return [player, sliders] as const
-              }
-            )
-
-            return chain(
-              playerSliders.map(([player]) => player.fx(({ soundBuffer: _ }) => {
-                update(<div class="player-routes">
-                  <div class="player-sends">
-                    <div class="player-sends-sliders">
-                      {[...sendSliders.get('dest')!].map(([paramId, slider]) =>
-                        <SliderView
-                          key={paramId}
-                          id={paramId}
-                          slider={slider}
-                          vertical={false}
-                          running={true}
-                          showBg={true}
-                        />
-                      )}
-                    </div>
-                  </div>
-                  {playerSliders.map(([player, sliders]) =>
-                    <div class="player-sends">
-                      <TrackView
-                        services={services}
-                        player={player}
-                        sound={player.$.soundBuffer!}
-                        active={false}
-                        pattern={false}
-                      />
-                      <div class="player-sends-sliders">
-                        {[...sliders].map(([paramId, slider]) =>
-                          <SliderView
-                            key={paramId}
-                            id={paramId}
-                            slider={slider}
-                            vertical={false}
-                            running={true}
-                            showBg={true}
-                          />
-                        )}
-                      </div>
-                    </div>
-                  )}</div>)
-              }))
-            )
-          })
-        )
-      )
-    })
 
     fx(() => services.fx(({ skin }) => {
       $.css = /*css*/`
@@ -1198,213 +605,186 @@ export const ProjectView = web(view('project-view',
     }))
 
     const Players = part((update) => {
-      fx(({ id, players, selected, editorVisible }) => {
+      fx(({ id, project }) => {
         update(
           <PlayersView
             ref={cachedRef(`players-${id}`)}
-            players={players}
-            focused={$.focused}
-            selected={selected}
-            editorEl={deps.editorEl}
-            EditorView={EditorView}
-            editorVisible={editorVisible}
-            SendsView={SendsView}
-            onPlayerSoundSelect={$.onPlayerSoundSelect}
-            onPlayerPatternSelect={$.onPlayerPatternSelect}
+            project={project}
+            onPlayerSoundSelect={project.$.onPlayerSoundSelect}
+            onPlayerPatternSelect={project.$.onPlayerPatternSelect}
           />
         )
       })
     })
 
-    fx(() => services.fx(({ loggedIn, likes }) =>
-      fx(({ project }) =>
-        project.fx(({ isDraft, isDeleted, title, author, bpm, date, audioPlayer, originalAuthor, originalChecksum, pathname }) =>
-          fx(({ state, didExpand, expanded, controlsView, waveformView }) => {
-            $.view = <>
-              <div class="project" key={project} onpointerdown={(e) => {
-                if ($.isRenamingSong) return
+    const SongView = part((update) => {
+      fx(({ project }) => services.fx(({ loggedIn, likes }) => project.fx(({ isDraft, isDeleted, title, author, bpm, date, audioPlayer, originalAuthor, originalChecksum, pathname }) => fx(({ state, controlsView }) => {
+        update(
+          <div class="song">
+            <div class="controls">
+              <Volume target={audioPlayer} />
 
-                console.log(e.target)
+              <Button
+                small={false}
+                rounded
+                active={state === 'running'}
+                onClick={project.$.toggle}
+              >
+                <span class={`i la-${state === 'running' ? 'pause' : 'play'}`} />
+              </Button>
+            </div>
 
-                const clickThroughClasses = [
-                  'song',
-                  'song-header',
-                  'project',
-                  'half',
-                  'controls',
-                  'controls-secondary',
-                  'waveform-over',
-                  'reactions',
-                  'song-note',
-                  'song-author'
-                ]
-
-                if (
-                  clickThroughClasses.some((c) => e.target.classList.contains(c))
-                  || (e.target.classList.contains('song-title') && !isDraft)
-                ) {
-                  $.expanded = !$.expanded
-                }
-              }}>
-                <div class="waveform">
-                  {waveformView}
-                  <div class="waveform-over" />
-                  <div class="half" />
-                </div>
-
-                <div class="song">
-                  <div class="controls">
-                    <Volume target={audioPlayer} />
-
-                    <Button
-                      small={false}
-                      rounded
-                      active={state === 'running'}
-                      onClick={project.$.toggle}
-                    >
-                      <span class={`i la-${state === 'running' ? 'pause' : 'play'}`} />
-                    </Button>
+            <div class="song-header">
+              <div class="song-info">
+                {isDraft
+                  ? <div
+                    key="a"
+                    ref={refs.songTitleEl}
+                    class="song-title song-draft"
+                    onclick={$.renameSong}
+                  >
+                    {title}
                   </div>
+                  : <div
+                    key="b"
+                    class="song-title"
+                  >
+                    <a href={pathname} onclick={services.$.linkTo(pathname)}>{title}</a>
+                  </div>
+                }
 
-                  <div class="song-header">
-                    <div class="song-info">
-                      {isDraft
-                        ? <div
-                          key="a"
-                          ref={refs.songTitleEl}
-                          class="song-title song-draft"
-                          onclick={$.renameSong}
-                        >
-                          {title}
-                        </div>
-                        : <div
-                          key="b"
-                          class="song-title"
-                        >
-                          <a href={pathname} onclick={services.$.linkTo(pathname)}>{title}</a>
-                        </div>
+                <div class="reactions">
+                  {!isDraft && <Button rounded small
+                    onClick={() => {
+                      if (likes.includes(project.$.checksum!)) {
+                        services.$.likes = likes.filter((projectId) => projectId !== project.$.checksum!)
+                      } else {
+                        services.$.likes = [...new Set([
+                          project.$.checksum!, ...likes
+                        ])]
                       }
+                    }}
+                  >
+                    <span class={`i la-heart${likes.includes(project.$.checksum!) ? '-solid' : ''}`} />
+                  </Button>}
 
-                      <div class="reactions">
-                        {!isDraft && <Button rounded small
-                          onClick={() => {
-                            if (likes.includes(project.$.checksum!)) {
-                              services.$.likes = likes.filter((projectId) => projectId !== project.$.checksum!)
-                            } else {
-                              services.$.likes = [...new Set([
-                                project.$.checksum!, ...likes
-                              ])]
-                            }
-                          }}
-                        >
-                          <span class={`i la-heart${likes.includes(project.$.checksum!) ? '-solid' : ''}`} />
-                        </Button>}
+                  {isDraft && loggedIn &&
+                    <Button rounded small onClick={() => {
+                      project.$.title = (($.songTitleEl!.textContent || '').trim() || 'Untitled')
+                      project.$.publish()
+                    }} title="Publish">
+                      <span class={`i ph-upload-simple-duotone`} />
+                    </Button>
+                  }
 
-                        {isDraft && loggedIn &&
-                          <Button rounded small onClick={() => {
-                            project.$.title = (($.songTitleEl!.textContent || '').trim() || 'Untitled')
-                            project.$.publish()
-                          }} title="Publish">
-                            <span class={`i ph-upload-simple-duotone`} />
-                          </Button>
-                        }
+                  {isDraft && !isDeleted &&
+                    <Button rounded small onClick={() => {
+                      project.$.delete()
+                    }} title="Delete">
+                      <span class={`i clarity-trash-line`} />
+                    </Button>
+                  }
 
-                        {isDraft && !isDeleted &&
-                          <Button rounded small onClick={() => {
-                            project.$.delete()
-                          }} title="Delete">
-                            <span class={`i clarity-trash-line`} />
-                          </Button>
-                        }
+                  {isDraft && isDeleted &&
+                    <Button rounded small onClick={() => {
+                      project.$.undelete()
+                    }} title="Restore">
+                      <span class={`i la-share`} style="transform: scaleX(-1)" />
+                    </Button>
+                  }
 
-                        {isDraft && isDeleted &&
-                          <Button rounded small onClick={() => {
-                            project.$.undelete()
-                          }} title="Restore">
-                            <span class={`i la-share`} style="transform: scaleX(-1)" />
-                          </Button>
-                        }
+                  {controlsView}
 
-                        {controlsView}
-
-                        {/* <Button rounded small>
+                  {/* <Button rounded small>
                     <span class={`i la-comment-dots`} />
                   </Button> */}
-                      </div>
-
-                    </div>
-                    {originalChecksum && originalAuthor
-                      ? <div class="song-author">
-
-                        <a href={`/${originalAuthor}`} onclick={services.$.linkTo(originalAuthor)}>
-                          <span class="by">by</span>
-                          <span class="author">{originalAuthor}</span>
-                        </a>
-
-                        {originalAuthor !== author && <>
-                          <span class="dash">&mdash;</span>
-
-                          <a href={`/${author}`} onclick={services.$.linkTo(author)}>
-                            <span class="remix-by">remix by</span>
-                            <span class="author">{author}</span>
-                          </a>
-
-                          <span class="dash">&mdash;</span>
-
-                          <a href={`/${originalAuthor}/${project.$.originalChecksum}`} onclick={services.$.linkTo(`/${originalAuthor}/${project.$.originalChecksum}`)}>
-                            <span class="original">original</span>
-                          </a>
-                        </>}
-
-                        {project.$.isDraft && <>
-                          <span class="dash">&mdash;</span>
-                          <a href="javascript:;" onclick={(e) => {
-                            e.preventDefault()
-                            e.stopPropagation()
-                            project.$.originalAuthor
-                              = project.$.originalChecksum = false
-                          }}><span class="remove-attribution">remove attribution</span></a>
-                        </>}
-                      </div>
-                      : <div class="song-author">
-                        <a href={`/${author}`} onclick={services.$.linkTo(`/${author}`)}>
-                          <span class="by">by</span>
-                          <span class="author">{author}</span>
-                        </a>
-                      </div>}
-                  </div>
-
-                  <div class="song-note">
-                    {(relatedProjects.get(project)?.length ?? 0) > 0 &&
-                      new URL(services.$.href).searchParams.get('expand') !== 'true'
-                      && <a href={pathname + '?expand=true'} class="song-more" onclick={services.$.linkTo((pathname) + '?expand=true')}>+{(relatedProjects.get(project)?.length ?? 0)} more</a>
-                    }
-
-                    <a class="song-time-ago" title={toDate(date).toLocaleString()} href={pathname} onclick={services.$.linkTo(pathname)}>
-                      {timeAgo(date, new URL(services.$.href).pathname.split('/').length > 2)}
-                    </a>
-                  </div>
-
-                  <div class="song-bpm">
-                    <span class="amt">{bpm}</span>
-                    <span class="bpm">BPM</span>
-                  </div>
-
                 </div>
-              </div>
 
-              {didExpand ? <div
-                class={classes({
-                  none: !expanded
-                })}
-              >
-                <Players />
               </div>
-                : expanded && <Players />}
-            </>
-          }))
+              {originalChecksum && originalAuthor
+                ? <div class="song-author">
+
+                  <a href={`/${originalAuthor}`} onclick={services.$.linkTo(originalAuthor)}>
+                    <span class="by">by</span>
+                    <span class="author">{originalAuthor}</span>
+                  </a>
+
+                  {originalAuthor !== author && <>
+                    <span class="dash">&mdash;</span>
+
+                    <a href={`/${author}`} onclick={services.$.linkTo(author)}>
+                      <span class="remix-by">remix by</span>
+                      <span class="author">{author}</span>
+                    </a>
+                  </>}
+
+                  {project.$.isDraft && <>
+                    <span class="dash">&mdash;</span>
+
+                    <a href={`/${originalAuthor}/${project.$.originalChecksum}`} onclick={services.$.linkTo(`/${originalAuthor}/${project.$.originalChecksum}`)}>
+                      <span class="original">original</span>
+                    </a>
+
+                    <span class="dash">&mdash;</span>
+
+                    <a href="javascript:;" onclick={(e) => {
+                      e.preventDefault()
+                      e.stopPropagation()
+                      project.$.originalAuthor
+                        = project.$.originalChecksum = false
+                    }}><span class="remove-attribution">remove attribution</span></a>
+                  </>}
+                </div>
+                : <div class="song-author">
+                  <a href={`/${author}`} onclick={services.$.linkTo(`/${author}`)}>
+                    <span class="by">by</span>
+                    <span class="author">{author}</span>
+                  </a>
+                </div>}
+            </div>
+
+            <div class="song-note">
+              {(relatedProjects.get(project)?.length ?? 0) > 0 &&
+                new URL(services.$.href).searchParams.get('expand') !== 'true'
+                && <a href={pathname + '?expand=true'} class="song-more" onclick={services.$.linkTo((pathname) + '?expand=true')}>+{(relatedProjects.get(project)?.length ?? 0)} more</a>
+              }
+
+              <a class="song-time-ago" title={toDate(date).toLocaleString()} href={pathname} onclick={services.$.linkTo(pathname)}>
+                {timeAgo(date, new URL(services.$.href).pathname.split('/').length > 2)}
+              </a>
+            </div>
+
+            <div class="song-bpm">
+              <span class="amt">{bpm}</span>
+              <span class="bpm">BPM</span>
+            </div>
+
+          </div>
+        )
+      })))
       )
-    )
-    )
+    })
+
+    fx(({ project, expanded, waveformView }) => {
+      $.view = <>
+        <div class="project" key={project} onpointerdown={$.onProjectExpand}>
+          <div class="waveform">
+            {waveformView}
+            <div class="waveform-over" />
+            <div class="half" />
+          </div>
+
+          <SongView />
+        </div>
+
+        {$.didExpand
+          ? <div class={classes({ none: !expanded })}>
+            <Players />
+          </div>
+          : expanded && <div>
+            <Players />
+          </div>}
+      </>
+    })
   }
 ))

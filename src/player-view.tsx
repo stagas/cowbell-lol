@@ -1,17 +1,15 @@
 /** @jsxImportSource minimal-view */
 
 import { chain, element, view, web } from 'minimal-view'
-import { Selected } from './app'
-import { Button } from './button'
-import { Player } from './player'
-import { TrackView, TrackViewHandler } from './track-view'
-import { services } from './services'
-import { get } from './util/list'
-import { Volume } from './volume'
-import { Focused } from './project-view'
-import { NumberInput } from './number-input'
-import { observe } from './util/observe'
 import { anim } from './anim'
+import { Button } from './button'
+import { NumberInput } from './number-input'
+import { Player } from './player'
+import { services } from './services'
+import { TrackView, TrackViewHandler } from './track-view'
+import { get } from './util/list'
+import { observe } from './util/observe'
+import { Volume } from './volume'
 
 export type PlayerView = typeof PlayerView.State
 
@@ -19,11 +17,8 @@ export const PlayerView = web(view('player-view',
   class props {
     id!: string
     y!: number
-    focused!: Focused
-    selected!: Selected
     player!: Player
     active!: boolean
-
     onSoundSelect!: TrackViewHandler
     onPatternSelect!: TrackViewHandler
   },
@@ -187,7 +182,7 @@ export const PlayerView = web(view('player-view',
                 {
                   fill: 'forwards',
                   easing: 'linear',
-                  duration: ((totalBars - x * totalBars) / services.$.audio!.$.coeff) * 1000
+                  duration: ((totalBars - x * totalBars) / services.$.audio!.$.clock.coeff) * 1000
                 }
               )
             })
@@ -200,66 +195,85 @@ export const PlayerView = web(view('player-view',
     )
 
     fx(() => services.$.library.fx(({ sounds, patterns }) =>
-      fx(({ player, y, active, focused, selected, onSoundSelect, onPatternSelect }) =>
-        player.fx(({ state, sound, pattern, patterns: _ }) => {
-          $.view = <>
-            <div class="controls raised" part="controls">
-              <Volume target={player} />
+      fx(({ player, y, active, onSoundSelect, onPatternSelect }) =>
+        player.fx(({ project, state, sound, pattern, patterns: _ }) =>
+          project.fx(({ selectedPreset }) => {
+            const focus = selectedPreset.$.kind
+            $.view = <>
+              <div class="controls raised" part="controls">
+                <Volume target={player} />
 
-              <Button
-                rounded
-                active={state === 'running'}
-                onClick={player.$.toggle}
-              >
-                <span class={`i la-${state === 'running' ? 'pause' : 'play'}`} />
-              </Button>
-            </div>
+                <Button
+                  rounded
+                  active={state === 'running'}
+                  onClick={player.$.toggle}
+                >
+                  <span class={`i la-${state === 'running' ? 'pause' : 'play'}`} />
+                </Button>
+              </div>
 
-            <div class="sound">
-              <TrackView
-                sliders
-                active={active && (
-                  focused === 'sound'
-                  || (focused === 'sounds' && selected.preset === sound)
-                )}
-                live={active && focused === 'sounds'}
-                services={services}
-                didDisplay={true}
-                player={player}
-                sound={get(sounds, sound)!}
-                pattern={false}
-                clickMeta={{ id: sound, y }}
-                onClick={onSoundSelect}
+              <div class="sound">
+                <TrackView
+                  sliders
+                  active={
+                    active
+                    && focus === 'sound'
+                    && selectedPreset.$.id === sound
+                  }
+                  live={
+                    active
+                    && focus === 'sound'
+                    && selectedPreset.$.id !== sound
+                  }
+                  didDisplay={true}
+                  player={player}
+                  sound={get(sounds, sound)!}
+                  pattern={false}
+                  clickMeta={{ id: sound, y }}
+                  onClick={onSoundSelect}
+                />
+              </div>
+
+              <div class="patterns" ref={refs.patternsEl}>
+                <div class="ruler" ref={refs.rulerEl} />
+                {
+                  player.$.patterns.map((id, x) => {
+                    const p = get(patterns, id)!
+                    return <TrackView
+                      active={
+                        active
+                        && pattern === x
+                        && focus === 'pattern'
+                        && selectedPreset.$.id === id
+                      }
+                      live={
+                        active
+                        && focus === 'pattern'
+                        && pattern === x
+                        && selectedPreset.$.id !== id
+                      }
+                      xPos={x}
+                      player={player}
+                      sound={false}
+                      pattern={p}
+                      didDisplay={true}
+                      clickMeta={{ id, x, y }}
+                      onClick={onPatternSelect}
+                    />
+                  })
+                }
+              </div>
+
+              <NumberInput
+                class="page-select"
+                align="x"
+                min={1}
+                max={99}
+                step={1}
+                value={player.deps.page}
               />
-            </div>
-
-            <div class="patterns" ref={refs.patternsEl}>
-              <div class="ruler" ref={refs.rulerEl} />
-              {
-                player.$.patterns.map((id, x) => {
-                  const p = get(patterns, id)!
-                  return <TrackView
-                    active={active && pattern === x && (
-                      (focused === 'pattern')
-                      || (focused === 'patterns' && selected.preset === id)
-                    )}
-                    live={active && focused === 'patterns' && pattern === x}
-                    xPos={x}
-                    services={services}
-                    player={player}
-                    sound={false}
-                    pattern={p}
-                    didDisplay={true}
-                    clickMeta={{ id, x, y }}
-                    onClick={onPatternSelect}
-                  />
-                })
-              }
-            </div>
-
-            <NumberInput class="page-select" min={1} max={99} step={1} value={player.deps.page} align="x" />
-          </>
-        })
+            </>
+          }))
       ))
     )
   }

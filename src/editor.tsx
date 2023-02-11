@@ -15,7 +15,7 @@ import { getErrorInputLine, getErrorToken } from './util/parse'
 export const Editor = web(view('editor',
   class props {
     name!: string
-    player!: Player | false
+    player!: Player
     buffer!: EditorBuffer
     readableOnly?= false
     initialFontSize?= window.innerHeight > 900 ? 15.5 : 14
@@ -80,8 +80,8 @@ export const Editor = web(view('editor',
       host.setAttribute('state', state)
 
       // TODO: better way to react on state from parent
-      const parent = ((host.getRootNode() as ShadowRoot).host.getRootNode() as ShadowRoot).host
-      parent?.setAttribute('state', state)
+      // const parent = ((host.getRootNode() as ShadowRoot).host.getRootNode() as ShadowRoot).host
+      // parent?.setAttribute('state', state)
     })
 
     // have a local copy of buffer's properties so we can
@@ -298,7 +298,6 @@ export const Editor = web(view('editor',
           style="width: 100%; height: 100%; flex: 1;"
           name={name}
           font={`${app.$.distRoot}/fonts/JetBrainsMono-Light.ttf`}
-          // fontName="JetBrains Mono"
           fontSize={fontSize}
           singleComment="\"
           scene={services.$.editorScene}

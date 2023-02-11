@@ -4,12 +4,13 @@ import { chain, queue, reactive } from 'minimal-view'
 import { MonoNode } from 'mono-worklet'
 import { LoopKind, SchedulerEventGroupNode } from 'scheduler-node'
 import { anim } from './anim'
-import { app } from './app'
 import { Audio, AudioState } from './audio'
 import { AudioPlayer } from './audio-player'
 import { EditorBuffer } from './editor-buffer'
 import { Library } from './library'
-import { Project, Route } from './project'
+import { Project } from './project'
+import { projects } from './projects'
+import { Route } from './route'
 import { services } from './services'
 import { fixed, markerForSlider, Slider } from './slider'
 import { Sliders } from './types'
@@ -17,7 +18,6 @@ import { areSlidersCompatible, getCodeWithoutArgs } from './util/args'
 import { add, del, derive, findEqual, get, getMany } from './util/list'
 import { MIDIMessageEvent } from './util/midi-message-event'
 import { noneOf, oneOf } from './util/one-of'
-import { spacer } from './util/storage'
 
 const { clamp } = Scalar
 
@@ -105,7 +105,7 @@ export const Player = reactive('player',
         if ($.project) {
           if (noneOf($.audio.$.state, 'restarting', 'preparing', 'running')) {
             $.audio.$.bpm = $.project.$.bpm!
-            app.$.project = $.project
+            projects.$.project = $.project
           }
 
           $.project.$.audio = $.audio
@@ -266,10 +266,12 @@ export const Player = reactive('player',
 
         const [ctor, newBufferData] = derive(buffers as any, bufferId, { value: newBufferValue } as any)
 
-        const equalItem = findEqual(buffers as any, bufferId, newBufferData as any)
+        const equalItem: false | EditorBuffer = findEqual(buffers as any, bufferId, newBufferData as any)
+
+        // TODO: fix editor snapshots
 
         if (!buffer.$.isDraft) {
-          const newBuffer = ctor(newBufferData)
+          const newBuffer: EditorBuffer = ctor(newBufferData) as EditorBuffer
           newBuffer.$.originalValue = buffer.$.value
 
           if (editor) {
@@ -281,27 +283,27 @@ export const Player = reactive('player',
           const newBuffers = add(buffers, newBuffer, index + 1)
 
           if (kind === 'sound') {
-            spacer.set(newBuffer.$.id!, spacer.get(bufferId, [0, 0.35]))
             library.$.sounds = newBuffers as any
             $.sound = newBuffer.$.id!
+            $.project!.$.selectedPreset = newBuffer
           } else if (kind === 'pattern') {
             library.$.patterns = newBuffers as any
             const patterns = [...$.patterns]
             patterns[$.pattern] = newBuffer.$.id!
             $.patterns = patterns
+            $.project!.$.selectedPreset = newBuffer
           }
         } else {
-          // @ts-ignore
           if (equalItem && !equalItem.$.isDraft) {
             if (editor) {
               const snapshot = editor.editor.getSnapshotJson(true)
-              // @ts-ignore
               equalItem.$.snapshot = snapshot
             }
 
             if (kind === 'sound') {
               library.$.sounds = del(library.$.sounds, buffer)
               $.sound = equalItem.$.id!
+              $.project!.$.selectedPreset = equalItem
             } else if (kind === 'pattern') {
               library.$.patterns = del(library.$.patterns, buffer)
               const pat = $.patterns[$.pattern ?? 0]
@@ -309,6 +311,7 @@ export const Player = reactive('player',
                 .join(',')
                 .replaceAll(pat, equalItem.$.id!)
                 .split(',')
+              $.project!.$.selectedPreset = equalItem
             }
           } else {
             return true
@@ -359,7 +362,7 @@ export const Player = reactive('player',
         const start = end - source.default.length
 
         const nextDefault = `${sliderValue}`
-        if (nextDefault === source.default) return
+        if (nextDefault === source.default) return slider
 
         const before = buffer.$.value.slice(0, start)
         const after = buffer.$.value.slice(end)
@@ -397,8 +400,9 @@ export const Player = reactive('player',
           } else {
             buffer.$.value = newBufferValue
           }
-
         }
+
+        return slider
       })
 
       derive = () =>
@@ -417,7 +421,7 @@ export const Player = reactive('player',
           sound: get(library.$.sounds, page.sound)!.$.checksum!,
           patterns: getMany(library.$.patterns, page.patterns).map((p) => p!.$.checksum!)
         })),
-        routes: [...$.routes!].filter(([id, route]) =>
+        routes: [...$.routes!].filter(([, route]) =>
           route.$.targetId === 'dest'
             ? route.$.amount < 1
             : route.$.amount > 0
@@ -527,7 +531,6 @@ export const Player = reactive('player',
           const monoNode = $.monoNode = await monoNodePool.acquire()
           const gainNode = $.gainNode = await gainNodePool.acquire()
           const groupNode = $.groupNode = await groupNodePool.acquire()
-          // const analyserNode = $.analyserNode = await analyserNodePool.acquire()
 
           audio.$.connectedNodes.add(monoNode)
           audio.$.connectedNodes.add(gainNode)
@@ -535,7 +538,6 @@ export const Player = reactive('player',
 
           groupNode.connect(monoNode)
           groupNode.suspend(monoNode)
-          // gainNode.connect(destNode)
           monoNode.connect(gainNode)
 
           console.log('create', $.sound)
@@ -557,11 +559,12 @@ export const Player = reactive('player',
             setTimeout(() => {
               monoNode.suspend()
               disconnect(monoNode, gainNode)
-              // disconnect(gainNode, destNode)
               disconnect(groupNode, monoNode)
 
               monoNodePool.release(monoNode)
               gainNodePool.release(gainNode)
+
+              // TODO: should we release groupNodes?
               // groupNodePool.release(groupNode)
             }, 250)
           }
@@ -579,6 +582,8 @@ export const Player = reactive('player',
         groupNode.resume(monoNode)
         monoNode.resume()
         monoNode.connect(gainNode)
+
+        // TODO: is this necessary to idle completely?
         // gainNode.connect(audioPlayer.$.destNode!)
 
         clearTimeout(suspendTimeout)
@@ -669,6 +674,8 @@ export const Player = reactive('player',
       )
     )
 
+    // TODO: the following two fx seem way too complicated.
+
     fx(({ project, routes, cachedSliders }) =>
       project.fx(({ players }) =>
         chain(
@@ -739,28 +746,28 @@ export const Player = reactive('player',
     )
 
     fx(({ project, audioPlayer }) =>
-      audioPlayer.fx(({ destNode }) =>
+      audioPlayer.fx(({ destNode: _d }) =>
         project.fx(({ players }) =>
           chain(
             players.map((player) =>
               player.fx(({ audioPlayer }) =>
-                audioPlayer.fx(({ destNode }) => {
+                audioPlayer.fx(({ destNode: _d }) => {
                   if (players.every((p) => p.$.audioPlayer?.$.destNode)) {
                     players.forEach((p) => {
                       const paramId = `${p.$.id}::dest`
                       if (!p.$.routes!.has(paramId)) {
-                        p.$.routes!.set(paramId,
-                          Route({
+                        p.$.routes = new Map([
+                          [paramId, Route({
                             sourcePlayer: p,
                             targetPlayer: p,
                             targetId: 'dest',
                             amount: 1,
-                          })
-                        )
+                          })]
+                        ])
                       }
                     })
                     return fx(({ sendSliders, routes }) => {
-                      return chain([...sendSliders].flatMap(([targetId, sliders]) => [...sliders].map(([paramId, slider]) =>
+                      return chain([...sendSliders].flatMap(([, sliders]) => [...sliders].map(([paramId, slider]) =>
                         slider.fx(({ value }) => {
                           const [targetPlayerId, targetId] = paramId.split('::')
 

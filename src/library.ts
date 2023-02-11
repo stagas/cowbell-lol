@@ -1,7 +1,7 @@
 import { queue, reactive } from 'minimal-view'
 import { demo } from './demo-code'
 import { EditorBuffer } from './editor-buffer'
-import { cachedProjects } from './services'
+import { cachedProjects } from './projects'
 import { checksumId } from './util/checksum-id'
 import { storage } from './util/storage'
 

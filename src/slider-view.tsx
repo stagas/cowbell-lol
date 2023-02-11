@@ -1,5 +1,6 @@
 /** @jsxImportSource minimal-view */
 
+import { once } from 'everyday-utils'
 import { Point, Rect } from 'geometrik'
 import { chain, Dep, element, on, queue, view, web } from 'minimal-view'
 import { app } from './app'
@@ -8,7 +9,7 @@ import { services } from './services'
 import { Slider } from './slider'
 import { observe } from './util/observe'
 
-let downSlider = false
+let handling = false
 
 const yDims = ['height', 'minHeight', 'maxHeight'] as const
 const xDims = ['width', 'minWidth', 'maxWidth'] as const
@@ -39,17 +40,21 @@ export const SliderView = web(view('slider-view',
   },
 
   function actions({ $, fn, fns }) {
-    let handling = false
+    let downSlider = false
 
     return fns(new class actions {
       handleLeave = () => {
         app.$.hint = ''
       }
 
-      handleDown = fn(({ host, id, vertical, slider }) => (e: PointerEvent) => {
-        app.$.hint = `${slider.$.name} ${slider.$.value.toFixed(3)}`
+      handleDown = fn(({ host, id, vertical }) => (e: PointerEvent) => {
+        const leftButtonDown = Boolean(e.buttons & 1)
 
-        if (handling || !(e.buttons & 1)) return
+        if (!leftButtonDown) {
+          app.$.hint = `${$.slider.$.name} ${$.slider.$.value.toFixed(3)}`
+        }
+
+        if (handling || !leftButtonDown) return
 
         if (e.type === 'pointerdown') {
           downSlider = true
@@ -86,13 +91,20 @@ export const SliderView = web(view('slider-view',
 
           const size = Math.max(0, Math.min(ownRect[dim], newSize))
           const normal = size / ownRect[dim]
+
+          let slider: Slider | undefined
           if ($.player) {
-            $.player.$.onSliderNormal(id, normal)
+            slider = $.player.$.onSliderNormal(id, normal)
+            if (!slider) {
+              finish()
+              return
+            }
           } else {
             $.slider.$.normal = normal
+            slider = $.slider
           }
           requestAnimationFrame(() => {
-            app.$.hint = `${slider.$.name} ${slider.$.value.toFixed(3)}`
+            app.$.hint = `${slider!.$.name} ${slider!.$.value.toFixed(3)}`
           })
         }
 
@@ -102,8 +114,9 @@ export const SliderView = web(view('slider-view',
           moveTo(getPointerPos(e))
         })
 
-        on(window, 'pointerup').once((e) => {
+        const finish = once(() => {
           off()
+          app.$.hint = ''
           handling = false
           downSlider = false
           requestAnimationFrame(() => {
@@ -111,6 +124,8 @@ export const SliderView = web(view('slider-view',
             host.toggleAttribute('drag', false)
           })
         })
+
+        on(window, 'pointerup').once.capture(finish)
       })
 
       processWheel = queue.raf((e: WheelEvent) => {
@@ -179,7 +194,7 @@ export const SliderView = web(view('slider-view',
           ${vertical ? 'right' : 'bottom'}: 4px;
           color: #fff;
           ${vertical ? 'top' : 'left'}: calc(50% - 10px);
-          line-height: 20px;
+          line-height: 17.25px;
           vertical-align: middle;
           white-space: nowrap;
           ${vertical ? '' : `
@@ -188,8 +203,8 @@ export const SliderView = web(view('slider-view',
           `}
           transform: scaleY(-1) scaleX(-1);
           direction: ltr;
-          font-family: ${skin.fonts.slab};
-          font-weight: bold;
+          font-family: ${skin.fonts.sans};
+          font-size: 15px;
           text-shadow: -1px 1px #000;
           pointer-events: none;
           user-select: none;

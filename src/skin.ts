@@ -252,12 +252,10 @@ a {
 
 ${Knob} {
   box-sizing: border-box;
-  /* padding: 0px 3.5px; */
   max-width: 40px;
   max-height: 40px;
   position: relative;
   top: .5px;
-  /* transform: rotate(-45deg); */
 
   --white: ${skin.colors.bgPale};
   --grey: ${skin.colors.fg};
@@ -267,11 +265,7 @@ ${Knob} {
   &::part(line),
   &::part(fill-value) {
     stroke: ${skin.colors.fg};
-    /* display: none; */
   }
-  /* display: inline-block; */
-  /* min-width: 20px; */
-  /* flex: 1; */
 }
 
 .wrapper {
@@ -309,7 +303,6 @@ ${Knob} {
 }
 
 .controls {
-  /* min-width: 126px; */
   z-index: 4;
   display: flex;
   flex-flow: row nowrap;
@@ -384,6 +377,14 @@ ${PlayerView} {
       gap: 9px;
     }
   }
+}
+
+.trackviews {
+  display: flex;
+  width: 100%;
+  height: 100%;
+  flex: 1;
+  overflow: hidden;
 }
 `
 

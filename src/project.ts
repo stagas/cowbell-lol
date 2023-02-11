@@ -1,21 +1,23 @@
-import { attempt, cheapRandomId, pick } from 'everyday-utils'
+import { cheapRandomId, filterMap, pick } from 'everyday-utils'
 import { chain, queue, reactive } from 'minimal-view'
-import { Audio, AudioState } from './audio'
-import { EditorBuffer } from './editor-buffer'
-import { Player, PlayerPage } from './player'
-import { cachedProjects, services } from './services'
-import { get, getByChecksum, getMany } from './util/list'
-import { Library, toBuffer } from './library'
-import { demo } from './demo-code'
-import { checksumId } from './util/checksum-id'
-import { schemas } from './schemas'
+import { Audio, AudioState, lastRunningPlayers } from './audio'
 import { AudioPlayer } from './audio-player'
-import { noneOf, oneOf } from './util/one-of'
+import { demo } from './demo-code'
+import { EditorBuffer } from './editor-buffer'
+import { Library, toBuffer } from './library'
+import { Player, PlayerPage } from './player'
+import { startTemporaryPresetsSmoothScroll } from './player-editor'
+import { cachedProjects, getPlayingProjects, projects } from './projects'
+import { Route } from './route'
+import { schemas } from './schemas'
+import { services } from './services'
+import { checksumId } from './util/checksum-id'
 import { filterState } from './util/filter-state'
-import { storage } from './util/storage'
 import { getDateTime } from './util/get-datetime'
+import { get, getByChecksum, getMany, replaceAtIndex } from './util/list'
+import { noneOf, oneOf } from './util/one-of'
 import { slugify } from './util/slugify'
-import { app } from './app'
+import { storage } from './util/storage'
 
 export type ProjectJson = {
   checksum: string
@@ -46,83 +48,6 @@ export const projectsById = new Map<string, Project>()
 
 export const relatedProjects = new Map<Project, Project[]>()
 
-export type Route = typeof Route.State
-export const Route = reactive('route',
-  class props {
-    sourcePlayer!: Player
-    targetPlayer?: Player
-    targetNode?: AudioNode | AudioParam
-    targetId!: string
-    amount!: number
-  },
-
-  class local {
-    sourceNode?: AudioNode
-    gainNode?: GainNode
-  },
-
-  function actions({ $, fns, fn }) {
-    return fns(new class actions {
-    })
-  },
-
-  function effects({ $, fx }) {
-    fx(({ targetPlayer, targetId }) => {
-      if (targetId === 'vol') {
-        return targetPlayer.fx(({ gainNode }) => {
-          $.targetNode = gainNode.gain
-        })
-      } else if (targetId === 'input') {
-        return targetPlayer.fx(({ monoNode }) => {
-          $.targetNode = monoNode
-        })
-      } else if (targetId === 'dest') {
-        return targetPlayer.fx(({ audioPlayer }) =>
-          audioPlayer.fx(({ destNode }) => {
-            $.targetNode = destNode
-          })
-        )
-      } else {
-        return targetPlayer.fx(({ monoNode, compileState }) => {
-          if (compileState === 'compiled') {
-            $.targetNode = monoNode.params.get(targetId)!.audioParam
-          }
-        })
-      }
-    })
-
-    fx(({ sourcePlayer }) =>
-      sourcePlayer.fx(({ gainNode }) => {
-        $.sourceNode = gainNode
-      })
-    )
-
-    fx(() => services.fx(({ audio }) =>
-      audio.fx(async ({ gainNodePool }) => {
-        const gainNode = $.gainNode = await gainNodePool.acquire()
-        gainNode.gain.value = $.amount
-        return () => {
-          attempt(() => gainNode.disconnect(), true)
-          attempt(() => gainNodePool.release(gainNode), true)
-        }
-      })
-    ))
-
-    fx(({ gainNode, amount }) => {
-      services.$.audio!.$.setParam(gainNode.gain, amount)
-    })
-
-    fx(({ sourceNode, targetNode, gainNode }) => {
-      sourceNode.connect(gainNode)
-      gainNode.connect(targetNode as AudioNode) // TODO: why doesn't AudioParam overload here?
-      return () => {
-        attempt(() => sourceNode.disconnect(gainNode), true)
-        attempt(() => gainNode.disconnect(targetNode as AudioNode), true)
-      }
-    })
-  }
-)
-
 export type Project = typeof Project.State
 
 export const Project = reactive('project',
@@ -143,18 +68,22 @@ export const Project = reactive('project',
   },
   class local {
     state: AudioState = 'init'
+    library?: Library
+    audio?: Audio | null
+    audioPlayer = AudioPlayer({})
     firstChecksum?: string
     vols?: string
     startedAt: number = 0
     pathname?: string
-    audio?: Audio | null
-    audioPlayer = AudioPlayer({})
-    library?: Library
     players: Player[] = []
+    selectedPlayer = 0
+    selectedPreset?: EditorBuffer
+    editorVisible = false
   },
   function actions({ $, fx, fn, fns }) {
     let projectLoadPromise: Promise<void>
     let lastSavedJson: ProjectJson | undefined
+    let lastPlaylistSearchParams = ''
     let resetStateTimeout: any
     return fns(new class actions {
       // Audio
@@ -263,7 +192,28 @@ export const Project = reactive('project',
         this.save(true)
       })
 
-      save = (force?: boolean) => {
+      getPlaylistSearchParams = (): { p?: string } => {
+        let playingProjects: Project[] = getPlayingProjects()
+        if (!playingProjects.length) playingProjects = projects.$.playing as Project[]
+
+        let p: string = playingProjects.map((p) => [
+          p.$.checksum,
+          filterMap(p.$.players, (x, y) => (x.$.state === 'running' || lastRunningPlayers.has(x)) && y).join('.')
+        ].filter(Boolean).join('-')
+        ).join('--')
+
+        if (!p) {
+          p = lastPlaylistSearchParams
+        }
+
+        if (!p) return {}
+
+        lastPlaylistSearchParams = p
+
+        return { p }
+      }
+
+      save = (force?: boolean): void => {
         if (!force && !lastSavedJson && !$.players.length) return
 
         if (force
@@ -300,7 +250,7 @@ export const Project = reactive('project',
                   : location.search.replace(lastChecksum, json.checksum)
               ),
               isPlaylist
-                ? app.$.getPlaylistSearchParams()
+                ? this.getPlaylistSearchParams()
                 : {},
               true
             )
@@ -442,6 +392,8 @@ export const Project = reactive('project',
 
         const bufferIds = [...new Set(tracks.flatMap((t) => [t.soundId, ...t.patternIds]))]
 
+        // console.log('GET BUFFER IDS', bufferIds, tracks.flatMap(t => [t.soundId, ...t.patternIds]))
+
         endpoint = `/buffers?ids=${bufferIds}`
         res = await services.$.apiRequest(endpoint)
         if (!res.ok) {
@@ -464,6 +416,9 @@ export const Project = reactive('project',
         const tracksOrdered = p.trackIds.map((trackId) =>
           tracks.find((t) => t.id === trackId)!
         )
+
+        // console.log('TRACKS ORDERED', tracksOrdered)
+        // console.log('MIXER', p.mixer)
 
         const players: ProjectJson['players'] = (p.mixer as { vol: number, pages?: number[], routes?: [number, string, number][] }[]).map(({ vol, pages, routes }, i) => {
           if (!pages || pages.length === 0) {
@@ -488,7 +443,7 @@ export const Project = reactive('project',
 
             return {
               sound: t.soundId,
-              patterns: t.patternIds
+              patterns: [...t.patternIds]
             }
           })
 
@@ -501,6 +456,8 @@ export const Project = reactive('project',
           }
         })
 
+        // console.log('NEW SOUNDS', newSounds)
+        // console.log('NEW PATTERNS', newPatterns)
         library.$.sounds = [...library.$.sounds, ...newSounds]
         library.$.patterns = [...library.$.patterns, ...newPatterns]
 
@@ -524,6 +481,7 @@ export const Project = reactive('project',
       })
 
       fromJSON = fn(({ players, library }) => (json: ProjectJson) => {
+        // console.log('FROM JSON', json)
         try {
           json.players.forEach((player) => {
             if (!player.pages || player.pages.length === 0) {
@@ -534,16 +492,16 @@ export const Project = reactive('project',
                 patterns: player.patterns.slice()
               }]
 
-              player.sound = getByChecksum(library.$.sounds, player.sound)!.$.id!
+              player.sound = getByChecksum(library.$.sounds, player.sound, true)!.$.id!
               player.patterns.forEach((pattern, i) => {
-                player.patterns![i] = getByChecksum(library.$.patterns, pattern)!.$.id!
+                player.patterns![i] = getByChecksum(library.$.patterns, pattern, true)!.$.id!
               })
             }
 
             player.pages.forEach((page) => {
-              page.sound = getByChecksum(library.$.sounds, page.sound)!.$.id!
+              page.sound = getByChecksum(library.$.sounds, page.sound, true)!.$.id!
               page.patterns.forEach((pattern, i) => {
-                page.patterns[i] = getByChecksum(library.$.patterns, pattern)!.$.id!
+                page.patterns[i] = getByChecksum(library.$.patterns, pattern, true)!.$.id!
               })
             })
           })
@@ -643,6 +601,75 @@ export const Project = reactive('project',
           $.checksum = checksumId(payload)
         }
       }))
+
+      // player
+
+      onPlayerSoundSelect = (_: string, { y }: { y: number }) => {
+        const player = $.players[y]
+
+        if ($.editorVisible && $.selectedPreset!.$.kind === 'sound' && $.selectedPlayer === y && $.selectedPreset === player.$.soundBuffer) {
+          $.editorVisible = false
+        } else {
+          if ($.editorVisible && $.selectedPlayer === y && $.selectedPreset!.$.kind === 'sound') {
+            startTemporaryPresetsSmoothScroll($.id!)
+          }
+          $.editorVisible = true
+          $.selectedPlayer = y
+          $.selectedPreset = player.$.soundBuffer!
+        }
+      }
+
+      onPlayerPatternSelect = (id: string, { x, y }: { x: number, y: number }) => {
+        const player = $.players[y]
+
+        if ($.editorVisible && $.selectedPreset!.$.kind === 'pattern' && $.selectedPlayer === y && player.$.pattern === x && $.selectedPreset === player.$.patternBuffers![player.$.pattern]) {
+          $.editorVisible = false
+        } else {
+          if ($.editorVisible && $.selectedPlayer === y && $.selectedPreset!.$.kind === 'pattern') {
+            startTemporaryPresetsSmoothScroll($.id!)
+          }
+          $.editorVisible = true
+          $.selectedPlayer = y
+          $.selectedPreset = player.$.patternBuffers![player.$.pattern = x]
+        }
+      }
+
+      onPlayerPatternPaste = (id: string, { x, y }: { x: number, y: number }) => {
+        const selectedPlayer = $.players[$.selectedPlayer!]
+
+        const p = selectedPlayer.$.pattern
+
+        if (x !== p || y !== $.selectedPlayer) {
+          const targetPlayer = $.players[y]
+
+          const pattern = selectedPlayer.$.patterns[p]
+
+          targetPlayer.$.patterns = replaceAtIndex(
+            targetPlayer.$.patterns,
+            x,
+            pattern
+          )
+        }
+      }
+
+      onPlayerPatternInsert = (id: string, { x, y }: { x: number, y: number }) => {
+        const player = $.players[y]
+        const patterns = [...player.$.patterns]
+        const pattern = patterns[x]
+        patterns.splice(x + 1, 0, pattern)
+        player.$.patterns = patterns
+      }
+
+      onPlayerPatternDelete = (id: string, { x, y }: { x: number, y: number }) => {
+        const player = $.players[y]
+        const patterns = player.$.patterns
+
+        if (patterns.length === 1) return
+
+        patterns.splice(x, 1)
+
+        player.$.pattern = Math.min(player.$.pattern, patterns.length - 1)
+      }
     })
   },
   function effects({ $, fx }) {
@@ -766,5 +793,12 @@ export const Project = reactive('project',
         relatedProjects.set($.self, related)
       })
     )
+
+    const off = fx(({ players }) => {
+      if (players.length) return players[0].fx(({ soundBuffer }) => {
+        $.selectedPreset = soundBuffer
+        off()
+      })
+    })
   }
 )

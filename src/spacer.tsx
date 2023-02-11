@@ -1,7 +1,7 @@
 /** @jsxImportSource minimal-view */
 
 import { Point, Rect, Scalar } from 'geometrik'
-import { chain, element, on, queue, view, web } from 'minimal-view'
+import { chain, element, on, part, view, web } from 'minimal-view'
 import { Layout } from './layout'
 import { observe } from './util/observe'
 import { spacer } from './util/storage'
@@ -37,7 +37,6 @@ export const Spacer = web(view('spacer',
     rect?: Rect
     cells!: number[]
     intents!: number[]
-    handles?: JSX.Element[]
   },
 
   function actions({ $, fn, fns }) {
@@ -121,7 +120,7 @@ export const Spacer = web(view('spacer',
         })
       })
 
-      resize = fn(({ host, align, layout }) => queue.raf(() => {
+      resize = fn(({ host, align, layout }) => () => {
         const [, oppDim] = dims(align)
 
         const scrollTop = document.documentElement.scrollTop
@@ -130,8 +129,7 @@ export const Spacer = web(view('spacer',
           ...$.rect.toStyleSize(),
           [oppDim]: '100%'
         })
-      }))
-
+      })
     })
   },
 
@@ -216,47 +214,60 @@ export const Spacer = web(view('spacer',
       spacer.set(id, intents)
     })
 
-    fx(function drawHandles({ cells, align }) {
-      const [, , pos] = dims(align)
-      $.handles = cells.slice(1).map((p, i) =>
-        <div
-          part="handle"
-          style={{
-            [pos]: `min(calc(100% - 2.5px), max(2.5px, ${p * 100}%))`,
-            zIndex:
-              999999999
-              + (p < 0.01 ? i : p > 0.99 ? (cells.length - i) : 0)
-          }}
-          onpointerdown={function (this: HTMLDivElement, e) {
-            e.preventDefault()
-            $.handleDown(this, e, i + 1)
-          }}
-        ></div>
-      )
+    const Handles = part((update) => {
+      fx(function drawHandles({ cells, align }) {
+        const [, , pos] = dims(align)
+        update(
+          cells.slice(1).map((p, i) =>
+            <div
+              key={`handle-${i}`}
+              part="handle"
+              style={{
+                [pos]: `min(calc(100% - 2.5px), max(2.5px, ${p * 100}%))`,
+                zIndex:
+                  70
+                  + (p < 0.01 ? i : p > 0.99 ? (cells.length - i) : 0)
+              }}
+              onpointerdown={function (this: HTMLDivElement, e) {
+                e.preventDefault()
+                $.handleDown(this, e, i + 1)
+              }}
+            ></div>
+          )
+        )
+      })
     })
 
-    fx(function drawSpacer({ layout, handles, reverse, children, cells, align }) {
-      children = (Array.isArray(children) ? children : [children])
+    const Items = part((update) => {
+      fx(function drawSpacer({ layout, reverse, children, cells, align }) {
+        children = (Array.isArray(children) ? children : [children])
 
-      const keys = Array.from({ length: children.length }, (_, i) => `${i + 1}`)
+        const keys = Array.from({ length: children.length }, (_, i) => `item-${i + 1}`)
 
-      if (reverse) {
-        children = [...children].reverse()
-        keys.reverse()
-      }
+        if (reverse) {
+          children = [...children].reverse()
+          keys.reverse()
+        }
 
-      $.view = [
-        children.map((child, i) => {
-          const after = (i < children.length - 1 ? cells[i + 1] : 1)
-          const size = after - cells[i]
-          return <Layout
-            key={keys[i]}
-            layout={layout}
-            size={size}
-            align={align}
-          >{child}</Layout>
-        }),
-        handles
-      ]
+        update(
+          children.map((child, i) => {
+            const after = (i < children.length - 1 ? cells[i + 1] : 1)
+            const size = after - cells[i]
+            return <Layout
+              key={keys[i]}
+              layout={layout}
+              size={size}
+              align={align}
+            >{child}</Layout>
+          })
+        )
+      })
+    })
+
+    fx(() => {
+      $.view = <>
+        <Items />
+        <Handles />
+      </>
     })
   }))

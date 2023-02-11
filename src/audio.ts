@@ -1,11 +1,10 @@
 import { attempt, Deferred } from 'everyday-utils'
 import { on, reactive } from 'minimal-view'
 import { MonoNode } from 'mono-worklet'
-import { SchedulerNode, SchedulerEventGroupNode, SchedulerTargetNode } from 'scheduler-node'
-import { app } from './app'
+import { Clock, SchedulerEventGroupNode, SchedulerNode, SchedulerTargetNode } from 'scheduler-node'
 import { AudioPlayer } from './audio-player'
 import { Player, players } from './player'
-import { cachedProjects } from './services'
+import { projects, cachedProjects } from './projects'
 import { filterState } from './util/filter-state'
 import { oneOf } from './util/one-of'
 import { ObjectPool } from './util/pool'
@@ -32,11 +31,12 @@ export const Audio = reactive('audio',
     })
 
     bpm = storage.bpm.get(135)
-    coeff = 1
+
+    clock = new Clock()
 
     schedulerNode?: SchedulerNode
-    startTime = 0
-    delayStart = 0.2
+    stopTime = 0
+    delayStart = 0.25
     internalTime = -this.delayStart
     repeatStartTime = 0
     repeatState: 'none' | 'turn' | 'bar' = 'none'
@@ -50,9 +50,8 @@ export const Audio = reactive('audio',
     analyserNodePool?: ObjectPool<AnalyserNode>
   },
   function actions({ $, fns, fn }) {
-    let lastReceivedTime = 0
     let repeatIv: any
-    let startPromise: Promise<number>
+    let startPromise: Promise<void>
 
     return fns(new class actions {
       startClick = async (resetTime = true) => {
@@ -68,49 +67,50 @@ export const Audio = reactive('audio',
               }))
             )
           )
-          return Promise.all(
+          await Promise.all(
             audioPlayersToStart.map((audioPlayer) => new Promise<unknown>((resolve) => {
               audioPlayer.$.start().then(resolve)
             }))
           )
         } else {
-          return app.$.project?.$.start()
+          await projects.$.project?.$.start()
         }
       }
 
-      start = fn(({ audioContext, schedulerNode }) => async (resetTime = false) => {
+      start = fn(({ audioContext, schedulerNode, clock }) => async (resetTime = false) => {
         if (oneOf($.state, 'preparing', 'running')) {
           return startPromise
         }
 
-        const deferred = Deferred<number>()
+        const deferred = Deferred<void>()
         startPromise = deferred.promise
 
         $.state = 'preparing'
 
         const now = audioContext.currentTime
-        lastReceivedTime = now
 
         if (resetTime) {
-          this.resetTime()
+          $.stopTime = 0
         }
 
         lastRunningPlayers.clear()
 
-        $.startTime = await schedulerNode.start(now + $.delayStart, $.internalTime + $.delayStart)
+        schedulerNode.start(now + $.delayStart, $.stopTime)
 
         const loop = this.seekTime(-1, true)
         if ($.repeatState === 'bar') {
           $.internalTime = $.repeatStartTime
           clearInterval(repeatIv)
-          repeatIv = setInterval(loop, 1000 / $.coeff)
+          // TODO: this needs to happen with derived setTimeouts instead
+          // because coeff changes during bpm changes
+          repeatIv = setInterval(loop, 1000 / clock.coeff)
         }
 
         queueMicrotask(() => {
           $.state = 'running'
         })
 
-        deferred.resolve($.startTime)
+        deferred.resolve()
 
         return startPromise
       })
@@ -121,11 +121,13 @@ export const Audio = reactive('audio',
         this.stop(resetTime)
       }
 
-      stop = fn(({ schedulerNode }) => (resetTime = true) => {
+      stop = fn(({ clock, schedulerNode }) => (resetTime = true) => {
         clearInterval(repeatIv)
 
         if (resetTime) {
-          this.resetTime()
+          $.stopTime = 0
+        } else {
+          $.stopTime = clock.internalTime
         }
 
         if ($.state === 'suspended') return
@@ -147,49 +149,34 @@ export const Audio = reactive('audio',
         }
       }
 
-      resetTime = () => {
-        $.internalTime = -$.delayStart
-      }
-
-      toggleRepeat = () => {
+      toggleRepeat = fn(({ clock }) => () => {
         if ($.repeatState === 'none') {
           $.repeatState = 'bar'
-          $.repeatStartTime = Math.max(0, $.internalTime - 1)
+          $.repeatStartTime = Math.max(0, clock.internalTime - 1)
           if ($.state === 'running') {
             const loop = this.seekTime(-1, true)
-            repeatIv = setInterval(loop, 1000 / $.coeff)
+            // TODO: this needs to happen with derived setTimeouts instead
+            // because the coeff changes during bpm change and the loop will
+            // be stuck at the previous speed.
+            repeatIv = setInterval(loop, 1000 / clock.coeff)
             loop()
           }
         } else {
           clearInterval(repeatIv)
           $.repeatState = 'none'
         }
-      }
+      })
 
-      getTime = fn(({ audioContext }) =>
-        () => {
-          if ($.state === 'running') {
-            const now = audioContext.currentTime
-            $.internalTime += (now - lastReceivedTime) * $.coeff
-            lastReceivedTime = now
-          }
-          return $.internalTime
-        })
+      getTime = fn(({ clock }) => () => {
+        return clock.internalTime
+      })
 
-      seekTime = fn(({ schedulerNode }) =>
-        (diff: number, keepRepeatTime?: boolean) =>
-          async () => {
-            if (!keepRepeatTime && $.repeatState === 'bar') {
-              $.repeatStartTime += diff
-            }
-            // TODO: this won't compute correctly
-            // we need to have a per-event group start time
-            // if we want to play projects in parallel and each
-            // one starting at its own time but still synced.
-            // $.internalTime = await schedulerNode.seek(diff)
-            await schedulerNode.seek(diff)
-            $.internalTime += diff
-          })
+      seekTime = fn(({ clock }) => (diff: number, keepRepeatTime?: boolean) => () => {
+        if (!keepRepeatTime && $.repeatState === 'bar') {
+          $.repeatStartTime += diff
+        }
+        clock.internalTime += diff
+      })
 
       setParam = fn(({ audioContext }) => (param: AudioParam, targetValue: number, slope = 0.0015) => {
         attempt(() => {
@@ -250,15 +237,16 @@ export const Audio = reactive('audio',
       storage.bpm.set(bpm)
     })
 
-    fx(async ({ audioContext }) => {
+    fx(async ({ audioContext, clock }) => {
       $.schedulerNode = await SchedulerNode.create(audioContext)
+      $.schedulerNode.setClockBuffer(clock.buffer)
     })
 
-    fx(async ({ schedulerNode, bpm }) => {
-      $.coeff = await schedulerNode.setBpm(bpm)
+    fx(({ schedulerNode, bpm }) => {
+      schedulerNode.setBpm(bpm)
     })
 
-    fx(async ({ audioContext, schedulerNode, fftSize }) => {
+    fx(async ({ audioContext, schedulerNode, fftSize, clock }) => {
       $.gainNodePool = new ObjectPool(() => {
         return new GainNode(audioContext, { channelCount: 1, gain: 1 })
       }, (gainNode) => {
@@ -268,13 +256,15 @@ export const Audio = reactive('audio',
       })
 
       $.monoNodePool = new ObjectPool(async () => {
-        return await MonoNode.create(audioContext, {
+        const monoNode = await MonoNode.create(audioContext, {
           numberOfInputs: 0,
           numberOfOutputs: 1,
           processorOptions: {
             metrics: 0,
           }
         })
+        monoNode.setClockBuffer(clock.buffer)
+        return monoNode
       }, (monoNode) => {
         monoNode.disconnect()
         return monoNode

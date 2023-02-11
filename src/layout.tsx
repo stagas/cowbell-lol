@@ -20,16 +20,16 @@ export const Layout = web(view('layout',
 
   function actions({ $, fn, fns }) {
     return fns(new class actions {
-      resize = fn(({ host, layout, size, align }) => () => {
+      resize = fn(({ host, layout, align }) => () => {
         const [dim, min, max] = align === 'y'
           ? ['height', 'minHeight', 'maxHeight'] as const
           : ['width', 'minWidth', 'maxWidth'] as const
         const rect = new Rect(layout.getBoundingClientRect()).round()
 
         const w = rect[dim] * (
-          typeof size === 'string'
-            ? parseFloat(size as string) / 100
-            : size
+          typeof $.size === 'string'
+            ? parseFloat($.size as string) / 100
+            : $.size
         ) + 'px'
 
         Object.assign(host.style, {

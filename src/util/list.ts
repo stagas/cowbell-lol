@@ -54,9 +54,14 @@ export function get<T extends Reactive>(
 
 export function getByChecksum<T extends Reactive<string, { checksum?: string }, unknown>>(
   items: T[],
-  checksum: string
+  checksum: string,
+  throwIfNotFound = false
 ) {
-  return items.find((item) => item.$.checksum === checksum)
+  const item = items.find((item) => item.$.checksum === checksum)
+  if (!item && throwIfNotFound) {
+    throw new ReferenceError(`No buffer with checksum "${checksum}" found in items.`)
+  }
+  return item
 }
 
 export function getMany<T extends Reactive>(
