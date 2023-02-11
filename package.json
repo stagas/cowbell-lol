@@ -93,18 +93,18 @@
     "icon-svg": "^3.0.6",
     "immutable-map-set": "^1.0.0",
     "json-objectify": "^1.0.1",
-    "minimal-view": "^1.4.0",
-    "mono-worklet": "^2.1.0",
-    "monolang": "^3.2.0",
+    "minimal-view": "^1.5.0",
+    "mono-worklet": "^2.2.0",
+    "monolang": "^3.3.0",
     "pretty-fast-fft": "^1.1.0",
     "rpc-mini": "^1.1.0",
-    "scheduler-node": "^2.0.2",
+    "scheduler-node": "^2.1.0",
     "serialize-whatever": "^1.1.0",
     "to-fluent": "^2.2.0",
     "urlsafe-lzma": "1.0.4",
     "webaudio-tools": "^2.1.0",
     "x-knob": "^4.0.0",
-    "x-pianokeys": "^3.0.0",
+    "x-pianokeys": "^3.1.0",
     "zod": "3.20.2"
   }
 }
