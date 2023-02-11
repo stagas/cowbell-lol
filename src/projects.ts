@@ -102,29 +102,21 @@ export const Projects = reactive('projects',
         const playersToMove: Player[] = project.$.players.filter((player: Player) => lastRunningPlayers?.has(player) || player.$.state === 'running')
           .map((player: Player) => Player({
             ...player.$.derive(),
-            audioPlayer: $.project!.$.audioPlayer!,
             project: $.project!
           }))
 
         if (!playersToMove.length) return
 
-        // the player .start() method is created in the next tick
+        $.project!.$.players = [...$.project!.$.players, ...playersToMove]
+
         await Promise.resolve()
 
         playersToMove.forEach((player) => {
           player.$.start()
         })
 
-        $.project!.$.players = [...$.project!.$.players, ...playersToMove]
-
         project.$.stop()
-
-        // $.playingProjects = [...filterState(cachedProjects, 'preparing', 'running')]
-        //   .sort((a, b) =>
-        //     a.$.startedAt - b.$.startedAt
-        //   )
       }
-
     })
   },
   function effects({ $, fx, deps, refs }) {

@@ -408,7 +408,13 @@ export const Player = reactive('player',
       derive = () =>
         Object.assign(
           pick($, ['sound', 'pattern', 'vol']),
-          { patterns: [...$.patterns], pages: [...$.pages!] }
+          {
+            patterns: [...$.patterns],
+            pages: [...$.pages!].map((p) => ({
+              ...p,
+              patterns: [...p.patterns]
+            })),
+          }
         )
 
       toJSON = fn(({ project, library }) => () => ({
