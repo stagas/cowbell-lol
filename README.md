@@ -4,11 +4,15 @@ Live: https://cowbell.lol
 
 To run locally:
 
-```
+```sh
 git clone https://github.com/stagas/cowbell-lol
 cd cowbell-lol
 npm i
-npm run build
+
+# in one shell
+npm run watch
+
+# in another shell
 npm run start:web
 ```
 
