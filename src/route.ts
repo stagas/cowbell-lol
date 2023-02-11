@@ -49,7 +49,10 @@ export const Route = reactive('route',
       } else {
         return targetPlayer.fx(({ monoNode, compileState }) => {
           if (compileState === 'compiled') {
-            $.targetNode = monoNode.params.get(targetId)!.audioParam
+            const targetParam = monoNode.params.get(targetId)
+            if (targetParam) {
+              $.targetNode = targetParam.audioParam
+            }
           }
         })
       }
