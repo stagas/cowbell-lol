@@ -279,14 +279,14 @@ ${Knob} {
 
 .hidden {
   position: fixed:
-  opacity: 0;
+  opacity: 0 !important;
   z-index: -9999;
   overflow: hidden;
   pointer-events: none;
 }
 
 .none {
-  display: none;
+  display: none !important;
 }
 
 .raised {

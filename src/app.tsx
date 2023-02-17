@@ -190,7 +190,7 @@ export const App = web(view('app',
       }
 
       $.view = <>
-        <Toolbar project={project} />
+        <Toolbar ref={cachedRef('toolbar')} project={project} />
 
         <Hint message={deps.hint} />
 

@@ -8,18 +8,22 @@ import { oneOf } from './util/one-of'
 
 export const audioPlayers = new Set<AudioPlayer>()
 
+export type AudioPlayer = typeof AudioPlayer.State
+
 export const AudioPlayer = reactive('audio-player',
   class props {
     id?: string = cheapRandomId()
     audio?: Audio | undefined
     vol?: number
     isSpeakers?: boolean = false
+    preview?: boolean = false
     project?: Project
   },
 
   class local {
     state: AudioState = 'init'
-    destNode?: GainNode
+    inputNode?: AudioNode
+    outputNode?: AudioNode
     gainNode?: GainNode
     analyserNode?: AnalyserNode
     bytes?: Uint8Array
@@ -68,11 +72,13 @@ export const AudioPlayer = reactive('audio-player',
 
       analyseStart = fn(({ analyserNode, bytes, freqs, workerBytes, workerFreqs }) => {
         tick = () => {
+          if ($.state === 'running') {
+            anim.schedule(tick)
+          }
           analyserNode.getByteTimeDomainData(bytes)
           analyserNode.getByteFrequencyData(freqs)
           workerBytes.set(bytes)
           workerFreqs.set(freqs)
-          anim.schedule(tick)
         }
 
         return () => {
@@ -89,7 +95,9 @@ export const AudioPlayer = reactive('audio-player',
   },
 
   function effects({ $, fx }) {
-    fx(() => {
+    fx(({ isSpeakers }) => {
+      if (isSpeakers) return
+
       audioPlayers.add($.self)
       return () => {
         audioPlayers.delete($.self)
@@ -114,25 +122,72 @@ export const AudioPlayer = reactive('audio-player',
     )
 
     fx(({ audio, isSpeakers }) =>
-      audio.fx(async ({ audioContext, analyserNodePool, gainNodePool, destPlayer }) => {
-        $.analyserNode = await analyserNodePool.acquire()
-        $.gainNode = await gainNodePool.acquire()
-        $.destNode = await gainNodePool.acquire()
+      audio.fx(async ({ analyserNodePool, gainNodePool }) => {
+        $.gainNode = await gainNodePool.acquire({ channelCount: 2 })
+        $.outputNode = $.gainNode
 
-        $.destNode.gain.value = 1
-        $.destNode.connect($.analyserNode)
-        $.destNode.connect($.gainNode)
-
-        if (isSpeakers) {
-          $.gainNode.connect(audioContext.destination)
-        } else {
-          return destPlayer.fx(({ destNode }) => {
-            $.gainNode!.connect(destNode)
-          })
+        $.inputNode = await gainNodePool.acquire({ channelCount: 2 })
+        if (!isSpeakers) {
+          $.analyserNode = await analyserNodePool.acquire()
         }
+        // $.inputNode.connect($.outputNode)
       })
     )
+
+    fx(({ audio, isSpeakers }) => {
+      if (!isSpeakers) return
+      return audio.fx(({ state }) => {
+        if (state === 'running') {
+          $.start()
+        } else {
+          $.stop()
+        }
+        $.state = state
+      })
+    })
+
+    fx(({ audio, state, inputNode, outputNode, isSpeakers }) => {
+      if (!isSpeakers) return
+
+      // if (oneOf(state, 'preparing', 'running')) {
+      inputNode.connect(outputNode)
+      outputNode.connect(audio.$.audioContext!.destination)
+      // } else {
+      //   audio.$.disconnect(inputNode, outputNode)
+      //   audio.$.disconnect(outputNode, audio.$.audioContext!.destination)
+      // }
+    })
+
+    fx(({ audio, isSpeakers, preview, state, inputNode, outputNode, analyserNode }) => {
+      if (isSpeakers) return
+
+      if (oneOf(state, 'preparing', 'running') || preview) {
+        inputNode.connect(outputNode)
+        inputNode.connect(analyserNode)
+      } else {
+        setTimeout(() => {
+          audio.$.disconnect(inputNode, outputNode)
+          audio.$.disconnect(inputNode, analyserNode)
+        }, 350)
+      }
+    })
+
+    fx(({ audio, state, outputNode, isSpeakers, preview }) => audio.fx(({ disconnect, destPlayer }) => {
+      if (!isSpeakers) {
+        if (oneOf(state, 'preparing', 'running') || preview) {
+          //   outputNode.connect(audioContext.destination)
+          //   return () => {
+          //     audio.$.disconnect(outputNode, audioContext.destination)
+          //   }
+          // } else {
+          return destPlayer.fx(({ inputNode }) => {
+            outputNode.connect(inputNode)
+            return () => {
+              disconnect(outputNode, inputNode)
+            }
+          })
+        }
+      }
+    }))
   }
 )
-
-export type AudioPlayer = typeof AudioPlayer.State

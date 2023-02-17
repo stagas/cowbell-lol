@@ -7,7 +7,7 @@ import { EditorBuffer } from './editor-buffer'
 import { Player } from './player'
 import { PlayersView } from './players-view'
 import { Project, relatedProjects } from './project'
-import { Route } from './route'
+import { Send } from './send'
 import { services } from './services'
 import { cachedRef } from './util/cached-ref'
 import { classes } from './util/classes'
@@ -151,7 +151,7 @@ export const ProjectView = web(view('project-view',
       if (browsing) {
         $.expanded = true
 
-        return project.fx(({ players }) => {
+        const off = project.fx(({ players }) => {
           if (players.length) {
             const sel = new URL(location.href).searchParams.get('sel')
             if (sel) {
@@ -165,6 +165,7 @@ export const ProjectView = web(view('project-view',
               }
               project.$.editorVisible = true
             }
+            off()
           }
         })
       }
@@ -270,7 +271,7 @@ export const ProjectView = web(view('project-view',
 
     fx(() => services.fx(({ previewPlayer, previewAudioPlayer }) =>
       fx(({ player, project }) =>
-        player.fx(({ routes, sound }) =>
+        player.fx(({ sends, sound }) =>
           project.fx(({ selectedPreset }) => {
             // route the preview player with the same routes as the
             // current player.
@@ -278,26 +279,27 @@ export const ProjectView = web(view('project-view',
             previewPlayer.$.audioPlayer = player.$.audioPlayer?.$.audio
               ? player.$.audioPlayer
               : previewAudioPlayer
-            previewPlayer.$.routes?.forEach((route) => {
+            previewPlayer.$.sends?.forEach((route) => {
               route.dispose()
             })
 
             // but only if the player has audio loaded
             if (player.$.audioPlayer?.$.audio) {
-              previewPlayer.$.routes = new Map([...routes].map(([id, route]) => [id, Route({
+              previewPlayer.$.sends = new Map([...sends].map(([id, route]) => [id, Send({
                 ...route.$.toJSON(),
                 sourcePlayer: previewPlayer
               })]))
             } else {
               // otherwise use default routes directly to audio dest out
-              const paramId = `${previewPlayer.$.id}::dest`
+              const paramId = `${previewPlayer.$.id}::out`
 
-              previewPlayer.$.routes = new Map([
-                [paramId, Route({
+              previewPlayer.$.sends = new Map([
+                [paramId, Send({
                   sourcePlayer: previewPlayer,
                   targetPlayer: previewPlayer,
-                  targetId: 'dest',
-                  amount: 1,
+                  targetId: 'out',
+                  pan: 0,
+                  vol: 1,
                 })]
               ])
             }

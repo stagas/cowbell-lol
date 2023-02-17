@@ -124,7 +124,8 @@ export const Spacer = web(view('spacer',
         const [, oppDim] = dims(align)
 
         const scrollTop = document.documentElement.scrollTop
-        $.rect = new Rect(layout.getBoundingClientRect()).translate(0, scrollTop) //.round()
+        $.rect = new Rect(layout.getBoundingClientRect()).translate(0, scrollTop)
+
         Object.assign(host.style, {
           ...$.rect.toStyleSize(),
           [oppDim]: '100%'

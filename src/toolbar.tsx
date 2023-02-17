@@ -288,7 +288,9 @@ export const Toolbar = web(view('toolbar',
         audio.fx(({ state }) => {
           if (state === 'running') {
             const tick = () => {
-              anim.schedule(tick)
+              if (audio.$.state === 'running') {
+                anim.schedule(tick)
+              }
               $.drawTime()
             }
 

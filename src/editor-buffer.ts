@@ -3,16 +3,16 @@ import { cheapRandomId, pick } from 'everyday-utils'
 import { ImmMap } from 'immutable-map-set'
 import { queue, reactive } from 'minimal-view'
 import { MidiOp } from 'webaudio-tools'
-import { services } from './services'
-import { compilePattern } from './pattern'
+import { compilePattern } from './pattern-service'
 import { Preview } from './preview-service'
+import { services } from './services'
 import { Slider } from './slider'
 import { Sliders } from './types'
 import { areSlidersCompatible, getCodeWithoutArgs } from './util/args'
+import { checksumId } from './util/checksum-id'
 import { getTitle } from './util/parse'
 import { randomName } from './util/random-name'
 import { Waveplot } from './waveplot'
-import { checksumId } from './util/checksum-id'
 
 const MidiOps = new Set(Object.values(MidiOp))
 
@@ -48,6 +48,8 @@ export const EditorBuffer = reactive('editor-buffer',
     preview?: Preview
     canvas?: HTMLCanvasElement
     canvases: Set<string> = new Set()
+    inputChannels = 0
+    outputChannels = 1
     midiEvents = new ImmMap<number, WebMidi.MIDIMessageEvent[]>()
     numberOfBars?: number
     midiRange?: [number, number]

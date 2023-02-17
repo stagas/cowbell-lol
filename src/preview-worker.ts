@@ -27,14 +27,15 @@ class Task {
   constructor() {
     this.access()
     this.vm.setPort(vmPort)
-    this.vm.setNumberOfChannels(1)
     if (!randomInput) {
       for (let i = 0; i < this.vm.inputs[0].length; i++) {
         this.vm.inputs[0][i] = rand(2) - 1
       }
       randomInput = this.vm.inputs[0]
+      this.vm.inputs[1].set(randomInput)
     } else {
       this.vm.inputs[0].set(randomInput)
+      this.vm.inputs[1].set(randomInput)
     }
   }
 
@@ -53,12 +54,12 @@ class Task {
       this.startVmMem = this.vm.floats.slice()
     }
 
-    await this.vm.setCode(code)
+    const res = await this.vm.setCode(code)
 
     this.resetVmMem = this.vm.floats.slice()
     this.isMemDirty = false
 
-    return this
+    return res
   }
 
   async setParam(id: string, value: number) {
@@ -76,9 +77,10 @@ class Task {
   async fill(floats: Float32Array) {
     this.vm.exports.sampleRate.value = argContext.sampleRate
     this.vm.exports.currentTime.value = 1
+    this.vm.exports.fill(argContext.sampleRate, 0, 0)
     this.vm.exports.midi_in?.(144, 40, 127)
     for (let i = 0; i < floats.length - 128; i += 128) {
-      this.vm.exports.fill(0, argContext.sampleRate + i, 0, 128)
+      this.vm.exports.fill(argContext.sampleRate + i, 0, 128)
       floats.set(this.vm.outputs[0], i)
     }
     this.isMemDirty = true
@@ -126,9 +128,9 @@ async function execTask(code: string, floats: Float32Array) {
 
         return false
       } else {
-        await task.compile(code)
+        const res = await task.compile(code)
         task.fill(floats)
-        return true
+        return res
       }
     }
   }
@@ -143,15 +145,15 @@ async function execTask(code: string, floats: Float32Array) {
     task = tasks[0]
   }
 
-  await task.access().compile(code)
+  const res = await task.access().compile(code)
   task.fill(floats)
-  return true
+  return res
 }
 
 interface PreviewWorker {
   setPort(port: MessagePort): Promise<void>
   setArgContext(argContext: ArgContext): Promise<void>
-  fillPreview(code: string, floats: Float32Array): Promise<boolean>
+  fillPreview(code: string, floats: Float32Array): Promise<boolean | { inputChannels: number, outputChannels: number }>
 }
 
 let vmPort: MessagePort

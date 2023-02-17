@@ -1,17 +1,20 @@
 /** @jsxImportSource minimal-view */
 
 import { filterMap } from 'everyday-utils'
-import { chain, part, view, web } from 'minimal-view'
+import { chain, part, queue, view, web } from 'minimal-view'
 import { PianoKeys } from 'x-pianokeys'
 import { Button } from './button'
 import { Editor } from './editor'
 import { EditorBuffer } from './editor-buffer'
+import { KnobView } from './knob-view'
 import { Player } from './player'
 import { Project } from './project'
+import { Send } from './send'
 import { services } from './services'
 import { SliderView } from './slider-view'
 import { Spacer } from './spacer'
 import { TrackView } from './track-view'
+import { Sliders } from './types'
 import { cachedRef } from './util/cached-ref'
 import { classes } from './util/classes'
 import { delById, get, replaceAtIndex } from './util/list'
@@ -19,6 +22,60 @@ import { storage } from './util/storage'
 import { Vertical } from './vertical'
 
 let presetsSmoothScrollTimeout: any
+
+// function hideShowDynamicSliders(p: [string, Slider][], [paramId, slider]: [string, Slider], index: number, arr: [string, Slider][]) {
+//   const [, targetId] = paramId.split('::')
+//   const isDynamic = targetId.startsWith('#')
+//   const hasValue = !!slider.$.value
+
+//   let prev = arr[index - 1]
+//   let prevId: string | undefined
+//   let prevIsDynamic = false
+//   let prevHasValue = false
+//   if (prev) {
+//     prevId = prev[0].split('::')[1]
+//     if (prevId) {
+//       prevIsDynamic = prevId.startsWith('#')
+//       if (prevIsDynamic) {
+//         let curr = index - 1
+//         while (prevIsDynamic) {
+//           prevHasValue = !!prev[1].$.value
+//           if (prevHasValue) break
+//           prev = arr[--curr]
+//           if (!prev?.[0].split('::')[1]?.startsWith('#')) break
+//         }
+//       }
+//     }
+//   }
+
+//   const next = arr[index + 1]
+//   let nextId: string | undefined
+//   let nextIsDynamic = false
+//   let nextHasValue = false
+//   if (next) {
+//     nextId = next[0].split('::')[1]
+//     if (nextId) {
+//       nextIsDynamic = nextId.startsWith('#')
+//       nextHasValue = !!next[1].$.value
+//     }
+//   }
+
+//   if (isDynamic && !hasValue) {
+//     if (!prevHasValue && nextIsDynamic) {
+//       if (!nextHasValue) {
+//         return p
+//       }
+//     }
+//   }
+
+//   p.unshift([paramId, slider])
+//   return p
+// }
+
+function mapSends(sliders: Sliders) {
+  return [...sliders]
+  //.reverse().reduce(hideShowDynamicSliders, [] as [string, Slider][])
+}
 
 export function startTemporaryPresetsSmoothScroll(id: string) {
   const el = cachedRef(`presets-${id}`)?.current
@@ -370,12 +427,17 @@ export const PlayerEditor = web(view('player-editor',
                 focus === 'sound' ? () => {
                   const players = [...project.$.players]
                   const index = players.indexOf(player)
-                  players.splice(index + 1, 0, Player({
+                  const newPlayer = Player({
                     ...player.$.derive(),
                     project
-                  }))
+                  })
+                  players.splice(index + 1, 0, newPlayer)
                   project.$.players = players
                   project.$.selectedPlayer = index + 1
+                  newPlayer.$.sends = new Map([...player.$.sends!].map(([id, route]) => [id.replace(player.$.id!, newPlayer.$.id!), Send({
+                    ...route.$.toJSON(),
+                    sourcePlayer: newPlayer
+                  })]))
                 } : () => {
                   const patterns = [...player.$.patterns]
                   patterns.splice(player.$.pattern + 1, 0, focusedPattern.$.id!)
@@ -397,7 +459,7 @@ export const PlayerEditor = web(view('player-editor',
           ref={cachedRef(`sounds-${id}`)}
           part="app-presets"
           class={classes({
-            hidden: focus !== 'sound'
+            none: !editorVisible || focus !== 'sound'
           })}
         >
           {sounds.map((s) =>
@@ -428,7 +490,7 @@ export const PlayerEditor = web(view('player-editor',
           ref={cachedRef(`patterns-${id}`)}
           part="app-presets"
           class={classes({
-            hidden: focus !== 'pattern'
+            none: !editorVisible || focus !== 'pattern'
           })}
         >
           {patterns.map((p) =>
@@ -523,60 +585,103 @@ export const PlayerEditor = web(view('player-editor',
 
     const SendsView = part((update) => {
       fx(({ player }) =>
-        player.fx(({ sendSliders }) =>
-          fx(({ players }) => {
-            const playerSliders = filterMap(
-              [...sendSliders],
-              ([playerId, sliders]) => {
-                const player = players.find((p) => p.$.id === playerId)
-                if (!player) return
-                return [player, sliders] as const
-              }
-            )
+        player.fx(({ id, sendVolSliders, sendPanSliders }) => {
+          return fx(({ players }) => {
+            const updateSendSliders = queue.task.not.first.not.next.last(() => {
+              const playerVolSliders = filterMap(
+                [...sendVolSliders],
+                ([playerId, sliders]) => {
+                  if (playerId === id) return
+                  const player = players.find((p) => p.$.id === playerId)
+                  if (!player) return
+                  return [player, sliders] as const
+                }
+              )
 
-            return chain(
-              playerSliders.map(([player]) => player.fx(({ soundBuffer: _ }) => {
-                update(<div class="player-routes">
-                  <div class="player-sends">
-                    <div class="player-sends-sliders">
-                      {[...sendSliders.get('dest')!].map(([paramId, slider]) =>
+              const playerPanSliders = new Map(filterMap(
+                [...sendPanSliders],
+                ([playerId, sliders]) => {
+                  if (playerId === id) return
+                  const player = players.find((p) => p.$.id === playerId)
+                  if (!player) return
+                  return [player, sliders] as const
+                }
+              ))
+
+              update(<div class="player-routes">
+                <div class="player-sends">
+                  <div class="player-sends-sliders">
+                    {mapSends(sendVolSliders.get(id)!).map(([paramId, slider]) =>
+                      <div key={paramId} class="player-sends-item">
+                        <KnobView
+                          theme="ableton"
+                          running={true}
+                          symmetric
+                          slider={sendPanSliders.get(id)!.get(paramId)!}
+                        />
                         <SliderView
-                          key={paramId}
                           id={paramId}
                           slider={slider}
                           vertical={false}
                           running={true}
                           showBg={true}
                         />
+                      </div>
+                    )}
+                  </div>
+                </div>
+                {playerVolSliders.map(([player, sliders]) =>
+                  <div class="player-sends">
+                    <TrackView
+                      player={player}
+                      sound={player.$.soundBuffer!}
+                      active={false}
+                      pattern={false}
+                    />
+                    <div class="player-sends-sliders">
+                      {mapSends(sliders).map(([paramId, slider]) =>
+                        paramId.endsWith('::in')
+                          ?
+                          <div key={paramId} class="player-sends-item">
+                            <KnobView
+                              theme="ableton"
+                              running={true}
+                              symmetric
+                              slider={playerPanSliders.get(player)!.get(paramId)!}
+                            />
+                            <SliderView
+                              id={paramId}
+                              slider={slider}
+                              vertical={false}
+                              running={true}
+                              showBg={true}
+                            />
+                          </div>
+                          :
+                          <div key={paramId} class="player-sends-item">
+                            <SliderView
+                              id={paramId}
+                              slider={slider}
+                              vertical={false}
+                              running={true}
+                              showBg={true}
+                            />
+                          </div>
                       )}
                     </div>
                   </div>
-                  {playerSliders.map(([player, sliders]) =>
-                    <div class="player-sends">
-                      <TrackView
-                        player={player}
-                        sound={player.$.soundBuffer!}
-                        active={false}
-                        pattern={false}
-                      />
-                      <div class="player-sends-sliders">
-                        {[...sliders].map(([paramId, slider]) =>
-                          <SliderView
-                            key={paramId}
-                            id={paramId}
-                            slider={slider}
-                            vertical={false}
-                            running={true}
-                            showBg={true}
-                          />
-                        )}
-                      </div>
-                    </div>
-                  )}</div>)
-              }))
+                )}</div>)
+            })
+
+            return chain(
+              players.map((player) =>
+                player.fx(({ soundBuffer: _ }) => {
+                  updateSendSliders()
+                })
+              )
             )
           })
-        )
+        })
       )
     })
 
@@ -596,20 +701,25 @@ export const PlayerEditor = web(view('player-editor',
           flex-flow: column nowrap;
         }
         &-routes {
+          position: relative;
           display: flex;
           flex-flow: row wrap;
-          width: 100%;
-          height: 69px;
+          align-items: stretch;
+          justify-content: space-around;
+          padding: 6px;
           gap: 10px;
         }
         &-sends {
-          display: flex;
           position: relative;
+          display: flex;
           flex: 1;
+          width: 100%;
+          height: 60px;
           &:first-child {
-            width: 100px;
             flex: 0;
-            padding: 0 10px;
+            width: 50px;
+            max-width: 50px;
+            min-width: 50px;
           }
           ${TrackView} {
             position: absolute;
@@ -625,12 +735,27 @@ export const PlayerEditor = web(view('player-editor',
             width: 100%;
             position: relative;
           }
+          &-item {
+            flex: 1;
+            display: flex;
+            gap: 5px;
+            flex-flow: column nowrap;
+            align-items: center;
+            justify-content: center;
+            ${SliderView} {
+              /* height: 60%; */
+            }
+            ${KnobView} {
+              height: 40%;
+              min-width: 28px;
+            }
+          }
         }
       }
       `
     })
 
-    fx(({ editorVisible }) => {
+    fx(({ editorVisible, player }) => {
       $.view =
         <div
           class={classes({

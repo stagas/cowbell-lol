@@ -180,26 +180,48 @@ export const Midi = web(view('midi',
     const notesMap = new Map<SVGRectElement, MidiRect>()
 
     fx(({ player, pattern, xPos }) =>
-      player.fx(({ patternOffsets, patternBuffers, currentTime, turn }) => {
+      player.fx(({ patternBuffers, turn }) => {
         if (!patternBuffers.includes(pattern)) return
 
         $.turn = turn
 
-        const offset = patternOffsets[xPos]
-        const time = currentTime - offset * 1000
+        // const offset = patternOffsets[xPos]
+        // const time = currentTime - offset * 1000
 
-        for (const [el, [, [noteOn, noteOff]]] of notesMap) {
-          if (!noteOn || !noteOff) continue
+        // for (const [el, [, [noteOn, noteOff]]] of notesMap) {
+        //   if (!noteOn || !noteOff) continue
 
-          if (time >= noteOn.receivedTime
-            && time < noteOff.receivedTime) {
-            el.classList.add('lit')
-          } else {
-            el.classList.remove('lit')
-          }
-        }
+        //   if (time >= noteOn.receivedTime
+        //     && time < noteOff.receivedTime) {
+        //     el.classList.add('lit')
+        //   } else {
+        //     el.classList.remove('lit')
+        //   }
+        // }
       })
     )
+
+    // fx(({ player, pattern, xPos }) =>
+    //   player.fx(({ patternOffsets, patternBuffers, currentTime, turn }) => {
+    //     if (!patternBuffers.includes(pattern)) return
+
+    //     $.turn = turn
+
+    //     const offset = patternOffsets[xPos]
+    //     const time = currentTime - offset * 1000
+
+    //     for (const [el, [, [noteOn, noteOff]]] of notesMap) {
+    //       if (!noteOn || !noteOff) continue
+
+    //       if (time >= noteOn.receivedTime
+    //         && time < noteOff.receivedTime) {
+    //         el.classList.add('lit')
+    //       } else {
+    //         el.classList.remove('lit')
+    //       }
+    //     }
+    //   })
+    // )
 
     const blacks = new Set([1, 3, 6, 8, 10])
 

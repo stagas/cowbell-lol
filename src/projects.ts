@@ -1,10 +1,10 @@
 import { shallowEqualArray } from 'everyday-utils'
 import { reactive } from 'minimal-view'
-import { lastRunningPlayers } from './audio'
 import { Player } from './player'
 import { Project } from './project'
 import { schemas } from './schemas'
 import { services } from './services'
+import { shared } from './shared'
 import { filterState } from './util/filter-state'
 import { storage } from './util/storage'
 
@@ -96,10 +96,9 @@ export const Projects = reactive('projects',
     hidden: Project[] = []
   },
   function actions({ $, fns, fn }) {
-
     return fns(new class actions {
       onMovePlayers = async (project: Project): Promise<void> => {
-        const playersToMove: Player[] = project.$.players.filter((player: Player) => lastRunningPlayers?.has(player) || player.$.state === 'running')
+        const playersToMove: Player[] = project.$.players.filter((player: Player) => shared.$.lastRunningPlayers?.has(player) || player.$.state === 'running')
           .map((player: Player) => Player({
             ...player.$.derive(),
             project: $.project!
@@ -178,7 +177,7 @@ export const Projects = reactive('projects',
               const p = decodeURIComponent(searchParams.get('p') || '')
               if (p) {
                 const parts = p.split('--')
-                lastRunningPlayers.clear()
+                shared.$.lastRunningPlayers = new Set()
                 await Promise.resolve()
                 const projectResults = await Promise.allSettled(
                   parts.map(async (x) => {
@@ -193,7 +192,7 @@ export const Projects = reactive('projects',
                     const players: Player[] = project.$.players
                     players.forEach((player, y) => {
                       if (ys.includes(y)) {
-                        lastRunningPlayers.add(player)
+                        shared.$.lastRunningPlayers.add(player)
                       }
                     })
                     return project

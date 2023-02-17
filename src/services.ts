@@ -23,7 +23,7 @@ export const Services = reactive('services',
     apiUrl?: string
     distRoot?= '/example'
     sampleRate?= storage.sampleRate.get(44100)
-    latencyHint?= storage.latencyHint.get(0.04)
+    latencyHint?= 0.045 //storage.latencyHint.get(0.04)
     previewSampleRate?= storage.previewSampleRate.get(22050)
   },
   class local {
@@ -315,7 +315,7 @@ export const Services = reactive('services',
     })
 
     fx(({ audio }) => {
-      $.previewAudioPlayer = AudioPlayer({ audio })
+      $.previewAudioPlayer = AudioPlayer({})
       $.previewPlayer = Player({
         vol: 0.45,
         sound: 'sk',
@@ -324,7 +324,19 @@ export const Services = reactive('services',
         isPreview: true,
       })
       $.previewPlayer.$.audio = audio
+      console.log($.previewPlayer)
     })
+
+    // fx(({ previewPlayer, previewAudioPlayer }) =>
+    //   previewPlayer.fx(({ preview, audioPlayer }) => {
+    //     if (previewAudioPlayer === audioPlayer) return
+    //     if (preview) {
+    //       previewAudioPlayer.$.start()
+    //     } else {
+    //       previewAudioPlayer.$.stop()
+    //     }
+    //   })
+    // )
 
     fx(({ likes }) => {
       storage.likes.set(likes)

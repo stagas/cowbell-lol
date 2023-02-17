@@ -1,14 +1,14 @@
 import { cheapRandomId, filterMap, pick } from 'everyday-utils'
 import { chain, queue, reactive } from 'minimal-view'
-import { Audio, AudioState, lastRunningPlayers } from './audio'
+import { Audio, AudioState } from './audio'
 import { AudioPlayer } from './audio-player'
 import { demo } from './demo-code'
 import { EditorBuffer } from './editor-buffer'
 import { Library, toBuffer } from './library'
-import { Player, PlayerPage } from './player'
+import { Player, PlayerPage, players } from './player'
 import { startTemporaryPresetsSmoothScroll } from './player-editor'
 import { cachedProjects, getPlayingProjects, projects } from './projects'
-import { Route } from './route'
+import { Send } from './send'
 import { schemas } from './schemas'
 import { services } from './services'
 import { checksumId } from './util/checksum-id'
@@ -18,6 +18,7 @@ import { get, getByChecksum, getMany, replaceAtIndex } from './util/list'
 import { noneOf, oneOf } from './util/one-of'
 import { slugify } from './util/slugify'
 import { storage } from './util/storage'
+import { shared } from './shared'
 
 export type ProjectJson = {
   checksum: string
@@ -28,9 +29,11 @@ export type ProjectJson = {
   author: string
   players: {
     vol: number
+    pan?: number
     sound?: string
     patterns?: string[]
     pages?: PlayerPage[]
+    sends?: [number, string, number, number][]
     routes?: [number, string, number][]
   }[]
   remixCount: number
@@ -71,6 +74,7 @@ export const Project = reactive('project',
     library?: Library
     audio?: Audio | null
     audioPlayer = AudioPlayer({})
+    allPlayersReady = false
     firstChecksum?: string
     vols?: string
     startedAt: number = 0
@@ -123,6 +127,17 @@ export const Project = reactive('project',
         }
 
         await audioPlayer.$.start(resetTime)
+
+        players.forEach((player) => {
+          if (
+            player.$.isPreview
+            || $.players.includes(player)
+            || player.$.state === 'running'
+          ) return
+
+          player.$.audio = null
+          shared.$.lastRunningPlayers.delete(player)
+        })
       })
 
       stop = fn(({ audioPlayer, players }) => (resetTime = true) => {
@@ -153,10 +168,11 @@ export const Project = reactive('project',
           title: $.title!,
           mixer: $.players.map((player, y) => ({
             vol: player.$.vol,
+            pan: player.$.pan || 0,
             pages: player.$.pages!.map((_, x) =>
               x + $.players.slice(0, y).reduce((p, n) => p + (n.$.pages?.length || 1), 0)
             ),
-            routes: player.$.toJSON().routes
+            sends: player.$.toJSON().sends
           })),
           tracks: $.players.flatMap((player) => player.$.pages!.map((page) => ({
             sound: get(library.$.sounds, page.sound)!.$.checksum!,
@@ -198,7 +214,7 @@ export const Project = reactive('project',
 
         let p: string = playingProjects.map((p) => [
           p.$.checksum,
-          filterMap(p.$.players, (x, y) => (x.$.state === 'running' || lastRunningPlayers.has(x)) && y).join('.')
+          filterMap(p.$.players, (x, y) => (x.$.state === 'running' || shared.$.lastRunningPlayers.has(x)) && y).join('.')
         ].filter(Boolean).join('-')
         ).join('--')
 
@@ -420,7 +436,7 @@ export const Project = reactive('project',
         // console.log('TRACKS ORDERED', tracksOrdered)
         // console.log('MIXER', p.mixer)
 
-        const players: ProjectJson['players'] = (p.mixer as { vol: number, pages?: number[], routes?: [number, string, number][] }[]).map(({ vol, pages, routes }, i) => {
+        const players: ProjectJson['players'] = (p.mixer as schemas.ProjectResponse['mixer']).map(({ vol, pan, pages, sends, routes }, i) => {
           if (!pages || pages.length === 0) {
             pages = [i]
           }
@@ -449,10 +465,11 @@ export const Project = reactive('project',
 
           return {
             vol,
+            pan: pan || 0,
             sound: trackPages[0].sound,
             patterns: [...trackPages[0].patterns],
             pages: trackPages,
-            routes: routes ?? []
+            sends: sends || routes?.map((r) => [r[0], r[1] === 'dest' ? 'out' : r[1], r[2], 0]) || []
           }
         })
 
@@ -528,36 +545,62 @@ export const Project = reactive('project',
         $.players = json.players.map((player) => Player({
           ...player,
           ...player.pages![0],
-          routes: new Map(),
+          sends: new Map(),
           pattern: 0,
           project: $.self as Project,
         }))
 
         json.players.forEach((player, i) => {
-          if (player.routes?.length) {
-            for (const [targetPlayerIndex, targetId, amount] of player.routes) {
-              const sourcePlayer = $.players[i]
-              const routes = sourcePlayer.$.routes!
+          const sourcePlayer = $.players[i]
+          const sends = sourcePlayer.$.sends!
+
+          if (player.routes) player.sends = player.routes.map((r) => [...r, 0])
+
+          player.sends = (player.sends ?? []).map((s) => [
+            s[0],
+            s[1] === 'dest' || s[1] === 'output' ? 'out'
+              : s[1] === 'input' ? 'in'
+                : s[1],
+            s[2],
+            s[3]
+          ])
+
+          if (player.sends?.length) {
+            for (const [targetPlayerIndex, targetId, vol, pan] of player.sends) {
               const targetPlayer = $.players[targetPlayerIndex]
 
               const paramId = `${targetPlayer.$.id}::${targetId}`
 
-              let route = routes.get(paramId)
+              let send = sends.get(paramId)
 
-              if (route) {
-                route.$.amount = amount
+              if (send) {
+                send.$.vol = vol
+                send.$.pan = pan
                 continue
               }
 
-              route = Route({
+              send = Send({
                 sourcePlayer,
                 targetPlayer,
                 targetId,
-                amount,
+                vol,
+                pan,
               })
 
-              routes.set(paramId, route)
+              sends.set(paramId, send)
             }
+          }
+
+          const paramId = `${sourcePlayer.$.id}::out`
+          if (!sends.has(paramId)) {
+            const send = Send({
+              sourcePlayer,
+              targetPlayer: sourcePlayer,
+              targetId: 'out',
+              vol: 1,
+              pan: 0,
+            })
+            sends.set(paramId, send)
           }
         })
       })
@@ -593,10 +636,10 @@ export const Project = reactive('project',
           )
         )
 
-        const routes = $.players.flatMap((player) => player.$.toJSON().routes)
+        const sends = $.players.flatMap((player) => player.$.toJSON().sends)
 
         if (trackIds.every((c) => c != null)) {
-          const payload = trackIds.join() + routes.join()
+          const payload = trackIds.join() + sends.join()
           // console.log('CHECKSUM:', payload)
           $.checksum = checksumId(payload)
         }
@@ -732,13 +775,38 @@ export const Project = reactive('project',
                 $.updateChecksum()
               }))
             )),
-            player.fx(({ vol }) => {
+            // TODO: pans
+            // TODO: move to queue.task
+            player.fx(({ vol: _ }) => {
               $.vols = players.map((p) => p.$.vol).join()
             }),
-            player.fx(({ routes }) => {
+            player.fx(({ sends: _ }) => {
               $.autoSave()
             }),
           )
+        )
+      )
+    )
+
+    fx(({ audioPlayer }) =>
+      audioPlayer.fx(({ inputNode: _d }) =>
+        fx(({ players }) =>
+          chain([
+            () => {
+              $.allPlayersReady = false
+            },
+            ...players.map((player) =>
+              player.fx(({ audioPlayer }) =>
+                audioPlayer.fx(({ inputNode: _d }) => {
+                  if (players.every((p) => p.$.audioPlayer?.$.inputNode)) {
+                    $.allPlayersReady = true
+                  } else {
+                    $.allPlayersReady = false
+                  }
+                })
+              )
+            )
+          ])
         )
       )
     )
@@ -747,6 +815,7 @@ export const Project = reactive('project',
       $.firstChecksum = checksum
     })
 
+    // TODO: pans
     fx(({ checksum, bpm: _b, vols: _v }, prev) => {
       if (prev.checksum && !$.isDraft) {
         $.isDraft = true

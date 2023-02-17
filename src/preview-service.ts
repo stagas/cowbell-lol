@@ -35,14 +35,20 @@ export function createPreview(waveplot: Waveplot, sampleRate: number): Preview {
       const id = buffer.$.id!
 
       try {
-        const isDirty = await remote(
+        const res: boolean | { inputChannels: number, outputChannels: number } = await remote(
           'fillPreview',
           buffer.$.value,
           waveplot.targets.get(id)!.floats
         )
 
-        if (!isDirty) return
+        if (!res) return
+
+        if (typeof res === 'object') {
+          buffer.$.inputChannels = res.inputChannels
+          buffer.$.outputChannels = res.outputChannels
+        }
       } catch (error) {
+        console.error(error)
         return error as Error
       }
 

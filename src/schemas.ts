@@ -10,16 +10,34 @@ const ghError = z.object({
   error_uri: z.string()
 })
 
+const sendTuples = z.array(
+  z.tuple([
+    z.number(), // player y index
+    z.string(), // target id
+    z.number(), // vol
+    z.number(), // pan
+  ])
+)
+
 const postMixer = z.array(z.object({
   vol: z.number(),
+  pan: z.number(),
   pages: z.array(z.number()),
-  routes: z.array(
+  sends: sendTuples,
+}))
+
+const mixerResponse = z.array(z.object({
+  vol: z.number(),
+  pan: z.optional(z.number()),
+  pages: z.optional(z.array(z.number())),
+  sends: z.optional(sendTuples),
+  routes: z.optional(z.array(
     z.tuple([
       z.number(),
       z.string(),
       z.number(),
     ])
-  )
+  )),
 }))
 
 export const schemas = {
@@ -120,7 +138,7 @@ export namespace schemas {
     title: string
     bpm: number
     trackIds: string[]
-    mixer: z.infer<typeof postMixer>
+    mixer: z.infer<typeof mixerResponse>
   }
 
   export interface PublishResponse {

@@ -1,7 +1,8 @@
+import { rpc } from 'rpc-mini'
 import defineFunction from 'define-function'
 import { Deferred } from 'everyday-utils'
 import memoize from 'memoize-pure'
-import { getMidiEventsForNotes, NoteEvent } from 'scheduler-node'
+import { getMidiEventsForNotes, NoteEvent } from 'scheduler-node/event-util'
 
 // @ts-ignore
 const url = new URL('./pattern-processor.js', import.meta.url)
@@ -89,3 +90,26 @@ export const compilePattern = memoize(async function compilePattern(codeValue: s
     }
   }
 })
+
+export interface PatternWorker {
+  compilePattern: typeof compilePattern
+}
+
+const preview: PatternWorker = {
+  async compilePattern(codeValue: string, numberOfBars: number, turn?: number): Promise<
+    {
+      success: false,
+      error: Error,
+      sandboxCode: string | void,
+    }
+    | {
+      success: true,
+      midiEvents: WebMidi.MIDIMessageEvent[],
+      numberOfBars: number
+    }
+  > {
+    return compilePattern(codeValue, numberOfBars, turn)
+  },
+}
+
+rpc(self as unknown as MessagePort, preview as any)

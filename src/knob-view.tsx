@@ -18,6 +18,8 @@ export const KnobView = web(view('knob-view',
 
     running!: boolean
 
+    symmetric?: boolean = false
+
     player?: Player
     vol?: Dep<number>
 
@@ -90,7 +92,7 @@ export const KnobView = web(view('knob-view',
       }
     })
 
-    fx(({ theme, slider, colorCss }) =>
+    fx(({ theme, slider, colorCss, symmetric }) =>
       slider.fx(({ id, min, max, scale }) => {
         $.view = <>
           <style>{colorCss}</style>
@@ -101,6 +103,7 @@ export const KnobView = web(view('knob-view',
             max={max}
             step={scale / 127}
             value={slider.$.value}
+            symmetric={symmetric}
             theme={theme}
           />
         </>

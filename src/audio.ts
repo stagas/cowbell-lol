@@ -1,18 +1,21 @@
 import { attempt, Deferred } from 'everyday-utils'
 import { on, reactive } from 'minimal-view'
-import { MonoNode } from 'mono-worklet'
+import { MonoNode, MonoNodeOptions } from 'mono-worklet'
 import { Clock, SchedulerEventGroupNode, SchedulerNode, SchedulerTargetNode } from 'scheduler-node'
 import { AudioPlayer } from './audio-player'
-import { Player, players } from './player'
+import { players } from './player'
 import { projects, cachedProjects } from './projects'
+import { shared } from './shared'
 import { filterState } from './util/filter-state'
 import { oneOf } from './util/one-of'
 import { ObjectPool } from './util/pool'
 import { storage } from './util/storage'
 
+let monoNodes = 0
+
 export type AudioState = 'init' | 'preparing' | 'running' | 'suspended' | 'preview' | 'restarting'
 
-export let lastRunningPlayers = new Set<Player>()
+export type Audio = typeof Audio.State
 
 export const Audio = reactive('audio',
   class props {
@@ -23,7 +26,6 @@ export const Audio = reactive('audio',
     id = 'audio'
     state: AudioState = 'init'
     audioContext?: AudioContext
-    connectedNodes = new Set<AudioNode | SchedulerEventGroupNode>()
 
     destPlayer?: AudioPlayer = AudioPlayer({
       vol: storage.vols.get('audio', 0.61803),
@@ -41,9 +43,10 @@ export const Audio = reactive('audio',
     repeatStartTime = 0
     repeatState: 'none' | 'turn' | 'bar' = 'none'
 
-    gainNodePool?: ObjectPool<GainNode>
-    monoNodePool?: ObjectPool<MonoNode>
-    testNodePool?: ObjectPool<MonoNode>
+    gainNodePool?: ObjectPool<GainNode, { channelCount: number }>
+    panNodePool?: ObjectPool<StereoPannerNode>
+    monoNodePool?: ObjectPool<MonoNode, MonoNodeOptions>
+    testNodePool?: ObjectPool<MonoNode, MonoNodeOptions>
     groupNodePool?: ObjectPool<SchedulerEventGroupNode>
 
     fftSize = 1024
@@ -55,11 +58,11 @@ export const Audio = reactive('audio',
 
     return fns(new class actions {
       startClick = async (resetTime = true) => {
-        if (lastRunningPlayers?.size) {
+        if (shared.$.lastRunningPlayers.size) {
           $.state = 'restarting'
           const audioPlayersToStart: AudioPlayer[] = []
           await Promise.all(
-            [...lastRunningPlayers].map((player) =>
+            [...shared.$.lastRunningPlayers].map((player) =>
               new Promise<void>((resolve) => player.fx.once.task(async ({ audioPlayer }) => {
                 audioPlayersToStart.push(audioPlayer)
                 await player.$.start(resetTime, false)
@@ -93,8 +96,6 @@ export const Audio = reactive('audio',
           $.stopTime = 0
         }
 
-        lastRunningPlayers.clear()
-
         schedulerNode.start(now + $.delayStart, $.stopTime)
 
         const loop = this.seekTime(-1, true)
@@ -117,7 +118,7 @@ export const Audio = reactive('audio',
 
       stopClick = (resetTime = true) => {
         // TODO: wait for 'preparing' to settle or something else? AbortController?
-        lastRunningPlayers = filterState(players, 'running')
+        shared.$.lastRunningPlayers = filterState(players, 'running')
         this.stop(resetTime)
       }
 
@@ -247,18 +248,26 @@ export const Audio = reactive('audio',
     })
 
     fx(async ({ audioContext, schedulerNode, fftSize, clock }) => {
-      $.gainNodePool = new ObjectPool(() => {
-        return new GainNode(audioContext, { channelCount: 1, gain: 1 })
+      $.gainNodePool = new ObjectPool(({ channelCount }: { channelCount: number }) => {
+        return new GainNode(audioContext, { channelCount, gain: 1 })
       }, (gainNode) => {
         gainNode.disconnect()
         gainNode.gain.value = 1
         return gainNode
       })
 
-      $.monoNodePool = new ObjectPool(async () => {
+      $.panNodePool = new ObjectPool(() => {
+        return new StereoPannerNode(audioContext)
+      }, (panNode) => {
+        panNode.disconnect()
+        panNode.pan.value = 0
+        return panNode
+      })
+
+      $.monoNodePool = new ObjectPool(async (options: MonoNodeOptions) => {
+        console.log('mono nodes', ++monoNodes)
         const monoNode = await MonoNode.create(audioContext, {
-          numberOfInputs: 0,
-          numberOfOutputs: 1,
+          ...options,
           processorOptions: {
             metrics: 0,
           }
@@ -284,5 +293,3 @@ export const Audio = reactive('audio',
     })
   }
 )
-
-export type Audio = typeof Audio.State
