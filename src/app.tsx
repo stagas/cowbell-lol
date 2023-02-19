@@ -164,6 +164,12 @@ export const App = web(view('app',
         min-height: 150px;
         padding-bottom: 70vh;
         pointer-events: none;
+
+        a {
+          pointer-events: all;
+          font-size: 42px;
+          cursor: pointer;
+        }
       }
       `
     })
@@ -313,7 +319,11 @@ export const App = web(view('app',
           }
         </main>
 
-        <footer>🔔</footer>
+        <footer>
+          <a href="https://github.com/stagas/cowbell-lol" target="_blank">
+            <span class="i la-github" />
+          </a>
+        </footer>
       </>
     }))
   }

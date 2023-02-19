@@ -3,10 +3,8 @@ import { filterMap } from 'everyday-utils'
 import { Matrix, Point, Rect } from 'geometrik'
 import { on, reactive } from 'minimal-view'
 import { Audio } from './audio'
-import { AudioPlayer } from './audio-player'
 import { EditorBuffer } from './editor-buffer'
 import { library, Library } from './library'
-import { Player } from './player'
 import { createPreview, Preview } from './preview-service'
 import { Project } from './project'
 import { cachedProjects, getOrCreateProject, projectsByDate } from './projects'
@@ -59,9 +57,6 @@ export const Services = reactive('services',
         pos: new Point(0, 0)
       }
     })
-
-    previewAudioPlayer?: AudioPlayer
-    previewPlayer?: Player
 
     clipboardActive: string | false = false
     clipboardId: string | false = false
@@ -260,34 +255,6 @@ export const Services = reactive('services',
             numberOfBars: 1
           })
       )
-
-      sendTestNote = fn(({ previewPlayer }) => () => {
-        let delay = 0
-
-        if (!previewPlayer.$.preview) delay = 50
-
-        const off = previewPlayer.fx(({ compileState, connectedState, preview }) => {
-          if (compileState === 'compiled' && connectedState === 'connected' && preview) {
-            setTimeout(() => {
-              this.onMidiEvent(Object.assign(
-                new MIDIMessageEvent('message', {
-                  data: new Uint8Array([144, 40, 127])
-                }),
-                { receivedTime: -1 }
-              ) as any)
-            }, delay)
-            off()
-          }
-        })
-        previewPlayer.$.startPreview()
-      })
-
-      // midi
-
-      onMidiEvent = fn(({ previewPlayer }) => (e: WebMidi.MIDIMessageEvent) => {
-        previewPlayer.$.startPreview()
-        previewPlayer.$.monoNode?.processMidiEvent(e)
-      })
     })
   },
   function effects({ $, fx }) {
@@ -313,30 +280,6 @@ export const Services = reactive('services',
         latencyHint,
       })
     })
-
-    fx(({ audio }) => {
-      $.previewAudioPlayer = AudioPlayer({})
-      $.previewPlayer = Player({
-        vol: 0.45,
-        sound: 'sk',
-        pattern: 0,
-        patterns: ['k'],
-        isPreview: true,
-      })
-      $.previewPlayer.$.audio = audio
-      console.log($.previewPlayer)
-    })
-
-    // fx(({ previewPlayer, previewAudioPlayer }) =>
-    //   previewPlayer.fx(({ preview, audioPlayer }) => {
-    //     if (previewAudioPlayer === audioPlayer) return
-    //     if (preview) {
-    //       previewAudioPlayer.$.start()
-    //     } else {
-    //       previewAudioPlayer.$.stop()
-    //     }
-    //   })
-    // )
 
     fx(({ likes }) => {
       storage.likes.set(likes)

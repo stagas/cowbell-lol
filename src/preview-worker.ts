@@ -54,6 +54,8 @@ class Task {
       this.startVmMem = this.vm.floats.slice()
     }
 
+    this.vm.config.sampleRate = argContext.sampleRate
+
     const res = await this.vm.setCode(code)
 
     this.resetVmMem = this.vm.floats.slice()

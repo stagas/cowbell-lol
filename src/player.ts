@@ -185,9 +185,18 @@ export const Player = reactive('player',
         }
       }
 
-      startPreview = () => {
+      startPreview = async () => {
+        $.audio = services.$.audio!
         $.preview = true
-        this.stopPreview()
+        return new Promise<void>((resolve) => {
+          const off = fx(({ monoNode: _, compileState, connectedState }) => {
+            if (compileState === 'compiled' && connectedState === 'connected') {
+              resolve()
+              off()
+              this.stopPreview()
+            }
+          })
+        })
       }
 
       stopPreview = queue.debounce(3000)(() => {
@@ -560,7 +569,6 @@ export const Player = reactive('player',
           lastRunningPlayers.add($.self)
         } else {
           if (!lastRunningPlayers.has($.self)) {
-            console.log('NO AUDIO REMOVE', $.self)
             $.audio = null
           }
         }
@@ -602,6 +610,7 @@ export const Player = reactive('player',
         groupNode.suspend(monoNode)
         disconnect(groupNode, monoNode)
         groupNode.destroy()
+        groupNodePool.dispose(groupNode)
 
         $.monoNode
           = $.gainNode
@@ -618,12 +627,13 @@ export const Player = reactive('player',
           setTimeout(() => {
             monoNode.disconnect()
             monoNode.disable()
+            monoNodePool.dispose(monoNode)
 
             gainNode.disconnect()
-            gainNodePool.release(gainNode)
+            gainNodePool.dispose(gainNode)
 
             panNode.disconnect()
-            panNodePool.release(panNode)
+            panNodePool.dispose(panNode)
           }, 100)
         }, 2000)
       }
@@ -639,9 +649,6 @@ export const Player = reactive('player',
         monoNode.connect(gainNode)
         gainNode.connect(panNode)
 
-        // TODO: is this necessary to idle completely?
-        // gainNode.connect(audioPlayer.$.destNode!)
-
         clearTimeout(suspendTimeout)
         suspendTimeout = setTimeout(() => {
           $.connectedState = 'connected'
@@ -649,29 +656,33 @@ export const Player = reactive('player',
       } else {
         groupNode.clear()
         groupNode.suspend(monoNode)
-        audio.$.disconnect(groupNode, monoNode)
 
         clearTimeout(suspendTimeout)
         suspendTimeout = setTimeout(() => {
           monoNode.suspend()
           audio.$.disconnect(monoNode, gainNode)
           audio.$.disconnect(gainNode, panNode)
-          // audio.$.disconnect(gainNode, panNode)
-          // console.log('yeah disconnect')
-          // audio.$.disconnect(gainNode, audioPlayer.$.destNode!)
+          audio.$.disconnect(groupNode, monoNode)
         }, 500)
 
         $.connectedState = 'disconnected'
       }
     })
 
+    let volTimeout: any
     fx(({ audio, state, gainNode, vol, preview }) => {
-      if (oneOf(state, 'preparing', 'running') || preview) {
+      clearTimeout(volTimeout)
+
+      if (oneOf(state, 'preparing', 'running')) {
+        volTimeout = setTimeout(() => {
+          audio.$.setParam(gainNode.gain, vol)
+        }, 250)
+      } else if (preview) {
         audio.$.setParam(gainNode.gain, vol)
       } else {
-        setTimeout(() => {
+        volTimeout = setTimeout(() => {
           audio.$.setParam(gainNode.gain, 0)
-        }, 500)
+        }, 100)
       }
     })
 
@@ -732,10 +743,9 @@ export const Player = reactive('player',
     fx(({ audio, monoNode, sliders }) =>
       chain(
         [...sliders.values()].map((slider) =>
-          slider.fx(({ id, normal }) => {
+          slider.fx(({ id, min, max, normal }) => {
             const monoParam = monoNode.params.get(id)
-            if (monoParam) {
-              // TODO: make params -1..1 instead of 0..1
+            if (monoParam && fixed(monoParam.monoParam.minValue) === min && fixed(monoParam.monoParam.maxValue) === max) {
               audio.$.setParam(monoParam.audioParam, normal * 2 - 1)
             }
           })
@@ -817,6 +827,19 @@ export const Player = reactive('player',
       })
     )
 
+    fx(({ audio, sends }) => {
+      sends.forEach((send) => {
+        send.$.audio = audio
+      })
+      return () => {
+        if (!$.audio) {
+          sends.forEach((send) => {
+            send.$.audio = null
+          })
+        }
+      }
+    })
+
     fx(({ project, sends, sendVolSliders, sendPanSliders }) => project.fx(({ players, allPlayersReady }) => {
       if (!allPlayersReady) return
 
@@ -838,6 +861,9 @@ export const Player = reactive('player',
                   pan: 0,
                   vol: value
                 })
+                if ($.audio) {
+                  send.$.audio = $.audio
+                }
                 sends.set(paramId, send)
               } else {
                 send.$.vol = value

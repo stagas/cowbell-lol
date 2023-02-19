@@ -45,6 +45,8 @@ export const TrackView = web(view('track-view',
     onCtrlAltClick?: TrackViewHandler
     onAltClick?: TrackViewHandler | false
     onRearrange?: TrackViewHandler
+    onKeyDown?: (e: KeyboardEvent) => void
+    onKeyUp?: (e: KeyboardEvent) => void
 
     didDisplay?= false
   },
@@ -167,6 +169,18 @@ export const TrackView = web(view('track-view',
               setTimeout(() => {
                 focusMap.get(focusLabel)?.focus()
               }, 100)
+            } else {
+              $.onKeyDown?.(e)
+            }
+          }),
+          on(host, 'keyup')((e) => {
+            if (e.key === 'Enter') {
+              // handled
+            }
+            else if (e.altKey && e.key.startsWith('Arrow')) {
+              // handled
+            } else {
+              $.onKeyUp?.(e)
             }
           }),
           () => {

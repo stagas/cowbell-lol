@@ -33,8 +33,8 @@ export type ProjectJson = {
     sound?: string
     patterns?: string[]
     pages?: PlayerPage[]
-    sends?: [number, string, number, number][]
-    routes?: [number, string, number][]
+    sends?: [number, string, number, number][] | undefined
+    routes?: [number, string, number][] | undefined
   }[]
   remixCount: number
   originalRemixCount: number
@@ -469,7 +469,8 @@ export const Project = reactive('project',
             sound: trackPages[0].sound,
             patterns: [...trackPages[0].patterns],
             pages: trackPages,
-            sends: sends || routes?.map((r) => [r[0], r[1] === 'dest' ? 'out' : r[1], r[2], 0]) || []
+            sends,
+            routes,
           }
         })
 
@@ -715,6 +716,7 @@ export const Project = reactive('project',
       }
     })
   },
+
   function effects({ $, fx }) {
     fx(({ id }) => {
       projectsById.set(id, $.self)
@@ -788,28 +790,23 @@ export const Project = reactive('project',
       )
     )
 
-    fx(({ audioPlayer }) =>
-      audioPlayer.fx(({ inputNode: _d }) =>
-        fx(({ players }) =>
-          chain([
-            () => {
-              $.allPlayersReady = false
-            },
-            ...players.map((player) =>
-              player.fx(({ audioPlayer }) =>
-                audioPlayer.fx(({ inputNode: _d }) => {
-                  if (players.every((p) => p.$.audioPlayer?.$.inputNode)) {
-                    $.allPlayersReady = true
-                  } else {
-                    $.allPlayersReady = false
-                  }
-                })
-              )
-            )
-          ])
+    fx(({ players }) => {
+      const updatePlayersReady = queue.task.not.first.not.next.last(() => {
+        $.allPlayersReady = players.every((p) => p.$.audioPlayer?.$.inputNode)
+      })
+      return chain([
+        () => {
+          $.allPlayersReady = false
+        },
+        ...players.map((player) =>
+          player.fx(({ audioPlayer }) =>
+            audioPlayer.fx(({ inputNode: _d }) => {
+              updatePlayersReady()
+            })
+          )
         )
-      )
-    )
+      ])
+    })
 
     fx.once(({ checksum }) => {
       $.firstChecksum = checksum

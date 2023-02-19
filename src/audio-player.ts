@@ -13,7 +13,6 @@ export type AudioPlayer = typeof AudioPlayer.State
 export const AudioPlayer = reactive('audio-player',
   class props {
     id?: string = cheapRandomId()
-    audio?: Audio | undefined
     vol?: number
     isSpeakers?: boolean = false
     preview?: boolean = false
@@ -21,6 +20,7 @@ export const AudioPlayer = reactive('audio-player',
   },
 
   class local {
+    audio?: Audio | null
     state: AudioState = 'init'
     inputNode?: AudioNode
     outputNode?: AudioNode
@@ -130,7 +130,6 @@ export const AudioPlayer = reactive('audio-player',
         if (!isSpeakers) {
           $.analyserNode = await analyserNodePool.acquire()
         }
-        // $.inputNode.connect($.outputNode)
       })
     )
 
@@ -146,47 +145,36 @@ export const AudioPlayer = reactive('audio-player',
       })
     })
 
-    fx(({ audio, state, inputNode, outputNode, isSpeakers }) => {
+    fx(({ audio, inputNode, outputNode, isSpeakers }) => {
       if (!isSpeakers) return
 
-      // if (oneOf(state, 'preparing', 'running')) {
       inputNode.connect(outputNode)
       outputNode.connect(audio.$.audioContext!.destination)
-      // } else {
-      //   audio.$.disconnect(inputNode, outputNode)
-      //   audio.$.disconnect(outputNode, audio.$.audioContext!.destination)
-      // }
-    })
-
-    fx(({ audio, isSpeakers, preview, state, inputNode, outputNode, analyserNode }) => {
-      if (isSpeakers) return
-
-      if (oneOf(state, 'preparing', 'running') || preview) {
-        inputNode.connect(outputNode)
-        inputNode.connect(analyserNode)
-      } else {
-        setTimeout(() => {
-          audio.$.disconnect(inputNode, outputNode)
-          audio.$.disconnect(inputNode, analyserNode)
-        }, 350)
+      return () => {
+        audio.$.disconnect(inputNode, outputNode)
+        audio.$.disconnect(outputNode, audio.$.audioContext!.destination)
       }
     })
 
-    fx(({ audio, state, outputNode, isSpeakers, preview }) => audio.fx(({ disconnect, destPlayer }) => {
+    fx(({ audio, isSpeakers, inputNode, outputNode, analyserNode }) => {
+      if (isSpeakers) return
+
+      inputNode.connect(outputNode)
+      inputNode.connect(analyserNode)
+      return () => {
+        audio.$.disconnect(inputNode, outputNode)
+        audio.$.disconnect(inputNode, analyserNode)
+      }
+    })
+
+    fx(({ audio, outputNode, isSpeakers }) => audio.fx(({ disconnect, destPlayer }) => {
       if (!isSpeakers) {
-        if (oneOf(state, 'preparing', 'running') || preview) {
-          //   outputNode.connect(audioContext.destination)
-          //   return () => {
-          //     audio.$.disconnect(outputNode, audioContext.destination)
-          //   }
-          // } else {
-          return destPlayer.fx(({ inputNode }) => {
-            outputNode.connect(inputNode)
-            return () => {
-              disconnect(outputNode, inputNode)
-            }
-          })
-        }
+        return destPlayer.fx(({ inputNode }) => {
+          outputNode.connect(inputNode)
+          return () => {
+            disconnect(outputNode, inputNode)
+          }
+        })
       }
     }))
   }

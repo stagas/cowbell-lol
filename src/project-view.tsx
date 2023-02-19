@@ -9,6 +9,7 @@ import { PlayersView } from './players-view'
 import { Project, relatedProjects } from './project'
 import { Send } from './send'
 import { services } from './services'
+import { shared } from './shared'
 import { cachedRef } from './util/cached-ref'
 import { classes } from './util/classes'
 import { timeAgo, toDate } from './util/time-ago'
@@ -255,66 +256,53 @@ export const ProjectView = web(view('project-view',
       )
     )
 
-    fx(({ audio, primary, project }, prev) =>
-      project.fx(({ players }) => {
-        if (primary) {
-          if (players.length) {
-            project.$.audio = audio
-          }
-        } else {
-          if (prev.primary && project.$.audioPlayer.$.state !== 'running') {
-            project.$.audio = void 0 as any
-          }
-        }
-      })
-    )
+    fx(() => shared.fx(({ previewPlayer, previewAudioPlayer }) => fx(({ player, project, didExpand }) => {
+      if (didExpand) return player.fx(({ sends, sound }) => project.fx(({ selectedPreset }) => {
+        previewPlayer.$.audioPlayer = player.$.audioPlayer?.$.audio
+          ? player.$.audioPlayer
+          : previewAudioPlayer
+        previewPlayer.$.sends?.forEach((send) => {
+          send.dispose()
+        })
 
-    fx(() => services.fx(({ previewPlayer, previewAudioPlayer }) =>
-      fx(({ player, project }) =>
-        player.fx(({ sends, sound }) =>
-          project.fx(({ selectedPreset }) => {
-            // route the preview player with the same routes as the
-            // current player.
-
-            previewPlayer.$.audioPlayer = player.$.audioPlayer?.$.audio
-              ? player.$.audioPlayer
-              : previewAudioPlayer
-            previewPlayer.$.sends?.forEach((route) => {
-              route.dispose()
+        // but only if the player has audio loaded
+        if (player.$.audioPlayer?.$.audio) {
+          previewPlayer.$.sends = new Map([...sends].map(([id, playerSend]) => {
+            const send = Send({
+              ...playerSend.$.toJSON(),
+              sourcePlayer: previewPlayer
             })
+            playerSend.fx(({ vol, pan }) => {
+              send.$.vol = vol
+              send.$.pan = pan
+            })
+            return [id, send]
+          }))
+        } else {
+          // otherwise use default routes directly to audio dest out
+          const paramId = `${previewPlayer.$.id}::out`
 
-            // but only if the player has audio loaded
-            if (player.$.audioPlayer?.$.audio) {
-              previewPlayer.$.sends = new Map([...sends].map(([id, route]) => [id, Send({
-                ...route.$.toJSON(),
-                sourcePlayer: previewPlayer
-              })]))
-            } else {
-              // otherwise use default routes directly to audio dest out
-              const paramId = `${previewPlayer.$.id}::out`
+          previewPlayer.$.audioPlayer.$.audio = services.$.audio!
+          previewPlayer.$.sends = new Map([
+            [paramId, Send({
+              sourcePlayer: previewPlayer,
+              targetPlayer: previewPlayer,
+              targetId: 'out',
+              pan: 0,
+              vol: player.$.vol,
+            })]
+          ])
+        }
 
-              previewPlayer.$.sends = new Map([
-                [paramId, Send({
-                  sourcePlayer: previewPlayer,
-                  targetPlayer: previewPlayer,
-                  targetId: 'out',
-                  pan: 0,
-                  vol: 1,
-                })]
-              ])
-            }
+        if (selectedPreset.$.kind === 'sound') {
+          previewPlayer.$.sound = selectedPreset.$.id!
+        } else {
+          previewPlayer.$.sound = sound
+        }
+      }))
+    })))
 
-            if (selectedPreset.$.kind === 'sound') {
-              previewPlayer.$.sound = selectedPreset.$.id!
-            } else {
-              previewPlayer.$.sound = sound
-            }
-          })
-        )
-      )
-    ))
-
-    fx(() => services.fx(({ previewPlayer }) =>
+    fx(() => shared.fx(({ previewPlayer }) =>
       fx(({ player }) =>
         player.fx(({ vol }) => {
           previewPlayer.$.vol = vol
@@ -323,7 +311,7 @@ export const ProjectView = web(view('project-view',
     ))
 
     services.fx(({ skin }) =>
-      fx(({ primary, project }) =>
+      fx(({ project }) =>
         project.fx(({ id, audioPlayer }) =>
           audioPlayer.fx(({ state, workerBytes, workerFreqs }) => {
             $.waveformView = <Wavetracer
@@ -760,7 +748,6 @@ export const ProjectView = web(view('project-view',
               <span class="amt">{bpm}</span>
               <span class="bpm">BPM</span>
             </div>
-
           </div>
         )
       })))

@@ -2,8 +2,6 @@ import { pick } from 'everyday-utils'
 import { chain, reactive } from 'minimal-view'
 import { Audio, AudioState } from './audio'
 import { Player } from './player'
-import { services } from './services'
-import { oneOf } from './util/one-of'
 
 export type Send = typeof Send.State
 
@@ -18,14 +16,15 @@ export const Send = reactive('send',
   },
 
   class local {
-    audio!: Audio
+    audio?: Audio | null
     state?: AudioState
     sourceNode?: AudioNode
-    inputNode?: AudioNode
-    outputNode?: AudioNode
 
-    gainNode?: GainNode
-    panNode?: StereoPannerNode
+    inputNode?: AudioNode | null
+    outputNode?: AudioNode | null
+
+    gainNode?: GainNode | null
+    panNode?: StereoPannerNode | null
   },
 
   function actions({ $, fns, fn }) {
@@ -41,10 +40,6 @@ export const Send = reactive('send',
   },
 
   function effects({ $, fx }) {
-    fx(() => services.fx(({ audio }) => {
-      $.audio = audio
-    }))
-
     fx(({ audio, gainNode, vol }) => {
       audio.$.setParam(gainNode.gain, vol)
     })
@@ -93,49 +88,51 @@ export const Send = reactive('send',
       )
     )
 
-    fx(({ audio }) =>
-      audio.fx(({ gainNodePool, panNodePool }) => fx(async ({ targetNode }) => {
+    fx(({ audio, targetNode }) =>
+      audio.fx(async ({ gainNodePool, panNodePool }) => {
         if (targetNode instanceof AudioParam) {
           const gainNode = $.gainNode = await gainNodePool.acquire({ channelCount: 1 })
           gainNode.gain.value = $.vol
           $.inputNode = gainNode
           $.outputNode = gainNode
-          return () => {
-            gainNode.disconnect()
-            // gainNodePool.release(gainNode)
-          }
         } else {
           const gainNode = $.gainNode = await gainNodePool.acquire({ channelCount: 2 })
           gainNode.gain.value = $.vol
           const panNode = $.panNode = await panNodePool.acquire()
           panNode.pan.value = $.pan
-          // gainNode.connect(panNode)
           $.inputNode = gainNode
           $.outputNode = panNode
-          return () => {
-            gainNode.disconnect()
-            panNode.disconnect()
-            // gainNodePool.release(gainNode)
-            // panNodePool.release(panNode)
-          }
         }
-      }))
+      })
     )
 
-    fx(({ audio, state, gainNode, sourceNode, targetNode, inputNode, outputNode }) => {
-      if (oneOf(state, 'preparing', 'running')) {
-        if (!(targetNode instanceof AudioParam)) {
-          gainNode.connect($.panNode!)
-        }
-        sourceNode.connect(inputNode)
-        outputNode.connect(targetNode as AudioNode)
-        return () => {
-          if (!(targetNode instanceof AudioParam)) {
-            audio.$.disconnect(gainNode, $.panNode!)
-          }
-          audio.$.disconnect(sourceNode, inputNode)
-          audio.$.disconnect(outputNode, targetNode as AudioNode)
-        }
+    fx(({ gainNode }) => () => {
+      gainNode.disconnect()
+    })
+
+    fx(({ panNode }) => () => {
+      panNode.disconnect()
+    })
+
+    fx(({ audio }) => () => {
+      audio.$.gainNodePool!.dispose($.gainNode!)
+      audio.$.panNodePool!.dispose($.panNode!)
+      $.inputNode = $.outputNode = $.gainNode = $.panNode = null
+    })
+
+    fx(({ audio, gainNode, panNode }) => {
+      gainNode.connect(panNode)
+      return () => {
+        audio.$.disconnect(gainNode, panNode)
+      }
+    })
+
+    fx(({ audio, sourceNode, targetNode, inputNode, outputNode }) => {
+      sourceNode.connect(inputNode)
+      outputNode.connect(targetNode as AudioNode)
+      return () => {
+        audio.$.disconnect(sourceNode, inputNode)
+        audio.$.disconnect(outputNode, targetNode as AudioNode)
       }
     })
   }

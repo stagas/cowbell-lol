@@ -11,8 +11,6 @@ import { oneOf } from './util/one-of'
 import { ObjectPool } from './util/pool'
 import { storage } from './util/storage'
 
-let monoNodes = 0
-
 export type AudioState = 'init' | 'preparing' | 'running' | 'suspended' | 'preview' | 'restarting'
 
 export type Audio = typeof Audio.State
@@ -168,8 +166,8 @@ export const Audio = reactive('audio',
         }
       })
 
-      getTime = fn(({ clock }) => () => {
-        return clock.internalTime
+      getTime = fn(({ audioContext, clock }) => () => {
+        return clock.internalTime - audioContext.baseLatency
       })
 
       seekTime = fn(({ clock }) => (diff: number, keepRepeatTime?: boolean) => () => {
@@ -265,7 +263,6 @@ export const Audio = reactive('audio',
       })
 
       $.monoNodePool = new ObjectPool(async (options: MonoNodeOptions) => {
-        console.log('mono nodes', ++monoNodes)
         const monoNode = await MonoNode.create(audioContext, {
           ...options,
           processorOptions: {

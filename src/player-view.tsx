@@ -162,20 +162,27 @@ export const PlayerView = web(view('player-view',
       chain(
         () => {
           lastAnimTurn = -1
+          player.$.currentTime = -1
         },
         player.fx(({ state, totalBars, currentTime, turn }, prev) => {
           if (currentTime && currentTime < 0) {
             lastAnimTurn = -1
             lastAnim?.cancel()
-            anim.schedule(() => {
-              rulerEl.style.transform = 'translateX(0)'
-            })
           }
-          if (state === 'running' && (lastAnimTurn !== turn || (prev.currentTime && Math.abs(currentTime - prev.currentTime) > 100)) && currentTime > 0) {
+          if (
+            state === 'running'
+            && (
+              lastAnimTurn !== turn
+              || (
+                prev.currentTime
+                && Math.abs(currentTime - prev.currentTime) > 200
+              )
+            )
+            && currentTime >= 0
+          ) {
             lastAnimTurn = turn
             anim.schedule(() => {
               const x = (currentTime * 0.001) / totalBars
-              lastAnim?.pause()
               lastAnim = rulerEl.animate([
                 { transform: `translateX(${x * patternsWidth}px)` },
                 { transform: `translateX(${patternsWidth}px)` }],
@@ -188,7 +195,10 @@ export const PlayerView = web(view('player-view',
             })
           } else if (state === 'suspended') {
             lastAnimTurn = -1
-            lastAnim?.pause()
+            anim.schedule(() => {
+              lastAnim?.pause()
+              lastAnim?.commitStyles()
+            })
           }
         })
       )

@@ -1,26 +1,3 @@
-// credits: ChatGPT
-
-// export class ObjectPool<T> {
-//   private readonly pool: T[];
-
-//   constructor(private readonly factory: () => T | Promise<T>, private readonly reviver: (item: T) => T | Promise<T>) {
-//     this.pool = [];
-//   }
-
-//   public acquire(): T | Promise<T> {
-//     if (this.pool.length > 0) {
-//       return this.reviver(this.pool.pop()!);
-//     }
-//     return this.factory();
-//   }
-
-//   public release(obj: T): void {
-//     this.pool.push(obj);
-//   }
-// }
-
-// import { isEqual } from 'everyday-utils';
-
 export class ObjectPool<T, U = undefined> {
   poolMap = new Map<string | undefined, T[]>();
   objectMap = new Map<T, string | undefined>();
@@ -49,5 +26,9 @@ export class ObjectPool<T, U = undefined> {
       this.poolMap.set(this.objectMap.get(obj), pool);
     }
     pool.push(obj);
+  }
+
+  dispose(obj: T): void {
+    this.objectMap.delete(obj)
   }
 }

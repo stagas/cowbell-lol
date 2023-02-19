@@ -11,10 +11,10 @@ import { Player } from './player'
 import { Project } from './project'
 import { Send } from './send'
 import { services } from './services'
+import { shared } from './shared'
 import { SliderView } from './slider-view'
 import { Spacer } from './spacer'
 import { TrackView } from './track-view'
-import { Sliders } from './types'
 import { cachedRef } from './util/cached-ref'
 import { classes } from './util/classes'
 import { delById, get, replaceAtIndex } from './util/list'
@@ -22,60 +22,6 @@ import { storage } from './util/storage'
 import { Vertical } from './vertical'
 
 let presetsSmoothScrollTimeout: any
-
-// function hideShowDynamicSliders(p: [string, Slider][], [paramId, slider]: [string, Slider], index: number, arr: [string, Slider][]) {
-//   const [, targetId] = paramId.split('::')
-//   const isDynamic = targetId.startsWith('#')
-//   const hasValue = !!slider.$.value
-
-//   let prev = arr[index - 1]
-//   let prevId: string | undefined
-//   let prevIsDynamic = false
-//   let prevHasValue = false
-//   if (prev) {
-//     prevId = prev[0].split('::')[1]
-//     if (prevId) {
-//       prevIsDynamic = prevId.startsWith('#')
-//       if (prevIsDynamic) {
-//         let curr = index - 1
-//         while (prevIsDynamic) {
-//           prevHasValue = !!prev[1].$.value
-//           if (prevHasValue) break
-//           prev = arr[--curr]
-//           if (!prev?.[0].split('::')[1]?.startsWith('#')) break
-//         }
-//       }
-//     }
-//   }
-
-//   const next = arr[index + 1]
-//   let nextId: string | undefined
-//   let nextIsDynamic = false
-//   let nextHasValue = false
-//   if (next) {
-//     nextId = next[0].split('::')[1]
-//     if (nextId) {
-//       nextIsDynamic = nextId.startsWith('#')
-//       nextHasValue = !!next[1].$.value
-//     }
-//   }
-
-//   if (isDynamic && !hasValue) {
-//     if (!prevHasValue && nextIsDynamic) {
-//       if (!nextHasValue) {
-//         return p
-//       }
-//     }
-//   }
-
-//   p.unshift([paramId, slider])
-//   return p
-// }
-
-function mapSends(sliders: Sliders) {
-  return [...sliders]
-  //.reverse().reduce(hideShowDynamicSliders, [] as [string, Slider][])
-}
 
 export function startTemporaryPresetsSmoothScroll(id: string) {
   const el = cachedRef(`presets-${id}`)?.current
@@ -155,20 +101,14 @@ export const PlayerEditor = web(view('player-editor',
 
       // sound
 
-      onSoundSelect = (id: string, { noPreview }: { noPreview?: boolean } = {}) => {
+      onSoundSelect = async (id: string, { noPreview }: { noPreview?: boolean } = {}) => {
         startTemporaryPresetsSmoothScroll($.project!.$.id!)
 
         $.project!.$.selectedPreset = get(services.$.library.$.sounds, id)!
 
         if (noPreview) return
 
-        if (id !== services.$.previewPlayer!.$.sound) {
-          queueMicrotask(() => {
-            services.$.sendTestNote()
-          })
-        } else {
-          services.$.sendTestNote()
-        }
+        shared.$.sendTestNote()
       }
 
       onSoundUse = fn(({ player }) => (id: string) => {
@@ -329,19 +269,20 @@ export const PlayerEditor = web(view('player-editor',
             clickMeta={editorBuffer.$}
           />
 
-          <div class="track-toolbar">
-            <div class="track-toolbar-controls">
-              {readableOnly && <Button small onClick={() => {
-                if (focus === 'sound') {
-                  $.onSoundUse(editorBuffer.$.id!)
-                } else if (focus === 'pattern') {
-                  $.onPatternUse(editorBuffer.$.id!)
-                }
-              }}>
-                <span class="i mdi-light-chevron-up" style="font-size:26px; position: relative; left: 0.75px; top: -2.25px;" />
-              </Button>}
-            </div>
+          {readableOnly && <div class="centered">
+            <Button round onClick={() => {
+              if (focus === 'sound') {
+                $.onSoundUse(editorBuffer.$.id!)
+              } else if (focus === 'pattern') {
+                $.onPatternUse(editorBuffer.$.id!)
+              }
+            }}>
+              <span class="i mdi-light-chevron-up" style="font-size:36px; position: relative; left: 0.75px; top: -3px;" />
+            </Button>
+          </div>}
 
+          <div class="track-toolbar">
+            <div></div>
             <div class="track-toolbar-controls">
               {isDraft && <>
                 <Button small onClick={() => {
@@ -477,6 +418,12 @@ export const PlayerEditor = web(view('player-editor',
               onCtrlClick={$.onSoundUse}
               onCtrlShiftClick={$.onSoundDelete}
               onRearrange={$.onSoundRearrange}
+              onKeyDown={(e) => {
+                (cachedRef(`piano-${id}`)?.current as unknown as PianoKeys).$.onKeyDown(e)
+              }}
+              onKeyUp={(e) => {
+                (cachedRef(`piano-${id}`)?.current as unknown as PianoKeys).$.onKeyUp(e)
+              }}
             />
           )}
         </div>)
@@ -534,7 +481,7 @@ export const PlayerEditor = web(view('player-editor',
                   halfOctaves={halfOctaves}
                   startHalfOctave={startHalfOctave}
                   audioContext={audioContext}
-                  onMidiEvent={services.$.onMidiEvent}
+                  onMidiEvent={shared.$.onMidiEvent}
                   vertical
                 />
               )
@@ -611,7 +558,7 @@ export const PlayerEditor = web(view('player-editor',
               update(<div class="player-routes">
                 <div class="player-sends">
                   <div class="player-sends-sliders">
-                    {mapSends(sendVolSliders.get(id)!).map(([paramId, slider]) =>
+                    {[...sendVolSliders.get(id)!].map(([paramId, slider]) =>
                       <div key={paramId} class="player-sends-item">
                         <KnobView
                           theme="ableton"
@@ -639,7 +586,7 @@ export const PlayerEditor = web(view('player-editor',
                       pattern={false}
                     />
                     <div class="player-sends-sliders">
-                      {mapSends(sliders).map(([paramId, slider]) =>
+                      {[...sliders].map(([paramId, slider]) =>
                         paramId.endsWith('::in')
                           ?
                           <div key={paramId} class="player-sends-item">
@@ -704,22 +651,20 @@ export const PlayerEditor = web(view('player-editor',
           position: relative;
           display: flex;
           flex-flow: row wrap;
-          align-items: stretch;
-          justify-content: space-around;
           padding: 6px;
           gap: 10px;
         }
         &-sends {
           position: relative;
           display: flex;
-          flex: 1;
-          width: 100%;
+          /* flex: 0; */
+          /* width: 100%; */
+          /* min-width: 100px; */
           height: 60px;
           &:first-child {
-            flex: 0;
             width: 50px;
-            max-width: 50px;
             min-width: 50px;
+            max-width: 50px;
           }
           ${TrackView} {
             position: absolute;
@@ -755,7 +700,7 @@ export const PlayerEditor = web(view('player-editor',
       `
     })
 
-    fx(({ editorVisible, player }) => {
+    fx(({ editorVisible }) => {
       $.view =
         <div
           class={classes({

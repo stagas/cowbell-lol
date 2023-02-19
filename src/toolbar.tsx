@@ -39,7 +39,6 @@ export const Toolbar = web(view('toolbar',
         const b = elapsed
 
         bar.textContent = `${Math.max(1, 1 + b | 0)}`.padStart(3, '0')
-        // bar.textContent = `${Math.max(1, 1+(b % 16)|0 )}`.padStart(2, '0')
         beat.textContent = `${Math.max(1, 1 + ((b * 4) % 4) | 0)}`
         sixt.textContent = `${Math.max(1, 1 + ((b * 16) % 16) | 0)}`.padStart(2, '0')
       }))

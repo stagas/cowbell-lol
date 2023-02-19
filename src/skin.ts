@@ -386,6 +386,17 @@ ${PlayerView} {
   flex: 1;
   overflow: hidden;
 }
+
+.centered {
+  position: absolute;
+  left: 0;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
 `
 
 export type Skin = typeof skin
