@@ -14,7 +14,7 @@ import { cachedRef } from './util/cached-ref'
 export const PlayersView = web(view('players',
   class props {
     id?= cheapRandomId()
-    project!: Project
+    project!: Project | null
     onPlayerSoundSelect!: TrackViewHandler
     onPlayerPatternSelect!: TrackViewHandler
   },

@@ -6,7 +6,7 @@ import { Button } from './button'
 import { Hint } from './hint'
 import { Project } from './project'
 import { ProjectView } from './project-view'
-import { projects } from './projects'
+import { onMovePlayers, projects } from './projects'
 import { services } from './services'
 import { Toolbar } from './toolbar'
 import { cachedRef } from './util/cached-ref'
@@ -59,6 +59,7 @@ export const App = web(view('app',
           this.endOverlay()
         })
       }
+
     })
   },
 
@@ -220,7 +221,7 @@ export const App = web(view('app',
           && project !== projects.$.visible[0]
           && <Button
             small
-            onClick={() => projects.$.onMovePlayers(project)}
+            onClick={() => onMovePlayers(project)}
             title="Merge playing into top project"
           >
             <span class={`i clarity-arrow-line`} />

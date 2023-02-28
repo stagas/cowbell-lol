@@ -36,7 +36,7 @@ export type SeqLane = typeof SeqLane.State
 
 export const SeqLane = reactive('seq-lane',
   class props {
-    player!: Player
+    player!: Player | null
     events!: SeqEvent[]
   },
 
@@ -124,7 +124,7 @@ export const Sequencer = reactive('sequencer',
   },
 
   class local {
-    audio?: Audio
+    audio?: Audio | null
     time?: number
     state: AudioState = 'init'
     playbackState?: 'seq' | 'page' = 'seq'

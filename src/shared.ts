@@ -2,6 +2,7 @@ import { wait } from 'everyday-utils'
 import { reactive } from 'minimal-view'
 import { AudioPlayer } from './audio-player'
 import { Player } from './player'
+import { MIDIMessageEvent } from './util/midi-message-event'
 
 export type Shared = typeof Shared.State
 
@@ -10,8 +11,8 @@ export const Shared = reactive('shared',
 
   class local {
     lastRunningPlayers = new Set<Player>()
-    previewAudioPlayer?: AudioPlayer
-    previewPlayer?: Player
+    previewAudioPlayer?: AudioPlayer | null
+    previewPlayer?: Player | null
   },
 
   function actions({ $, fn, fns }) {
@@ -31,7 +32,7 @@ export const Shared = reactive('shared',
 
       // midi
 
-      onMidiEvent = fn(({ previewPlayer }) => async (e: WebMidi.MIDIMessageEvent) => {
+      onMidiEvent = fn(({ previewPlayer }) => async (e: MIDIMessageEvent) => {
         await previewPlayer.$.startPreview()
         previewPlayer.$.monoNode?.processMidiEvent(
           Object.assign(e, { receivedTime: -1 })

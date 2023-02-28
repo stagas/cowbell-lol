@@ -16,7 +16,7 @@ export const AudioPlayer = reactive('audio-player',
     vol?: number
     isSpeakers?: boolean = false
     preview?: boolean = false
-    project?: Project
+    project?: Project | null
   },
 
   class local {

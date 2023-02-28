@@ -49,9 +49,9 @@ export function logAndReturn<T>(x: T): T {
   return x
 }
 
-export const projectsById = new Map<string, Project>()
+export const projectsById: Map<string, Project> = new Map()
 
-export const relatedProjects = new Map<Project, Project[]>()
+export const relatedProjects: Map<Project, Project[]> = new Map()
 
 export type Project = typeof Project.State
 
@@ -76,16 +76,16 @@ export const Project = reactive('project',
     playbackState: 'page' | 'seq' = 'seq'
     library?: Library
     audio?: Audio | null
-    audioPlayer = AudioPlayer({})
+    audioPlayer: AudioPlayer = AudioPlayer({})
     allPlayersReady = false
     firstChecksum?: string
     vols?: string
     startedAt: number = 0
     pathname?: string
-    sequencer?: Sequencer | null
+    sequencer?: Sequencer
     players: Player[] = []
     selectedPlayer = 0
-    selectedPreset?: EditorBuffer
+    selectedPreset?: EditorBuffer | null
     editorVisible = false
   },
   function actions({ $, fx, fn, fns }) {

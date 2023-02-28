@@ -79,7 +79,7 @@ function bufferStorage<T>(key: string): BufferStorage<T> {
         const b: string[] = localStorage[key].split('!')
         return b.map((x) => {
           const [isDraft, checksum] = x.split(',')
-          return [parseInt(isDraft), checksum] as T
+          return [parseInt(isDraft), checksum] as unknown as T
         })
       } catch {
         return fallback

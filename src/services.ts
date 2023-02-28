@@ -28,7 +28,7 @@ export const Services = reactive('services',
     state: 'idle' | 'deleting' = 'idle'
 
     skin?: Skin = skin
-    audio?: Audio
+    audio?: Audio | null
     waveplot?: Waveplot
     preview?: Preview
 

@@ -8,7 +8,30 @@ import { shared } from './shared'
 import { filterState } from './util/filter-state'
 import { storage } from './util/storage'
 
-export const cachedProjects = new Map<string, Project>()
+export const cachedProjects: Map<string, Project> = new Map()
+
+export async function onMovePlayers(project: Project): Promise<void> {
+  const targetProject = projects.$.project!
+
+  const playersToMove: Player[] = project.$.players.filter((player: Player) => shared.$.lastRunningPlayers?.has(player) || player.$.state === 'running')
+    .map((player: Player) => Player({
+      ...player.$.derive(),
+      project: targetProject
+    }))
+
+  if (!playersToMove.length)
+    return
+
+  targetProject.$.players = [...targetProject.$.players, ...playersToMove]
+
+  await Promise.resolve()
+
+  playersToMove.forEach((player) => {
+    player.$.start(false)
+  })
+
+  project.$.stop(false)
+}
 
 export function getPlayingProjects(): Project[] {
   return [...filterState(cachedProjects, 'preparing', 'running')]
@@ -25,7 +48,7 @@ export function projectsRelated(a: Project, b: Project) {
   return new Date(b.$.date!).getTime() - new Date(a.$.date!).getTime()
 }
 
-export function projectsGroup(acc: Project[][], curr: Project) {
+export function projectsGroup(acc: Project[][], curr: Project): Project[][] {
   const group = acc.find((g) =>
     g[0].$.originalChecksum === curr.$.checksum
     || curr.$.originalChecksum === g[0].$.checksum
@@ -42,7 +65,7 @@ export function projectsGroup(acc: Project[][], curr: Project) {
   return acc
 }
 
-export function getOrCreateProject(p: schemas.ProjectResponse | { id: string }) {
+export function getOrCreateProject(p: schemas.ProjectResponse | { id: string }): Project {
   let project = cachedProjects.get(p.id)
   if (!project) {
     if ('title' in p) {
@@ -97,25 +120,6 @@ export const Projects = reactive('projects',
   },
   function actions({ $, fns, fn }) {
     return fns(new class actions {
-      onMovePlayers = async (project: Project): Promise<void> => {
-        const playersToMove: Player[] = project.$.players.filter((player: Player) => shared.$.lastRunningPlayers?.has(player) || player.$.state === 'running')
-          .map((player: Player) => Player({
-            ...player.$.derive(),
-            project: $.project!
-          }))
-
-        if (!playersToMove.length) return
-
-        $.project!.$.players = [...$.project!.$.players, ...playersToMove]
-
-        await Promise.resolve()
-
-        playersToMove.forEach((player) => {
-          player.$.start(false)
-        })
-
-        project.$.stop(false)
-      }
     })
   },
   function effects({ $, fx, deps, refs }) {
