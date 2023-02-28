@@ -11,7 +11,7 @@ import { Volume } from './volume'
 
 export const Toolbar = web(view('toolbar',
   class props {
-    project!: Project
+    project!: Project | null
   },
 
   class local {
@@ -28,8 +28,8 @@ export const Toolbar = web(view('toolbar',
 
   function actions({ $, fns, fn }) {
     return fns(new class actions {
-      drawTime = services.fn(({ audio }) => fn(({ mins, secs, mill, bar, beat, sixt }) => () => {
-        const elapsed = audio.$.getTime()
+      drawTime = services.fn(({ audio }) => fn(({ project, mins, secs, mill, bar, beat, sixt }) => () => {
+        const elapsed = audio.$.getTime(audio.$.state === 'running') % (project.$.sequencer?.$.time ?? Infinity)
         const time = new Date(Math.max(0, elapsed / audio.$.clock.coeff * 1000))
 
         mins.textContent = `${time.getMinutes()}`
@@ -178,7 +178,7 @@ export const Toolbar = web(view('toolbar',
 
       .display {
         font-family: ${skin.fonts.slab};
-        background: ${skin.colors.bg};
+        background: ${skin.colors.bgDarky};
         border-radius: 8px;
         margin: 10px 0 10px;
         box-sizing: border-box;
@@ -361,12 +361,12 @@ export const Toolbar = web(view('toolbar',
                   <span class={`i mdi-light-repeat${repeatState === 'bar' ? ''/*'-once'*/ : ''}`} />
                 </Button>
                 <Button
-                  onClick={audio.$.seekTime(-1)}
+                  onClick={audio.$.createTimeLoop(-1)}
                 >
                   <span class="i la-backward" />
                 </Button>
                 <Button
-                  onClick={audio.$.seekTime(+1)}
+                  onClick={audio.$.createTimeLoop(+1)}
                 >
                   <span class="i la-forward" />
                 </Button>

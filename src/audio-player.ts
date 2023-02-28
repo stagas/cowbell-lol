@@ -66,7 +66,7 @@ export const AudioPlayer = reactive('audio-player',
         if ($.state === 'running') {
           this.stop(false)
         } else {
-          this.start()
+          this.start(false)
         }
       }
 
@@ -137,9 +137,9 @@ export const AudioPlayer = reactive('audio-player',
       if (!isSpeakers) return
       return audio.fx(({ state }) => {
         if (state === 'running') {
-          $.start()
+          $.start(false)
         } else {
-          $.stop()
+          $.stop(false)
         }
         $.state = state
       })

@@ -47,6 +47,11 @@ colors.brightWhite = colors.white
 colors.foreground = colors.brightWhite
 colors.background = colors.black
 
+const sat = 0.075
+const bri = 0.0175
+const lum = 1.25
+const ilum = 0.95
+
 export type Colors = typeof colors
 
 export const getSkin = (colors: Colors) => ({
@@ -190,27 +195,27 @@ content: "\\e01d";
     cursor: colors.cursorColor,
 
     fg: colors.foreground,
-    fgLight: luminate(saturate(colors.foreground, -0.45), 0.05),
-    fgPale: luminate(saturate(colors.foreground, -0.6), -0.4),
+    fgLight: luminate(saturate(colors.foreground, -0.45 + sat), (0.05 + bri) * lum),
+    fgPale: luminate(saturate(colors.foreground, -0.6 + sat), (-0.4 + bri) * ilum),
 
     bg: colors.background,
-    bgPale: luminate(saturate(colors.background, 0.15), 0.18),
-    bgPaleLight: luminate(saturate(colors.background, 0.15), 0.3),
-    bgLight: luminate(saturate(colors.background, 0.05), .025),
-    bgLighter: luminate(saturate(colors.background, 0.1), .082),
-    bgDark: luminate(colors.background, -0.005),
-    bgDarky: luminate(saturate(colors.background, -0.015), -0.022),
-    bgDarker: luminate(saturate(colors.background, 0.02), -0.045),
+    bgPale: luminate(saturate(colors.background, 0.15 + sat), (0.18 + bri) * lum),
+    bgPaleLight: luminate(saturate(colors.background, 0.15 + sat), (0.3 + bri) * lum),
+    bgLight: luminate(saturate(colors.background, 0.05 + sat), (.025 + bri) * lum),
+    bgLighter: luminate(saturate(colors.background, 0.1 + sat), (.082 + bri) * lum),
+    bgDark: luminate(colors.background, (-0.005 + bri) * lum),
+    bgDarky: luminate(saturate(colors.background, -0.015 + sat), (-0.022 + bri) * ilum),
+    bgDarker: luminate(saturate(colors.background, 0.02 + sat), (-0.045 + bri) * ilum),
 
-    shadeBright: `${luminate(saturate(colors.background, 1), 0.71)}55`,
-    shadeBrighter: `${luminate(saturate(colors.foreground, .10), -0.04)}ee`,
-    shadeSoft: `${luminate(saturate(colors.background, 0.12), 0.35)}55`,
-    shadeSofter: `${luminate(saturate(colors.background, 0.1), 0.3)}25`,
-    shadeSoftest: `${luminate(saturate(colors.background, 0), 0.05)}55`,
-    shadeDark: `${luminate(saturate(colors.background, -0.015), -0.07)}88`,
-    shadeDarker: `${luminate(saturate(colors.background, 0.1), -0.08)}88`,
-    shadeBlack: `${luminate(saturate(colors.background, 0.45), -0.225)}88`,
-    shadeBlackHalf: `${luminate(saturate(colors.background, 0.25), -0.28)}77`,
+    shadeBright: `${luminate(saturate(colors.background, 1), (0.71 + bri) * lum)}55`,
+    shadeBrighter: `${luminate(saturate(colors.foreground, .10 + sat), (-0.04 + bri) * ilum)}ee`,
+    shadeSoft: `${luminate(saturate(colors.background, 0.131 + sat), (0.266 + bri) * lum)}62`,
+    shadeSofter: `${luminate(saturate(colors.background, 0.1 + sat), (0.3 + bri) * lum)}25`,
+    shadeSoftest: `${luminate(saturate(colors.background, 0 + sat), (0.05 + bri) * lum)}55`,
+    shadeDark: `${luminate(saturate(colors.background, -0.015 + sat), (-0.07 + bri) * ilum)}88`,
+    shadeDarker: `${luminate(saturate(colors.background, 0.1 + sat), (-0.08 + bri) * ilum)}88`,
+    shadeBlack: `${luminate(saturate(colors.background, 0.45 + sat), (-0.225 + bri) * ilum)}88`,
+    shadeBlackHalf: `${luminate(saturate(colors.background, 0.25 + sat), (-0.28 + bri) * lum)}77`,
   },
 
   styles: {
@@ -287,6 +292,11 @@ ${Knob} {
 
 .none {
   display: none !important;
+}
+
+.transparent {
+  opacity: 0 !important;
+  pointer-events: none;
 }
 
 .raised {
@@ -396,6 +406,10 @@ ${PlayerView} {
   display: flex;
   align-items: center;
   justify-content: center;
+}
+
+.column {
+  flex-flow: column nowrap;
 }
 `
 

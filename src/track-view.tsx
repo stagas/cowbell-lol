@@ -27,8 +27,10 @@ export const TrackView = web(view('track-view',
     sliders?: boolean = false
     showLabel?: boolean = true
     showNotes?: boolean = false
+    showIndicator?: boolean = true
     canFocus?: boolean = false
 
+    turn?= 0
     player?: Player | false = false
     sound?: EditorBuffer | false
     pattern?: EditorBuffer | false
@@ -249,13 +251,17 @@ export const TrackView = web(view('track-view',
       host.toggleAttribute('draft', isDraft)
     })
 
+    fx.raf(({ host, showIndicator }) => {
+      host.toggleAttribute('indicator', showIndicator)
+    })
+
     fx.raf(({ host }) =>
       observe.intersection.root(host.offsetParent)(host, $.intersects)
     )
 
-    fx(({ host }) =>
-      observe.resize.initial(host, $.resize)
-    )
+    fx(({ host, sliders }) => {
+      if (sliders) return observe.resize.initial(host, $.resize)
+    })
 
     const maybeDraft = ({ isDraft }: any) => {
       $.isDraft =
@@ -287,7 +293,7 @@ export const TrackView = web(view('track-view',
       }
     })
 
-    fx(({ didDisplay, pattern, xPos, showNotes }) => {
+    fx(({ didDisplay, pattern, showNotes }) => {
       if (!didDisplay) {
         if (pattern) {
           $.midiView = <Midi
@@ -300,20 +306,19 @@ export const TrackView = web(view('track-view',
       }
 
       if (pattern) {
-        return fx(({ player }) => {
+        return fx(({ player, turn }) => {
           if (player) {
             $.midiView = <Midi
               part="midi"
               player={player}
               pattern={pattern}
-              xPos={xPos}
               showNotes={showNotes}
             />
           } else {
             $.midiView = <Midi
               part="midi"
               pattern={pattern}
-              xPos={xPos}
+              turn={turn}
               showNotes={showNotes}
             />
           }
@@ -450,11 +455,11 @@ export const TrackView = web(view('track-view',
         background: ${skin.colors.bgLighter} !important;
       }
 
-      &([error]):before,
-      &([draft]):before {
+      &([indicator][error]):before,
+      &([indicator][draft]):before {
         content: ' ';
         position: absolute;
-        right: 5px;
+        left: 5px;
         top: 5px;
         width: 10px;
         height: 10px;
@@ -463,7 +468,7 @@ export const TrackView = web(view('track-view',
         z-index: 9999;
         pointer-events: none;
       }
-      &([error]):before {
+      &([indicator][error]):before {
         background: ${skin.colors.brightRed} !important;
       }
 

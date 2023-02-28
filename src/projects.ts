@@ -83,7 +83,7 @@ export const Projects = reactive('projects',
     projectBrowse: Project | false = false
     projectExpand = false
 
-    project?: Project
+    project: Project | null = null
     projects: Project[] = []
 
     user: Project[] = []
@@ -111,10 +111,10 @@ export const Projects = reactive('projects',
         await Promise.resolve()
 
         playersToMove.forEach((player) => {
-          player.$.start()
+          player.$.start(false)
         })
 
-        project.$.stop()
+        project.$.stop(false)
       }
     })
   },

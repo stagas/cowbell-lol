@@ -2,15 +2,6 @@
 
 import { web, view, element } from 'minimal-view'
 import { Skin, skin } from './skin'
-import { Button } from './button'
-import { classes } from './util/classes'
-import { Volume } from './volume'
-import { KnobView } from './knob-view'
-import * as storage from './util/storage'
-import { Project } from './project'
-import { services } from './services'
-import { Wavetracer } from './wavetracer'
-import { Audio } from './audio'
 import { observe } from './util/observe'
 
 export let ui: Ui
@@ -74,247 +65,247 @@ export const Ui = web(view('ui',
     }
     `
 
-    fx(() => {
-      const projects = storage.projects.get([])
-      $.view = <>
-        {/* <Toolbar /> */}
-        <div class="players">
-          <DoomScroll items={projects} factory={(id: string) =>
-            <ProjectView id={id} />
-          } />
-        </div>
-      </>
-    })
-  }
-))
-
-const runningProjects: Project[] = []
-
-export const ProjectView = web(view('project-view',
-  class props {
-    id!: string
-  },
-  class local {
-    host = element
-
-    state?: 'idle' | 'running' = 'idle'
-
-    audio?: Audio
-
-    project?: Project
-
-    mainWaveform: JSX.Element = false
-  },
-  function actions({ $, fns, fn }) {
-    return fns(new class actions {
-      handlePlay = fn(({ id, audio, project }) => async () => {
-        if (!project.$.players) return
-
-        let count = project.$.players.length
-
-        // audio.$.library = library
-        audio.$.bpm = project.$.bpm!
-        console.log('bpm?', audio.$.bpm, audio)
-        // audio.$.coeff = await audio.$.schedulerNode!.setBpm(project.$.bpm!)
-
-        console.log('will play', id, project)
-
-        let resetTime = false
-
-        if (!runningProjects.includes(project)) {
-          resetTime = true
-
-          runningProjects.push(project)
-
-          project.$.audio = audio
-
-          if (runningProjects.length > 1) {
-            const oldestProject = runningProjects.shift()!
-            oldestProject.$.stop()
-            oldestProject.$.audio = void 0 as any
-          }
-        }
-
-        project.$.players.forEach((player) => {
-          const off = player.fx(({ compileState }) => {
-            if (compileState === 'compiled') {
-              off()
-              --count || project.$.toggle(resetTime)
-            }
-          })
-        })
-      })
-    })
-  },
-  function effects({ $, fx, deps, refs }) {
-    fx(() =>
-      services.fx(({ audio }) => {
-        $.audio = audio
-      })
-    )
-
-    // fx(({ audioContext, library }) => {
-    //   $.audio = Audio({
-    //     vol: 0.5,
-    //     bpm: 125,
-    //     audioContext,
-    //     library
-    //   })
+    // fx(() => {
+    //   const projects = storage.projects.get([])
+    //   $.view = <>
+    //     {/* <Toolbar /> */}
+    //     <div class="players">
+    //       <DoomScroll items={projects} factory={(id: string) =>
+    //         // <ProjectView id={id} />
+    //       } />
+    //     </div>
+    //   </>
     // })
-
-    ui.fx(({ skin }) =>
-      fx(({ project }) =>
-        project.$.audioPlayer.fx(({ state, workerBytes, workerFreqs }) => {
-          $.mainWaveform = <Wavetracer
-            part="app-scroller"
-            id={`scroller-${project.$.id}`}
-            kind="detailed"
-            running={state === 'running'}
-            width={400}
-            colors={{ bg: skin.colors.bg }}
-            workerBytes={workerBytes}
-            workerFreqs={workerFreqs}
-          />
-        })
-      )
-    )
-
-    fx(({ id }) => {
-      $.project = Project({ id })
-      $.project.fx.once(({ library }) => {
-        $.project!.$.fromJSON(JSON.parse(localStorage[id]))
-      })
-    })
-
-    // fx(({ library, project }) =>
-    //   project.fx(({ players }) => {
-    //     library.$.players = players
-    //   })
-    // )
-
-    ui.fx(({ skin }) => {
-      $.css = /*css*/`
-      ${skin.css}
-
-      & {
-        background: ${skin.colors.bgLight};
-        position: relative;
-      }
-
-      .waveform {
-        position: absolute;
-        display: flex;
-        left: 0;
-        top: 0;
-        right: 0;
-        bottom: 0;
-
-        > .half {
-          position: absolute;
-          top: calc(50% - 0.5px);
-          bottom: 0;
-          left: 0;
-          right: 0;
-          background: rgba(0,0,0,0.3);
-          z-index: 1;
-        }
-      }
-
-      .project {
-        position: relative;
-        display: flex;
-        flex-flow: row wrap;
-        align-items: center;
-        justify-content: space-between;
-        padding: 0 20px;
-        min-height: 76px;
-        overflow: hidden;
-        background: transparent;
-        ${skin.styles.raised}
-        z-index: 2;
-
-        > .controls {
-          z-index: 3;
-          position: relative;
-          display: flex;
-          flex-flow: row nowrap;
-          gap: 13px;
-          align-items: center;
-          justify-content: center;
-
-          ${KnobView} {
-            position: relative;
-            top: 2.1px;
-            right: -2px;
-          }
-        }
-      }
-
-
-      [part=app-scroller] {
-        position: absolute;
-        top: 0;
-        left: 0;
-        z-index: 0;
-      }
-      `
-    })
-
-    fx(({ project, mainWaveform }) =>
-      project.fx(({ title: name, author, bpm, audioPlayer }) =>
-        audioPlayer.fx(({ state }) => {
-          $.view = <>
-            <div class="waveform">
-              {mainWaveform}
-              <div class="half" />
-            </div>
-            <div class="project">
-              <div class="song">
-                <div class="song-icon">
-                  🔊
-                </div>
-                <div class="song-header">
-                  <div
-                    class={classes({
-                      'song-title': true,
-                    })}
-                  >
-                    {name}
-                  </div>
-                  <div class="song-author">
-                    <span class="by">by</span>
-                    <span class="author">{author}</span>
-                  </div>
-                </div>
-                <div class="song-bpm">
-                  <span class="amt">{bpm}</span>
-                  <span class="bpm">BPM</span>
-                </div>
-              </div>
-              <div class="controls">
-                <Button
-                  small
-                >
-                  <span class={`i clarity-arrow-line`} />
-                </Button>
-
-                <Volume target={audioPlayer} />
-
-                <Button
-                  rounded
-                  active={state === 'running'}
-                  onClick={$.handlePlay}
-                >
-                  <span class={`i la-${state === 'running' ? 'pause' : 'play'}`} />
-                </Button>
-              </div>
-            </div>
-          </>
-        })
-      )
-    )
   }
 ))
+
+// const runningProjects: Project[] = []
+
+// export const ProjectView = web(view('project-view',
+//   class props {
+//     id!: string
+//   },
+//   class local {
+//     host = element
+
+//     state?: 'idle' | 'running' = 'idle'
+
+//     audio?: Audio
+
+//     project?: Project
+
+//     mainWaveform: JSX.Element = false
+//   },
+//   function actions({ $, fns, fn }) {
+//     return fns(new class actions {
+//       handlePlay = fn(({ id, audio, project }) => async () => {
+//         if (!project.$.players) return
+
+//         let count = project.$.players.length
+
+//         // audio.$.library = library
+//         audio.$.bpm = project.$.bpm!
+//         console.log('bpm?', audio.$.bpm, audio)
+//         // audio.$.coeff = await audio.$.schedulerNode!.setBpm(project.$.bpm!)
+
+//         console.log('will play', id, project)
+
+//         let resetTime = false
+
+//         if (!runningProjects.includes(project)) {
+//           resetTime = true
+
+//           runningProjects.push(project)
+
+//           project.$.audio = audio
+
+//           if (runningProjects.length > 1) {
+//             const oldestProject = runningProjects.shift()!
+//             oldestProject.$.stop()
+//             oldestProject.$.audio = void 0 as any
+//           }
+//         }
+
+//         project.$.players.forEach((player) => {
+//           const off = player.fx(({ compileState }) => {
+//             if (compileState === 'compiled') {
+//               off()
+//               --count || project.$.toggle(resetTime)
+//             }
+//           })
+//         })
+//       })
+//     })
+//   },
+//   function effects({ $, fx, deps, refs }) {
+//     fx(() =>
+//       services.fx(({ audio }) => {
+//         $.audio = audio
+//       })
+//     )
+
+//     // fx(({ audioContext, library }) => {
+//     //   $.audio = Audio({
+//     //     vol: 0.5,
+//     //     bpm: 125,
+//     //     audioContext,
+//     //     library
+//     //   })
+//     // })
+
+//     ui.fx(({ skin }) =>
+//       fx(({ project }) =>
+//         project.$.audioPlayer.fx(({ state, workerBytes, workerFreqs }) => {
+//           $.mainWaveform = <Wavetracer
+//             part="app-scroller"
+//             id={`scroller-${project.$.id}`}
+//             kind="detailed"
+//             running={state === 'running'}
+//             width={400}
+//             colors={{ bg: skin.colors.bg }}
+//             workerBytes={workerBytes}
+//             workerFreqs={workerFreqs}
+//           />
+//         })
+//       )
+//     )
+
+//     fx(({ id }) => {
+//       $.project = Project({ id })
+//       $.project.fx.once(({ library }) => {
+//         $.project!.$.fromJSON(JSON.parse(localStorage[id]))
+//       })
+//     })
+
+//     // fx(({ library, project }) =>
+//     //   project.fx(({ players }) => {
+//     //     library.$.players = players
+//     //   })
+//     // )
+
+//     ui.fx(({ skin }) => {
+//       $.css = /*css*/`
+//       ${skin.css}
+
+//       & {
+//         background: ${skin.colors.bgLight};
+//         position: relative;
+//       }
+
+//       .waveform {
+//         position: absolute;
+//         display: flex;
+//         left: 0;
+//         top: 0;
+//         right: 0;
+//         bottom: 0;
+
+//         > .half {
+//           position: absolute;
+//           top: calc(50% - 0.5px);
+//           bottom: 0;
+//           left: 0;
+//           right: 0;
+//           background: rgba(0,0,0,0.3);
+//           z-index: 1;
+//         }
+//       }
+
+//       .project {
+//         position: relative;
+//         display: flex;
+//         flex-flow: row wrap;
+//         align-items: center;
+//         justify-content: space-between;
+//         padding: 0 20px;
+//         min-height: 76px;
+//         overflow: hidden;
+//         background: transparent;
+//         ${skin.styles.raised}
+//         z-index: 2;
+
+//         > .controls {
+//           z-index: 3;
+//           position: relative;
+//           display: flex;
+//           flex-flow: row nowrap;
+//           gap: 13px;
+//           align-items: center;
+//           justify-content: center;
+
+//           ${KnobView} {
+//             position: relative;
+//             top: 2.1px;
+//             right: -2px;
+//           }
+//         }
+//       }
+
+
+//       [part=app-scroller] {
+//         position: absolute;
+//         top: 0;
+//         left: 0;
+//         z-index: 0;
+//       }
+//       `
+//     })
+
+//     fx(({ project, mainWaveform }) =>
+//       project.fx(({ title: name, author, bpm, audioPlayer }) =>
+//         audioPlayer.fx(({ state }) => {
+//           $.view = <>
+//             <div class="waveform">
+//               {mainWaveform}
+//               <div class="half" />
+//             </div>
+//             <div class="project">
+//               <div class="song">
+//                 <div class="song-icon">
+//                   🔊
+//                 </div>
+//                 <div class="song-header">
+//                   <div
+//                     class={classes({
+//                       'song-title': true,
+//                     })}
+//                   >
+//                     {name}
+//                   </div>
+//                   <div class="song-author">
+//                     <span class="by">by</span>
+//                     <span class="author">{author}</span>
+//                   </div>
+//                 </div>
+//                 <div class="song-bpm">
+//                   <span class="amt">{bpm}</span>
+//                   <span class="bpm">BPM</span>
+//                 </div>
+//               </div>
+//               <div class="controls">
+//                 <Button
+//                   small
+//                 >
+//                   <span class={`i clarity-arrow-line`} />
+//                 </Button>
+
+//                 <Volume target={audioPlayer} />
+
+//                 <Button
+//                   rounded
+//                   active={state === 'running'}
+//                   onClick={$.handlePlay}
+//                 >
+//                   <span class={`i la-${state === 'running' ? 'pause' : 'play'}`} />
+//                 </Button>
+//               </div>
+//             </div>
+//           </>
+//         })
+//       )
+//     )
+//   }
+// ))
 
 
 // export const PlayerView = web(view('track-view',

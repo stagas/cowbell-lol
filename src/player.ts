@@ -11,6 +11,7 @@ import { Library } from './library'
 import { Project } from './project'
 import { projects } from './projects'
 import { Send } from './send'
+import { SeqEvent, SeqLane } from './sequencer'
 import { services } from './services'
 import { shared } from './shared'
 import { fixed, markerForSlider, Slider } from './slider'
@@ -21,6 +22,8 @@ import { MIDIMessageEvent } from './util/midi-message-event'
 import { noneOf, oneOf } from './util/one-of'
 
 const { clamp } = Scalar
+
+const SEQ_STEP = 4
 
 export interface PlayerPage {
   sound: string
@@ -56,6 +59,7 @@ export const Player = reactive('player',
     state: AudioState = 'init'
     compileState: 'init' | 'compiling' | 'compiled' = 'init'
     connectedState: 'disconnected' | 'connected' = 'disconnected'
+    playbackState: 'page' | 'seq' = 'seq'
 
     audio?: Audio | null
     library?: Library
@@ -68,7 +72,7 @@ export const Player = reactive('player',
     patternBuffer?: EditorBuffer
     patternBuffers?: EditorBuffer[]
 
-    currentTime = 0
+    currentTime = -1
     turn = 0
 
     monoNode?: MonoNode
@@ -79,6 +83,10 @@ export const Player = reactive('player',
     outputNode?: AudioNode
 
     groupNode?: SchedulerEventGroupNode
+
+    seqNode?: SchedulerEventGroupNode
+    seqLane?: SeqLane
+    seqTime: number = 1
 
     inputChannels = 0
     outputChannels = 1
@@ -102,7 +110,8 @@ export const Player = reactive('player',
 
         // TODO: is this necessary?
         if (resetTime) {
-          $.currentTime = $.turn = 0
+          $.turn = 0
+          $.currentTime = -1
         }
 
         if (!$.audio) {
@@ -165,23 +174,24 @@ export const Player = reactive('player',
         $.state = 'suspended'
 
         if (resetTime) {
-          $.currentTime = $.turn = 0
+          $.turn = 0
+          $.currentTime = -1
         }
 
         if ($.project) {
           if ($.project.$.players.every((player) =>
             noneOf(player.$.state, 'preparing', 'running')
           )) {
-            $.project.$.stop()
+            $.project.$.stop(false)
           }
         }
       }
 
       toggle = () => {
         if ($.state === 'running') {
-          this.stop()
+          this.stop(false)
         } else {
-          this.start()
+          this.start(false)
         }
       }
 
@@ -203,34 +213,199 @@ export const Player = reactive('player',
         $.preview = false
       })
 
-      updateMidiEvents =
-        fn(({ patternBuffers: patterns }) => async (turn: number, total: number, clear?: boolean) => {
-          let bars = 0
+      compilePage = async (playerPage: PlayerPage, turn: number, total: number) => {
+        const patterns = getMany($.library!.$.patterns, playerPage.patterns)
+
+        let bars = 0
+
+        const turns: WebMidi.MIDIMessageEvent[][] = Array.from({ length: total }, () => [])
+
+        const fixTime = (midiEvent: WebMidi.MIDIMessageEvent) => {
+          const newEvent = new MIDIMessageEvent('message', {
+            data: midiEvent.data
+          })
+          newEvent.receivedTime = midiEvent.receivedTime + bars * 1000
+          return newEvent
+        }
+
+        outer: for (const pattern of patterns) {
+          if (!pattern) continue
+
+          for (let i = 0; i < total; i++) {
+            const t = await pattern.$.compilePattern(turn + i)
+            if (!t) continue outer
+            turns[i].push(...t.map(fixTime))
+          }
+
+          bars += pattern.$.numberOfBars!
+        }
+
+        return { bars, turns }
+      }
+
+      getSeqEventMidiEvents = async (pages: PlayerPage[], event: SeqEvent) => {
+        const playerPage = pages[event.$.page - 1]
+        let needBars = event.$.duration!
+        const midiEvents: WebMidi.MIDIMessageEvent[] = []
+
+        const result = await this.compilePage(playerPage, 0, 1)
+        if (!result) return { midiEvents, bars: 1 }
+
+        const { bars } = result
+        if (!bars) return { midiEvents, bars: 1 }
+
+        const turnStart = event.$.timeOffset >= 0
+          ? Math.floor(event.$.timeOffset / bars)
+          : 0
+
+        // console.log('OFFSET', event.$.timeOffset, 'NEEDBARS', needBars)
+        let pageTurn = turnStart - 1
+        let totalBars = 0
+
+        // we need one turn ahead because we might be one turn behind
+        needBars += bars
+
+        do {
+          pageTurn++
+
+          const result = await this.compilePage(playerPage, pageTurn, 1)
+
+          if (!result) {
+            break
+          }
+
+          const { bars, turns } = result
+          if (!bars) {
+            break
+          }
+
+          needBars -= bars
+
+          midiEvents.push(...turns[0].map((midiEvent) => {
+            const newEvent = new MIDIMessageEvent('message', {
+              data: midiEvent.data
+            })
+            newEvent.receivedTime = midiEvent.receivedTime
+              + totalBars * 1000
+            return newEvent
+          }))
+
+          totalBars += bars
+        } while (needBars > 0)
+
+        // console.log(midiEvents)
+        return { midiEvents, bars }
+      }
+
+      getMidiEvents = async (turn: number, total: number) => {
+        const pages = $.pages
+        if (!pages) return
+
+        if ($.playbackState === 'page') {
+          if (!$.page) return
+
+          const playerPage = pages[$.page - 1]
+
+          const result = await this.compilePage(playerPage, turn, total)
+          if (!result) return
+
+          return result
+        } else if ($.playbackState === 'seq') {
+          const lane = $.seqLane
+          const pages = $.pages
+          if (!lane || !pages) return
 
           const turns: WebMidi.MIDIMessageEvent[][] = Array.from({ length: total }, () => [])
 
-          outer: for (const pattern of patterns) {
-            const fixTime = (midiEvent: WebMidi.MIDIMessageEvent) => {
-              const newEvent = new MIDIMessageEvent('message', {
-                data: midiEvent.data
-              })
-              newEvent.receivedTime = midiEvent.receivedTime + bars * 1000
-              return newEvent
-            }
+          const totalTime = $.seqTime
 
-            for (let i = 0; i < total; i++) {
-              const t = await pattern.$.compilePattern(turn + i)
-              if (!t) continue outer
-              turns[i].push(...t.map(fixTime))
-            }
+          const step = SEQ_STEP
 
-            bars += pattern.$.numberOfBars!
+          for (let i = 0; i < total; i++) {
+            const t = (turn + i) * SEQ_STEP
+
+            const timeStart = t
+            const timeEnd = timeStart + step
+
+            const loopOffset = (t / totalTime) | 0
+
+            // console.log('timeStart', timeStart)
+            // console.log('timeOffset', timeOffset)
+
+            const timeStartRange = timeStart % totalTime
+            const timeEndRange = timeStartRange + step
+            const rangeEvents: SeqEvent[] = lane.$.findEventsInRangeLoop(
+              timeStartRange,
+              timeEndRange,
+              totalTime
+            )
+
+            // console.log('totalTime', totalTime, 'rangeEvents.length', rangeEvents.length)
+            for (const event of rangeEvents) {
+              // console.log(event)
+              const { bars, midiEvents } = await this.getSeqEventMidiEvents(pages, event)
+
+              // console.log('event.$.timeStart', event.$.timeStart, 'midiEvents:', midiEvents)
+
+              const eventWrapTime = event.$.timeStart
+                + loopOffset * totalTime
+
+              const secOffset = eventWrapTime
+                - (event.$.timeOffset % bars)
+
+              for (const midiEvent of midiEvents) {
+                const secTime =
+                  (midiEvent.receivedTime * 0.001)
+                  + secOffset
+
+                if (secTime >= timeStart
+                  && secTime < timeEnd
+                  && secTime >= eventWrapTime
+                  && secTime < eventWrapTime + event.$.duration!
+                ) {
+                  // console.log('sectime', secTime, timeStart, timeEnd, secOffset, timeStart)
+                  const newEvent = new MIDIMessageEvent('message', {
+                    data: midiEvent.data
+                  })
+
+                  newEvent.receivedTime =
+                    midiEvent.receivedTime
+                    + (secOffset - timeStart) * 1000
+
+                  turns[i].push(newEvent)
+                }
+              }
+            }
           }
 
-          $.totalBars = bars
+          return {
+            turns: turns.map((events) => events.sort((a, b) => {
+              return a.receivedTime - b.receivedTime
+            }))
+          }
+        }
+      }
 
+      updateMidiEvents = async (turn: number, total: number, clear?: boolean) => {
+        if ($.playbackState === 'page') {
+          const result = await this.getMidiEvents(turn, total)
+
+          if (!result || !('bars' in result) || !('turns' in result)) return
+
+          const { bars, turns } = result
+
+          $.totalBars = bars
           $.groupNode?.eventGroup.setMidiEvents(turns, turn, clear)
-        })
+        } else if ($.playbackState === 'seq') {
+          const result = await this.getMidiEvents(turn, total)
+
+          if (!result || !('turns' in result)) return
+
+          const { turns } = result
+
+          $.seqNode?.eventGroup.setMidiEvents(turns, turn, clear)
+        }
+      }
 
       compileCode = fn(({ id, monoNode }) => {
         let busy = false
@@ -379,8 +554,8 @@ export const Player = reactive('player',
         const source = slider.$.source!
         const sourceIndex = slider.$.sourceIndex!
 
-        const { min, max, scale } = slider.$
-        let sliderValue = fixed(normal * scale! + min)
+        const { min, max, slope, scale } = slider.$
+        let sliderValue = fixed((normal ** slope) * scale! + min)
         sliderValue = fixed(clamp(min, max, fixed(sliderValue)))
 
         const end = sourceIndex + source.arg.length
@@ -482,29 +657,56 @@ export const Player = reactive('player',
     )
 
     fx(({ page, pages }) => {
-      const p = pages[page - 1]
+      const p = pages[Math.min(pages.length, page) - 1]
       Object.assign($, p)
     })
 
     fx(({ sound, patterns, page, pages }) => {
-      const p = pages[page - 1]
-      if (p && p.sound === sound && p.patterns.join() === patterns.join()) return
+      if (page <= pages.length) {
+        const p = pages[page - 1]
+        let changed = false
+        if (p.sound !== sound) {
+          changed = true
+          p.sound = sound
+        }
+        if (p.patterns.join() !== patterns.join()) {
+          changed = true
+          p.patterns = patterns.slice()
+        }
+        if (changed) {
+          pages[page - 1] = { ...p }
+          $.pages = [...pages]
+        }
+      }
+    })
 
-      pages[page - 1] = {
-        sound,
-        patterns: patterns.slice()
+    fx(({ sound, patterns, page, pages }, prev) => {
+      if (prev.page && prev.page === page) return
+
+      if (page > pages.length) {
+        pages.push({
+          sound,
+          patterns: patterns.slice()
+        })
+        $.pages = [...pages]
       }
 
-      pages = pages.filter((p) => p != null && p.sound && p.patterns)
-
-      while (
-        [pages.at(-1)?.sound, pages.at(-1)?.patterns].join()
-        === [pages.at(-2)?.sound, pages.at(-2)?.patterns].join()
-      ) {
-        pages.pop()
+      let deleted = false
+      for (let i = pages.length - 1; i >= page; i--) {
+        const oneBehind = pages[i]
+        const twoBehind = pages[i - 1]
+        if (
+          [oneBehind.sound, oneBehind.patterns].join()
+          === [twoBehind.sound, twoBehind.patterns].join()
+        ) {
+          deleted = true
+          pages.pop()
+        }
       }
 
-      $.pages = [...pages]
+      if (deleted) {
+        $.pages = [...pages]
+      }
     })
 
     fx(({ preview, audioPlayer }) => {
@@ -543,19 +745,21 @@ export const Player = reactive('player',
       $.patternBuffer = patternBuffers[pattern]
     })
 
-    fx(({ state, audio, totalBars }) => {
+    fx(({ state, playbackState, audio, totalBars }) => {
       if (state === 'running') {
-        const tick = () => {
-          if ($.state === 'running') {
-            anim.schedule(tick)
+        if (playbackState === 'page') {
+          const tick = () => {
+            if ($.state === 'running' && $.playbackState === 'page') {
+              anim.schedule(tick)
+            }
+            const now = audio.$.getTime()
+            $.currentTime = now % totalBars
+            $.turn = (now / totalBars) | 0
           }
-          const now = audio.$.getTime()
-          $.currentTime = (now % totalBars) * 1000
-          $.turn = (now / totalBars) | 0
-        }
-        anim.schedule(tick)
-        return () => {
-          anim.remove(tick)
+          anim.schedule(tick)
+          return () => {
+            anim.remove(tick)
+          }
         }
       }
     })
@@ -596,6 +800,7 @@ export const Player = reactive('player',
       const gainNode = $.gainNode = await gainNodePool.acquire({ channelCount: outputChannels })
       const panNode = $.panNode = await panNodePool.acquire()
       const groupNode = $.groupNode = await groupNodePool.acquire()
+      const seqNode = $.seqNode = await groupNodePool.acquire()
 
       $.inputNode = monoNode
       $.outputNode = panNode
@@ -611,6 +816,12 @@ export const Player = reactive('player',
         disconnect(groupNode, monoNode)
         groupNode.destroy()
         groupNodePool.dispose(groupNode)
+
+        seqNode.clear()
+        seqNode.suspend(monoNode)
+        disconnect(seqNode, monoNode)
+        seqNode.destroy()
+        groupNodePool.dispose(seqNode)
 
         $.monoNode
           = $.gainNode
@@ -641,10 +852,22 @@ export const Player = reactive('player',
 
     let suspendTimeout: any
 
-    fx(({ audio, state, preview, monoNode, gainNode, panNode, groupNode }) => {
+    fx(({ audio, state, playbackState, preview, monoNode, gainNode, panNode, groupNode, seqNode }) => {
       if (oneOf(state, 'preparing', 'running') || preview) {
-        groupNode.connect(monoNode)
-        groupNode.resume(monoNode)
+        if (playbackState === 'page') {
+          seqNode.clear()
+          seqNode.suspend(monoNode)
+
+          groupNode.connect(monoNode)
+          groupNode.resume(monoNode)
+        } else {
+          groupNode.clear()
+          groupNode.suspend(monoNode)
+
+          seqNode.connect(monoNode)
+          seqNode.resume(monoNode)
+        }
+
         monoNode.resume()
         monoNode.connect(gainNode)
         gainNode.connect(panNode)
@@ -657,12 +880,16 @@ export const Player = reactive('player',
         groupNode.clear()
         groupNode.suspend(monoNode)
 
+        seqNode.clear()
+        seqNode.suspend(monoNode)
+
         clearTimeout(suspendTimeout)
         suspendTimeout = setTimeout(() => {
           monoNode.suspend()
           audio.$.disconnect(monoNode, gainNode)
           audio.$.disconnect(gainNode, panNode)
           audio.$.disconnect(groupNode, monoNode)
+          audio.$.disconnect(seqNode, monoNode)
         }, 500)
 
         $.connectedState = 'disconnected'
@@ -695,11 +922,28 @@ export const Player = reactive('player',
       groupNode.eventGroup.loop = LoopKind.Live
     })
 
+    fx(({ seqNode }) => {
+      seqNode.eventGroup.loopEnd = SEQ_STEP
+      seqNode.eventGroup.loop = LoopKind.Live
+    })
+
     fx(({ groupNode }) => {
       groupNode.eventGroup.onRequestNotes = $.updateMidiEvents
     })
 
-    fx(({ patternBuffers }) =>
+    fx(({ seqNode }) => {
+      seqNode.eventGroup.onRequestNotes = $.updateMidiEvents
+    })
+
+    fx(({ project }) => project.fx(({ sequencer, players }) => sequencer.fx(({ lanes }) => {
+      $.seqLane = lanes[players.indexOf($.self)]
+    })))
+
+    fx(({ project }) => project.fx(({ sequencer }) => sequencer.fx(({ time }) => {
+      $.seqTime = time
+    })))
+
+    fx(({ project: _, patternBuffers }) =>
       chain(
         patternBuffers.map((pattern) =>
           chain(
@@ -767,6 +1011,7 @@ export const Player = reactive('player',
               id: paramId,
               min: kind === 'vol' ? 0 : -1,
               max: 1,
+              slope: 1,
               value: (kind === 'vol' ? send?.$.vol : send?.$.pan) ?? 0,
               hue: checksum(name + name + name) % 300 + 20,
               name: name
@@ -804,6 +1049,7 @@ export const Player = reactive('player',
                       id: paramId,
                       min: 0,
                       max: 1,
+                      slope: 1,
                       value: send?.$.vol ?? 0,
                       hue: s.$.hue,
                       name: s.$.name

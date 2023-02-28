@@ -27,6 +27,7 @@ export const Volume = view('volume',
         value: target.$.vol!,
         min: 0,
         max: 1,
+        slope: 1,
         hue: 100,
         name: '',
       })

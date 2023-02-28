@@ -1,8 +1,10 @@
-const { modWrap } = require('everyday-utils')
-
-const g = globalThis
+const g = global
 
 if (!g.didSetup) {
+  const modWrap = (x, N) => {
+    return (x % N + N) % N
+  }
+
   Array.prototype.get = function (x) {
     return this[modWrap(x, this.length) | 0] + ((x / this.length) | 0) * 12
   }
@@ -134,6 +136,8 @@ if (!g.didSetup) {
 
   g.start = 0
   g.end = 1
+
+  g.t = 0
 
   g.on = (measure, fn) => {
     const result = []

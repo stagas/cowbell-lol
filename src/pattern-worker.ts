@@ -3,6 +3,7 @@ import defineFunction from 'define-function'
 import { Deferred } from 'everyday-utils'
 import memoize from 'memoize-pure'
 import { getMidiEventsForNotes, NoteEvent } from 'scheduler-node/event-util'
+import { checksumId } from './util/checksum-id'
 
 // @ts-ignore
 const url = new URL('./pattern-processor.js', import.meta.url)
@@ -13,29 +14,46 @@ const processorSetupPromise = (async function getSetupSource() {
   return text
 })()
 
-type SandboxFn = (src: string) => readonly [
+type SandboxFn = {
+  ctx: ReturnType<typeof defineFunction.context>,
+}
+
+const sandbox = Deferred<SandboxFn>()
+
+async function create() {
+  const ctx = await defineFunction.context()
+  sandbox.resolve({ ctx })
+}
+
+create()
+
+type PatternFn = (start: number, end: number, bars: number, t: number) => readonly [
   NoteEvent[],
   number
 ]
 
-const sandbox = Deferred<SandboxFn>()
-let sandboxTimeout: any
-  ; (async function create() {
-    const setup = await processorSetupPromise
-    const fn = await defineFunction(`
-      const [src] = arguments;
+const fnsDeferred = new Map<string, Deferred<PatternFn>>()
 
-      ${setup};
+const compileFn = async function (sandboxCode: string) {
+  const id = checksumId(sandboxCode)
 
-      return new Function(src)();
-    `) as any
+  let deferred = fnsDeferred.get(id)
+  if (deferred) return deferred.promise
 
-    fn.ondestroy = () => {
-      clearTimeout(sandboxTimeout)
-      sandboxTimeout = setTimeout(create, 3000)
-    }
-    sandbox.resolve(fn)
-  })()
+  deferred = Deferred()
+  fnsDeferred.set(id, deferred)
+
+  const { ctx } = await sandbox.promise
+
+  try {
+    const fn = await ctx.def(sandboxCode) as PatternFn
+    deferred.resolve(fn)
+  } catch (error) {
+    deferred.reject(error as Error)
+  }
+
+  return deferred.promise
+}
 
 export const compilePattern = memoize(async function compilePattern(codeValue: string, numberOfBars: number, turn?: number): Promise<
   {
@@ -49,33 +67,47 @@ export const compilePattern = memoize(async function compilePattern(codeValue: s
     numberOfBars: number
   }
 > {
-  const fn = await sandbox.promise
+  const setup = await processorSetupPromise
 
-  let sandboxCode: string | void
+  const sandboxCode = `
+    ${setup};
+
+    i = 0
+    start = arguments[0]
+    end = arguments[1]
+    bars = arguments[2]
+    t = arguments[3]
+    events = []
+    seed = 42
+
+    // used to show correct error lenses/markers
+    // DO NOT MOVE THIS OR WRITE BELOW!
+    const detectLinePos = 0;
+
+    ${codeValue};
+
+    return [events, bars, seed];
+  `
 
   try {
-    sandboxCode = `
-      start = 0;
-      end = ${numberOfBars};
-      events = [];
-      bars = ${numberOfBars};
-      t = ${turn};
-
-      // used to show correct error lenses/markers
-      // DO NOT MOVE THIS OR WRITE BELOW!
-      const detectLinePos = 0;
-
-      ${codeValue};
-
-      return [events, bars, seed];
-    `
+    const fn = await compileFn(sandboxCode)
 
     const [notes = [], bars = numberOfBars] = await Promise.race([
-      fn(sandboxCode),
+      fn(0, numberOfBars, numberOfBars, turn || 0),
       new Promise<void>((_, reject) => setTimeout(reject, 10000, new Error('timeout'))),
     ]) || []
 
-    const midiEvents = getMidiEventsForNotes(notes, bars)
+    const midiEvents = getMidiEventsForNotes(
+      notes.filter((note) =>
+        Array.isArray(note)
+        && (note.length === 3 || note.length === 4)
+        && note.every((n) =>
+          typeof n === 'number' && isFinite(n)
+        )
+        && note[0] < bars
+      ),
+      bars
+    )
 
     return {
       success: true,
@@ -83,6 +115,7 @@ export const compilePattern = memoize(async function compilePattern(codeValue: s
       numberOfBars: bars,
     }
   } catch (error) {
+    console.error(error)
     return {
       success: false,
       error: error as Error,
@@ -95,7 +128,7 @@ export interface PatternWorker {
   compilePattern: typeof compilePattern
 }
 
-const preview: PatternWorker = {
+const patternWorker: PatternWorker = {
   async compilePattern(codeValue: string, numberOfBars: number, turn?: number): Promise<
     {
       success: false,
@@ -108,8 +141,9 @@ const preview: PatternWorker = {
       numberOfBars: number
     }
   > {
+    codeValue = codeValue.replaceAll('let i=0', 'i=0')
     return compilePattern(codeValue, numberOfBars, turn)
   },
 }
 
-rpc(self as unknown as MessagePort, preview as any)
+rpc(self as unknown as MessagePort, patternWorker as any)

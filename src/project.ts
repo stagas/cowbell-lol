@@ -19,6 +19,7 @@ import { noneOf, oneOf } from './util/one-of'
 import { slugify } from './util/slugify'
 import { storage } from './util/storage'
 import { shared } from './shared'
+import { SeqEvent, SeqLane, Sequencer } from './sequencer'
 
 export type ProjectJson = {
   checksum: string
@@ -36,13 +37,14 @@ export type ProjectJson = {
     sends?: [number, string, number, number][] | undefined
     routes?: [number, string, number][] | undefined
   }[]
+  sequencer: [number, number, number, number][][]
   remixCount: number
   originalRemixCount: number
   originalChecksum: string | false
   originalAuthor: string | false
 }
 
-function logAndReturn<T>(x: T): T {
+export function logAndReturn<T>(x: T): T {
   console.log(x)
   return x
 }
@@ -71,6 +73,7 @@ export const Project = reactive('project',
   },
   class local {
     state: AudioState = 'init'
+    playbackState: 'page' | 'seq' = 'seq'
     library?: Library
     audio?: Audio | null
     audioPlayer = AudioPlayer({})
@@ -79,6 +82,7 @@ export const Project = reactive('project',
     vols?: string
     startedAt: number = 0
     pathname?: string
+    sequencer?: Sequencer | null
     players: Player[] = []
     selectedPlayer = 0
     selectedPreset?: EditorBuffer
@@ -108,10 +112,14 @@ export const Project = reactive('project',
         $.audio = services.$.audio!
 
         filterState(cachedProjects, 'running').forEach((p) => {
-          p.$.stop()
+          if (p !== $.self) p.$.stop(false)
         })
 
         await this.load()
+
+        $.players.forEach((player) => {
+          player.$.playbackState = $.playbackState
+        })
 
         const shouldStartAll = $.players.every((player) => noneOf(player.$.state, 'preparing', 'running'))
 
@@ -172,7 +180,8 @@ export const Project = reactive('project',
             pages: player.$.pages!.map((_, x) =>
               x + $.players.slice(0, y).reduce((p, n) => p + (n.$.pages?.length || 1), 0)
             ),
-            sends: player.$.toJSON().sends
+            sends: player.$.toJSON().sends,
+            lane: $.sequencer!.$.toJSON()[y]
           })),
           tracks: $.players.flatMap((player) => player.$.pages!.map((page) => ({
             sound: get(library.$.sounds, page.sound)!.$.checksum!,
@@ -379,6 +388,11 @@ export const Project = reactive('project',
                     }]
                   },
                 ],
+                sequencer: [
+                  [[1, 0, 4, 0]],
+                  [[1, 0, 4, 0]],
+                  [[1, 0, 4, 0]],
+                ],
                 remixCount: 0,
                 originalRemixCount: 0,
                 originalChecksum: false,
@@ -474,6 +488,8 @@ export const Project = reactive('project',
           }
         })
 
+        const sequencer: ProjectJson['sequencer'] = (p.mixer as schemas.ProjectResponse['mixer']).map(({ lane }, i) => lane ?? [[1, 0, 4, 0]])
+
         // console.log('NEW SOUNDS', newSounds)
         // console.log('NEW PATTERNS', newPatterns)
         library.$.sounds = [...library.$.sounds, ...newSounds]
@@ -487,6 +503,7 @@ export const Project = reactive('project',
           author: p.author,
           date: p.updatedAt,
           players,
+          sequencer,
           remixCount: p.remixCount || 0,
           originalRemixCount: p.originalRemixCount || 0,
           originalChecksum: p.originalId || false,
@@ -604,12 +621,28 @@ export const Project = reactive('project',
             sends.set(paramId, send)
           }
         })
+
+        if ($.sequencer) {
+          $.sequencer.dispose()
+        }
+
+        $.sequencer = Sequencer({
+          lanes: $.players.map((player, y) => [player, json.sequencer?.[y] ?? [[1, 0, 4]]] as const).map(([player, events], y) => SeqLane({
+            player,
+            events: events.map(([page, timeStart, timeEnd, timeOffset]) => SeqEvent({
+              page: page ?? 1,
+              timeStart: timeStart ?? 0,
+              timeEnd: timeEnd ?? 4,
+              timeOffset: timeOffset ?? 0,
+            }))
+          }))
+        })
       })
 
       /**
        * Get a JSON representation of the project.
        */
-      toJSON = fn(({ players }) => (): ProjectJson => logAndReturn({
+      toJSON = fn(({ players, sequencer }) => (): ProjectJson => logAndReturn({
         ...pick($ as Required<typeof $>, [
           'checksum',
           'bpm',
@@ -625,6 +658,7 @@ export const Project = reactive('project',
         players: players.map((player) =>
           player.$.toJSON()
         ),
+        sequencer: sequencer.$.toJSON()
       }))
 
       updateChecksum = fn(({ library }) => queue.task(() => {
@@ -639,9 +673,10 @@ export const Project = reactive('project',
 
         const sends = $.players.flatMap((player) => player.$.toJSON().sends)
 
+        const seq = $.sequencer!.$.toJSON()
+
         if (trackIds.every((c) => c != null)) {
-          const payload = trackIds.join() + sends.join()
-          // console.log('CHECKSUM:', payload)
+          const payload = [trackIds, sends, seq].join()
           $.checksum = checksumId(payload)
         }
       }))
@@ -768,6 +803,12 @@ export const Project = reactive('project',
       })
     })
 
+    fx(({ players, playbackState }) => {
+      players.forEach((player) => {
+        player.$.playbackState = playbackState
+      })
+    })
+
     fx(({ players, library: _ }) =>
       chain(
         players.map((player) =>
@@ -808,6 +849,31 @@ export const Project = reactive('project',
       ])
     })
 
+    fx(({ players, sequencer }) =>
+      sequencer.fx(({ lanes }) => {
+        if (lanes.length !== players.length || !players.every((player, y) => lanes[y].$.player === player
+        )) {
+          const newLanes = players.map((player) =>
+            lanes.find((lane) => lane.$.player === player) ?? SeqLane({
+              player,
+              events: [SeqEvent({
+                page: 1,
+                timeStart: 0,
+                timeEnd: 4,
+                timeOffset: 0
+              })]
+            })
+          )
+          lanes.forEach((lane) => {
+            if (!newLanes.find((other) => other === lane)) {
+              lane.dispose()
+            }
+          })
+          sequencer.$.lanes = newLanes
+        }
+      })
+    )
+
     fx.once(({ checksum }) => {
       $.firstChecksum = checksum
     })
@@ -827,6 +893,19 @@ export const Project = reactive('project',
       }
       $.autoSave()
     })
+
+    fx(({ state, playbackState, sequencer }) => {
+      if (playbackState === 'seq') {
+        sequencer.$.state = state
+      } else {
+        sequencer.$.state = 'suspended'
+      }
+    })
+
+    fx(({ sequencer }) => sequencer.fx(({ lanes: _ }) => {
+      $.updateChecksum()
+      $.autoSave()
+    }))
 
     fx(({ isDeleted }, prev) => {
       if (prev.isDeleted != null && isDeleted !== prev.isDeleted) {

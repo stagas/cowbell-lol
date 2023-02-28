@@ -2,6 +2,7 @@
 
 import { Point, Rect, Scalar } from 'geometrik'
 import { chain, element, on, part, view, web } from 'minimal-view'
+import { app } from './app'
 import { Layout } from './layout'
 import { observe } from './util/observe'
 import { spacer } from './util/storage'
@@ -43,6 +44,8 @@ export const Spacer = web(view('spacer',
     return fns(new class actions {
       handleDown = fn(({ rect, cells, intents, align, snap }) => (el: HTMLDivElement, e: PointerEvent, index: number) => {
         el.classList.add('dragging')
+
+        app.$.beginOverlay(align === 'y' ? 'ns-resize' : 'ew-resize')
 
         const [dim, , , , n] = dims(align)
 
@@ -102,6 +105,7 @@ export const Spacer = web(view('spacer',
         })
 
         on(window, 'pointerup').once((e) => {
+          app.$.endOverlay()
           off()
           ended = true
           requestAnimationFrame(() => {

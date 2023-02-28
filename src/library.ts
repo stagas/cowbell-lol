@@ -19,7 +19,7 @@ export function toBuffer(kind: 'sound' | 'pattern') {
   }
 }
 
-function toStorage(value: string) {
+export function toStorage(value: string) {
   const id = checksumId(value)
   localStorage[id] = value
   return [0, id] as [0 | 1, string]
@@ -61,10 +61,10 @@ export const Library = reactive('library',
         }
       })
 
-      console.time('save ' + kind)
+      // console.time('save ' + kind)
       storage[kind].set(last[kind] = next)
-      console.timeEnd('save ' + kind)
-      console.log('saved', kind, next.length)
+      // console.timeEnd('save ' + kind)
+      // console.log('saved', kind, next.length)
     }
 
     return fns(new class actions {

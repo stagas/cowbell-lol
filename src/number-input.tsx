@@ -13,13 +13,14 @@ export const NumberInput = web(view('number-input',
     max = 100
     step = 0.1
     align: 'x' | 'y' = 'y'
+    onInput?: (value: number) => void
   },
 
   class local {
     valueView?: JSX.Element
   },
 
-  function actions({ fn, fns }) {
+  function actions({ $, fn, fns }) {
     let iv: any
     let timeout: any
 
@@ -28,10 +29,12 @@ export const NumberInput = web(view('number-input',
     return fns(new class actions {
       inc = fn(({ min, max, step, value }) => () => {
         value.value = +clamp(min, max, (value.value ?? 0) + step).toFixed(1)
+        $.onInput?.($.value.value!)
       })
 
       dec = fn(({ min, max, step, value }) => () => {
         value.value = +clamp(min, max, (value.value ?? 0) - step).toFixed(1)
+        $.onInput?.($.value.value!)
       })
 
       onPointerEnter = (valueFn: any) => (e: PointerEvent) => {
@@ -125,9 +128,21 @@ export const NumberInput = web(view('number-input',
     fx(function drawNumberInput({ align, valueView }) {
       if (align === 'y') {
         $.view = <>
-          <button onpointerdown={$.onPointerDown($.inc)}>+</button>
+          <button
+            part="minus"
+            onpointerdown={$.onPointerDown($.dec)}
+            onpointerenter={$.onPointerEnter($.dec)}
+          >
+            -
+          </button>
           <span part="value">{valueView}</span>
-          <button onpointerdown={$.onPointerDown($.dec)}>-</button>
+          <button
+            part="plus"
+            onpointerdown={$.onPointerDown($.inc)}
+            onpointerenter={$.onPointerEnter($.inc)}
+          >
+            +
+          </button>
         </>
       } else {
         $.view = <>

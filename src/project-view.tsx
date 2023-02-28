@@ -21,7 +21,7 @@ export type Focused = 'main' | 'sound' | 'sounds' | 'pattern' | 'patterns'
 export const ProjectView = web(view('project-view',
   class props {
     id!: string
-    project!: Project
+    project!: Project | null
     primary!: boolean
     browsing!: boolean
     controlsView?: JSX.Element = false
@@ -29,7 +29,7 @@ export const ProjectView = web(view('project-view',
   class local {
     host = element
     state?: AudioState = 'init'
-    audio?: Audio
+    audio?: Audio | null
 
     isRenamingSong = false
     didExpand = false
@@ -38,7 +38,7 @@ export const ProjectView = web(view('project-view',
     songTitleEl?: HTMLDivElement
 
     players: Player[] = []
-    player?: Player
+    // player?: Player
 
     sounds: EditorBuffer[] = []
     patterns: EditorBuffer[] = []
@@ -133,11 +133,11 @@ export const ProjectView = web(view('project-view',
       )
     )
 
-    fx(({ project, players }) =>
-      project.fx(({ selectedPlayer }) => {
-        $.player = players[selectedPlayer]
-      })
-    )
+    // fx(({ project, players }) =>
+    //   project.fx(({ selectedPlayer }) => {
+    //     $.player = players[selectedPlayer]
+    //   })
+    // )
 
     fx(({ browsing, project }) => {
       if (browsing) {
@@ -256,8 +256,9 @@ export const ProjectView = web(view('project-view',
       )
     )
 
-    fx(() => shared.fx(({ previewPlayer, previewAudioPlayer }) => fx(({ player, project, didExpand }) => {
-      if (didExpand) return player.fx(({ sends, sound }) => project.fx(({ selectedPreset }) => {
+    fx(() => shared.fx(({ previewPlayer, previewAudioPlayer }) => fx(({ project, didExpand }) => project.fx(({ players, selectedPlayer }) => {
+      const player: Player = players[selectedPlayer]
+      if (didExpand && player) return player.fx(({ sends, sound }) => project.fx(({ selectedPreset }) => {
         previewPlayer.$.audioPlayer = player.$.audioPlayer?.$.audio
           ? player.$.audioPlayer
           : previewAudioPlayer
@@ -300,36 +301,45 @@ export const ProjectView = web(view('project-view',
           previewPlayer.$.sound = sound
         }
       }))
-    })))
+    }))))
 
-    fx(() => shared.fx(({ previewPlayer }) =>
-      fx(({ player }) =>
-        player.fx(({ vol }) => {
-          previewPlayer.$.vol = vol
-        })
-      )
-    ))
+    fx(() => shared.fx(({ previewPlayer }) => fx(({ project }) => project.fx(({ players, selectedPlayer }) => {
+      const player = players[selectedPlayer]
+      if (player) return player.fx(({ vol }) => {
+        previewPlayer.$.vol = vol
+      })
+    }))))
 
-    services.fx(({ skin }) =>
-      fx(({ project }) =>
-        project.fx(({ id, audioPlayer }) =>
-          audioPlayer.fx(({ state, workerBytes, workerFreqs }) => {
-            $.waveformView = <Wavetracer
-              part="app-scroller"
-              key={`scroller-${id}`}
-              ref={cachedRef(`scroller-${id}`)}
-              id={`scroller-${id}`}
-              kind="detailed"
-              running={state === 'running'}
-              width={400}
-              colors={{ bg: skin.colors.bgDarker }}
-              workerBytes={workerBytes}
-              workerFreqs={workerFreqs}
-            />
-          })
+    //   fx(({ player }) =>
+    //     player.fx(({ vol }) => {
+    //     })
+    //   )
+    // ))
+
+    const WaveformView = part((update) => {
+      fx(() => services.fx(({ skin }) =>
+        fx(({ project }) =>
+          project.fx(({ id, audioPlayer }) =>
+            audioPlayer.fx(({ state, workerBytes, workerFreqs }) => {
+              update(
+                <Wavetracer
+                  part="app-scroller"
+                  // key={`scroller-${id}`}
+                  // ref={cachedRef(`scroller-${id}`)}
+                  id={`scroller-${id}`}
+                  kind="detailed"
+                  running={state === 'running'}
+                  width={400}
+                  colors={{ bg: skin.colors.bgDarker }}
+                  workerBytes={workerBytes}
+                  workerFreqs={workerFreqs}
+                />
+              )
+            })
+          )
         )
-      )
-    )
+      ))
+    })
 
     fx(() => services.fx(({ skin }) => {
       $.css = /*css*/`
@@ -754,11 +764,11 @@ export const ProjectView = web(view('project-view',
       )
     })
 
-    fx(({ project, expanded, waveformView }) => {
+    fx(({ expanded }) => {
       $.view = <>
-        <div class="project" key={project} onpointerdown={$.onProjectExpand}>
+        <div class="project" onpointerdown={$.onProjectExpand}>
           <div class="waveform">
-            {waveformView}
+            <WaveformView />
             <div class="waveform-over" />
             <div class="half" />
           </div>

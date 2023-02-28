@@ -25,7 +25,7 @@ export const Audio = reactive('audio',
     state: AudioState = 'init'
     audioContext?: AudioContext
 
-    destPlayer?: AudioPlayer = AudioPlayer({
+    destPlayer?: AudioPlayer | null = AudioPlayer({
       vol: storage.vols.get('audio', 0.61803),
       isSpeakers: true
     })
@@ -70,11 +70,11 @@ export const Audio = reactive('audio',
           )
           await Promise.all(
             audioPlayersToStart.map((audioPlayer) => new Promise<unknown>((resolve) => {
-              audioPlayer.$.start().then(resolve)
+              audioPlayer.$.start(resetTime).then(resolve)
             }))
           )
         } else {
-          await projects.$.project?.$.start()
+          await projects.$.project?.$.start(resetTime)
         }
       }
 
@@ -91,12 +91,14 @@ export const Audio = reactive('audio',
         const now = audioContext.currentTime
 
         if (resetTime) {
-          $.stopTime = 0
+          $.stopTime = clock.internalTime = 0
+        } else {
+          clock.internalTime = $.stopTime
         }
 
         schedulerNode.start(now + $.delayStart, $.stopTime)
 
-        const loop = this.seekTime(-1, true)
+        const loop = this.createTimeLoop(-1, true)
         if ($.repeatState === 'bar') {
           $.internalTime = $.repeatStartTime
           clearInterval(repeatIv)
@@ -114,29 +116,32 @@ export const Audio = reactive('audio',
         return startPromise
       })
 
-      stopClick = (resetTime = true) => {
+      stopClick = fn(({ clock }) => (resetTime = true) => {
         // TODO: wait for 'preparing' to settle or something else? AbortController?
         shared.$.lastRunningPlayers = filterState(players, 'running')
+        if (resetTime) {
+          $.stopTime = clock.internalTime = 0
+        }
         this.stop(resetTime)
-      }
+      })
 
       stop = fn(({ clock, schedulerNode }) => (resetTime = true) => {
         clearInterval(repeatIv)
 
+        if ($.state === 'suspended') return
+
         if (resetTime) {
-          $.stopTime = 0
+          $.stopTime = clock.internalTime = 0
         } else {
           $.stopTime = clock.internalTime
         }
-
-        if ($.state === 'suspended') return
 
         $.state = 'suspended'
 
         schedulerNode.stop()
 
         filterState(cachedProjects, 'running').forEach((project) => {
-          project.$.stop()
+          project.$.stop(resetTime)
         })
       })
 
@@ -144,7 +149,7 @@ export const Audio = reactive('audio',
         if ($.state === 'running') {
           this.stopClick(false)
         } else {
-          this.startClick()
+          this.startClick(false)
         }
       }
 
@@ -153,7 +158,7 @@ export const Audio = reactive('audio',
           $.repeatState = 'bar'
           $.repeatStartTime = Math.max(0, clock.internalTime - 1)
           if ($.state === 'running') {
-            const loop = this.seekTime(-1, true)
+            const loop = this.createTimeLoop(-1, true)
             // TODO: this needs to happen with derived setTimeouts instead
             // because the coeff changes during bpm change and the loop will
             // be stuck at the previous speed.
@@ -166,15 +171,26 @@ export const Audio = reactive('audio',
         }
       })
 
-      getTime = fn(({ audioContext, clock }) => () => {
-        return clock.internalTime - audioContext.baseLatency
+      getTime = fn(({ audioContext, clock }) => (correctForLatency = false) => {
+        return clock.internalTime - (correctForLatency ? audioContext.baseLatency : 0)
       })
 
-      seekTime = fn(({ clock }) => (diff: number, keepRepeatTime?: boolean) => () => {
+      seekTime = fn(({ clock }) => (diff: number) => {
+        clock.internalTime += diff
+        if ($.state !== 'running') {
+          $.stopTime += diff
+        }
+      })
+
+      gotoTime = fn(({ clock }) => (time: number) => {
+        clock.internalTime = $.stopTime = time
+      })
+
+      createTimeLoop = fn(({ clock }) => (diff: number, keepRepeatTime?: boolean) => () => {
         if (!keepRepeatTime && $.repeatState === 'bar') {
           $.repeatStartTime += diff
         }
-        clock.internalTime += diff
+        this.seekTime(diff)
       })
 
       setParam = fn(({ audioContext }) => (param: AudioParam, targetValue: number, slope = 0.0015) => {

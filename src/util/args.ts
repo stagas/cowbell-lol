@@ -2,7 +2,9 @@ import { checksum, isEqual } from 'everyday-utils'
 import type { Slider } from '../slider'
 import type { Sliders } from '../types'
 
-export const parseArgsRegExp = /'(?<name>\w+)\s*?(?<range>\[.+\])\s*?=\s*(?<value>[.0-9kKbBmsf]+)/gi
+// export const parseArgsRegExp = /'(?<name>\w+)\s*?(?<range>\[.+\])\s*?=\s*(?<value>[.0-9kKbBmsf]+)/gi
+
+export const parseArgsRegExp = /'(?<name>\w+)\s*?(?<range>\[.+\])(?:\*\*(?<slope>[^=]+))?\s*?=\s*(?<value>[.0-9kKbBmsf]+)/gi
 
 export const parseRangeRegExp = /\[(?<min>.+)\.\.(?<max>.+)\]/g
 
@@ -102,7 +104,7 @@ export function getSliders(
           .filter((value) => value.length)
 
       return argTokens.map((argToken) => {
-        const [arg, name, range, value] = argToken
+        const [arg, name, range, slope, value] = argToken
         // const { index: argTokenIndex } = argToken as { index: number }
         // const { index: sourceIndex } = argToken as { index: number }
 
@@ -117,6 +119,7 @@ export function getSliders(
           value: argValueToNumber(value, argContext),
           min: argValueToNumber(min, argContext),
           max: argValueToNumber(max, argContext),
+          slope: slope ? argValueToNumber(slope, argContext) : 1,
           hue: checksum(exportId) % 300 + 20,
           id: exportId,
           name,
@@ -125,6 +128,7 @@ export function getSliders(
             id: name,
             arg,
             range,
+            slope,
             default: value,
           },
           sourceIndex: code.indexOf(arg, funcIndex)

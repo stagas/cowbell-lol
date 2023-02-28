@@ -6,6 +6,7 @@ import { Player } from './player'
 import { PlayerEditor } from './player-editor'
 import { PlayerView } from './player-view'
 import { Project } from './project'
+import { SequencerView } from './sequencer-view'
 import { services } from './services'
 import { TrackViewHandler } from './track-view'
 import { cachedRef } from './util/cached-ref'
@@ -33,7 +34,12 @@ export const PlayersView = web(view('players',
       $.css = /*css*/`
       ${skin.css}
 
-      & > div {
+      & {
+        display: flex;
+        flex-flow: column nowrap;
+      }
+
+      .players {
         display: flex;
         background: ${skin.colors.bgLight};
         width: 100%;
@@ -43,29 +49,33 @@ export const PlayersView = web(view('players',
       `
 
       fx(({ id, project }) =>
-        project.fx(({ players, selectedPlayer, editorVisible }) => {
-          $.view = <div>{players.flatMap((player, y) => [
-            <PlayerView
-              key={player.$.id!}
-              id={player.$.id!}
-              ref={cachedRef(`player-${player.$.id}`)}
-              y={y}
-              player={player}
-              active={editorVisible && selectedPlayer === y}
-              onSoundSelect={$.onPlayerSoundSelect}
-              onPatternSelect={$.onPlayerPatternSelect}
-            />,
+        project.fx(({ sequencer, players, selectedPlayer, editorVisible }) => {
+          $.view = <>
+            <SequencerView sequencer={sequencer} project={project} />
+            <div class="players">
+              {players.flatMap((player, y) => [
+                <PlayerView
+                  key={player.$.id!}
+                  id={player.$.id!}
+                  ref={cachedRef(`player-${player.$.id}`)}
+                  y={y}
+                  player={player}
+                  active={editorVisible && selectedPlayer === y}
+                  onSoundSelect={$.onPlayerSoundSelect}
+                  onPatternSelect={$.onPlayerPatternSelect}
+                />,
 
-            selectedPlayer === y &&
-            <PlayerEditor
-              key="player-editor"
-              ref={cachedRef(`player-editor-${id}`)}
-              id={id}
-              player={player}
-              editorVisible={editorVisible}
-            />
-          ].filter(Boolean))
-          }</div>
+                selectedPlayer === y &&
+                <PlayerEditor
+                  key="player-editor"
+                  ref={cachedRef(`player-editor-${id}`)}
+                  id={id}
+                  player={player}
+                  editorVisible={editorVisible}
+                />
+              ].filter(Boolean))}
+            </div>
+          </>
         })
       )
     })

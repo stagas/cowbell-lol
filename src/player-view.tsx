@@ -117,7 +117,7 @@ export const PlayerView = web(view('player-view',
         font-family: ${skin.fonts.slab};
         font-size: 48px;
         letter-spacing: -2.5px;
-        background: ${skin.colors.bg};
+        background: ${skin.colors.bgLighter};
 
         ${skin.styles.raised};
 
@@ -164,36 +164,37 @@ export const PlayerView = web(view('player-view',
           lastAnimTurn = -1
           player.$.currentTime = -1
         },
-        player.fx(({ state, totalBars, currentTime, turn }, prev) => {
+        player.fx(({ state, playbackState, totalBars, currentTime, turn }, prev) => {
           if (currentTime && currentTime < 0) {
             lastAnimTurn = -1
             lastAnim?.cancel()
           }
           if (
             state === 'running'
+            && playbackState === 'page'
+            && currentTime >= 0
             && (
               lastAnimTurn !== turn
               || (
                 prev.currentTime
-                && Math.abs(currentTime - prev.currentTime) > 200
+                && Math.abs(currentTime - prev.currentTime) > 0.03
               )
             )
-            && currentTime >= 0
           ) {
             lastAnimTurn = turn
             anim.schedule(() => {
-              const x = (currentTime * 0.001) / totalBars
+              const x = currentTime / totalBars
               lastAnim = rulerEl.animate([
                 { transform: `translateX(${x * patternsWidth}px)` },
                 { transform: `translateX(${patternsWidth}px)` }],
                 {
                   fill: 'forwards',
                   easing: 'linear',
-                  duration: ((totalBars - x * totalBars) / services.$.audio!.$.clock.coeff) * 1000
+                  duration: Math.max(0, ((totalBars - x * totalBars) / services.$.audio!.$.clock.coeff) * 1000)
                 }
               )
             })
-          } else if (state === 'suspended') {
+          } else if (state === 'suspended' || playbackState === 'seq') {
             lastAnimTurn = -1
             anim.schedule(() => {
               lastAnim?.pause()
@@ -207,7 +208,7 @@ export const PlayerView = web(view('player-view',
     fx(() => services.$.library.fx(({ sounds, patterns }) =>
       fx(({ player, y, active, onSoundSelect, onPatternSelect }) =>
         player.fx(({ project, state, sound, pattern, patterns: _ }) =>
-          project.fx(({ selectedPreset }) => {
+          project.fx(({ sequencer, selectedPreset }) => {
             const focus = selectedPreset.$.kind
             $.view = <>
               <div class="controls raised" part="controls">
@@ -281,6 +282,9 @@ export const PlayerView = web(view('player-view',
                 max={99}
                 step={1}
                 value={player.deps.page}
+                onInput={(page) => {
+                  sequencer.$.setCurrentEventPage(player, page)
+                }}
               />
             </>
           }))

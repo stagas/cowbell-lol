@@ -1,6 +1,5 @@
 import { CanvyElement } from 'canvy'
 import { cheapRandomId, pick } from 'everyday-utils'
-import { ImmMap } from 'immutable-map-set'
 import { queue, reactive } from 'minimal-view'
 import { MidiOp } from 'webaudio-tools'
 import { compilePattern } from './pattern-service'
@@ -10,11 +9,14 @@ import { Slider } from './slider'
 import { Sliders } from './types'
 import { areSlidersCompatible, getCodeWithoutArgs } from './util/args'
 import { checksumId } from './util/checksum-id'
+import { areMidiEventsEqual } from './util/midi-events-equal'
 import { getTitle } from './util/parse'
 import { randomName } from './util/random-name'
 import { Waveplot } from './waveplot'
 
 const MidiOps = new Set(Object.values(MidiOp))
+
+const cleanupErrorRegExp = /<\w+\d+>/gm
 
 export type EditorBuffer = typeof EditorBuffer.State
 
@@ -39,6 +41,7 @@ export const EditorBuffer = reactive('editor-buffer',
     title?: string
     didDisplay = false
     didCompile = false
+    didSave = false
     compiledValue?: string
     originalValue?: string
     snapshot?: any
@@ -50,31 +53,31 @@ export const EditorBuffer = reactive('editor-buffer',
     canvases: Set<string> = new Set()
     inputChannels = 0
     outputChannels = 1
-    midiEvents = new ImmMap<number, WebMidi.MIDIMessageEvent[]>()
+    midiEvents = new Map<number, WebMidi.MIDIMessageEvent[]>()
     numberOfBars?: number
     midiRange?: [number, number]
     recompute = false
     turn = 0
+    turns = 0
     sandboxCode?: string
     error?: Error | false = false
   },
 
   function actions({ $, fx, fns, fn }) {
-    let didSave = false
     let lastSavedChecksum: string
 
     fx(({ checksum: _ }) => {
-      didSave = false
+      $.didSave = false
     })
 
     return fns(new class actions {
       toJSON = () => {
-        if (!didSave) {
+        if (!$.didSave) {
           if (lastSavedChecksum && $.isDraft) {
             delete localStorage[lastSavedChecksum]
           }
           localStorage[lastSavedChecksum = $.checksum!] = $.value
-          didSave = true
+          $.didSave = true
         }
         return [$.isDraft ? 1 : 0, $.checksum] as [0 | 1, string]
       }
@@ -153,41 +156,39 @@ export const EditorBuffer = reactive('editor-buffer',
 
           const prevEvents = $.midiEvents.get(turn)
 
-          // are events equal?
-          if (prevEvents) {
-            if (prevEvents.length === result.midiEvents.length) {
-              if (prevEvents.every((ev, i) =>
-                result.midiEvents[i].receivedTime === ev.receivedTime
-                && result.midiEvents[i].data[0] === ev.data[0]
-                && result.midiEvents[i].data[1] === ev.data[1]
-                && result.midiEvents[i].data[2] === ev.data[2]
-              )) {
-                return result.midiEvents
-              }
-            }
+          if (areMidiEventsEqual(prevEvents, result.midiEvents)) {
+            return prevEvents
           }
 
-          $.midiEvents = $.midiEvents.set(turn, result.midiEvents)
+          $.midiEvents.set(turn, result.midiEvents)
+          $.turns++
 
           return result.midiEvents
         } else {
           const { error, sandboxCode } = result
 
           $.sandboxCode = sandboxCode || ''
-          $.error = error
+          if (
+            !$.error
+            || `${$.error.stack}`.replace(cleanupErrorRegExp, '')
+            !== `${error.stack}`.replace(cleanupErrorRegExp, '')
+          ) {
+            $.error = error
 
-          if ($.value !== $.compiledValue && $.compiledValue) {
-            const result = await compilePattern(
-              $.compiledValue,
-              $.numberOfBars || 1,
-              turn
-            )
-            if (result.success) {
-              $.midiEvents = $.midiEvents.set(turn, result.midiEvents)
-              return result.midiEvents
-            } else {
-              const { error: secondError } = result
-              console.info(error.message, secondError.message)
+            if ($.value !== $.compiledValue && $.compiledValue) {
+              const result = await compilePattern(
+                $.compiledValue,
+                $.numberOfBars || 1,
+                turn
+              )
+              if (result.success) {
+                $.midiEvents.set(turn, result.midiEvents)
+                $.turns++
+                return result.midiEvents
+              } else {
+                const { error: secondError } = result
+                console.info(error.message, secondError.message)
+              }
             }
           }
         }
@@ -208,6 +209,17 @@ export const EditorBuffer = reactive('editor-buffer',
 
     fx(({ value }) => {
       $.checksum = checksumId(value)
+    })
+
+    fx(({ kind, isDraft }, prev) => {
+      if (prev.isDraft && !isDraft) {
+        $.didSave = false
+        if (kind === 'sound') {
+          services.$.library.$.autoSaveSounds()
+        } else {
+          services.$.library.$.autoSavePatterns()
+        }
+      }
     })
 
     fx(({ kind, checksum: _ }) => {
@@ -272,7 +284,7 @@ export const EditorBuffer = reactive('editor-buffer',
         }
       })
 
-      fx(({ midiEvents }) => {
+      fx(({ midiEvents, turns: _ }) => {
         const events = [...midiEvents.values()]
           .flat()
           .filter(x => MidiOps.has(x.data[0]))
@@ -316,11 +328,11 @@ export const EditorBuffer = reactive('editor-buffer',
           maxNote -= 1
         }
 
+        minNote = Math.max(0, minNote)
+        maxNote = Math.max(0, maxNote)
+
         if (!$.midiRange || $.midiRange[0] !== minNote || $.midiRange[1] !== maxNote) {
-          $.midiRange = [
-            Math.max(0, minNote),
-            Math.max(0, maxNote)
-          ]
+          $.midiRange = [minNote, maxNote]
         }
       })
     }

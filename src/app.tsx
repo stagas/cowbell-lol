@@ -1,6 +1,6 @@
 /** @jsxImportSource minimal-view */
 
-import { element, view, web } from 'minimal-view'
+import { element, event, on, view, web } from 'minimal-view'
 import { Avatar } from './avatar'
 import { Button } from './button'
 import { Hint } from './hint'
@@ -27,10 +27,38 @@ export const App = web(view('app',
     host = element
     state: 'idle' | 'deleting' = 'idle'
     hint: JSX.Element = false
+    hintEl!: InstanceType<typeof Hint.Element>
+    overlay?: HTMLDivElement
   },
 
   function actions({ $, fns, fn }) {
+    let isScrolling = false
     return fns(new class actions {
+      beginOverlay = (cursor = 'default') => {
+        Object.assign($.overlay!.style, {
+          zIndex: '999999999',
+          cursor
+        })
+      }
+
+      endOverlay = () => {
+        Object.assign($.overlay!.style, {
+          zIndex: '-999999',
+          cursor: 'default'
+        })
+      }
+
+      beginScrolling = () => {
+        if (isScrolling) return
+
+        isScrolling = true
+
+        this.beginOverlay()
+        on(window, 'pointermove').once(() => {
+          isScrolling = false
+          this.endOverlay()
+        })
+      }
     })
   },
 
@@ -52,6 +80,8 @@ export const App = web(view('app',
       services.$.apiUrl = apiUrl
       services.$.distRoot = distRoot
     })
+
+    fx(() => on(window, 'scroll')($.beginScrolling))
 
     services.fx(({ skin }) =>
       fx(({ distRoot }) => {
@@ -107,6 +137,16 @@ export const App = web(view('app',
         flex: 1;
         width: 100%;
         height: 100%;
+      }
+
+      .overlay {
+        z-index: -99999;
+        opacity: 0;
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
       }
 
       main {
@@ -198,7 +238,9 @@ export const App = web(view('app',
       $.view = <>
         <Toolbar ref={cachedRef('toolbar')} project={project} />
 
-        <Hint message={deps.hint} />
+        <Hint ref={refs.hintEl} message={deps.hint} />
+
+        <div ref={refs.overlay} class="overlay" oncontextmenu={event.prevent.stop()} />
 
         <main>
           <nav>

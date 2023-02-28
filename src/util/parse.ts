@@ -7,12 +7,12 @@ export function getTitle(code: string) {
   }
 }
 
-export const parseErrorInputLineRegExp = /<input>:(?<line>\d+)/g
+export const parseErrorInputLineRegExp = /<load\d+>:(?<line>\d+)/g
 
 export function getErrorInputLine(error: Error) {
   const match = [...(error.message ?? '').matchAll(parseErrorInputLineRegExp)]
   if (match) {
-    return parseInt(match.at(-1)![1])
+    return parseInt(match[0]![1])
   } else {
     return 0
   }

@@ -71,6 +71,8 @@ export const SliderView = web(view('slider-view',
 
         host.classList.add('active')
 
+        app.$.beginOverlay('ns-resize')
+
         const yDims = ['height', 'minHeight', 'maxHeight', 'y'] as const
         const xDims = ['width', 'minWidth', 'maxWidth', 'x'] as const
 
@@ -122,6 +124,7 @@ export const SliderView = web(view('slider-view',
           requestAnimationFrame(() => {
             host.classList.remove('active')
             host.toggleAttribute('drag', false)
+            app.$.endOverlay()
           })
         })
 

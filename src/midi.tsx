@@ -8,6 +8,7 @@ import { EditorBuffer } from './editor-buffer'
 import { Player } from './player'
 import { services } from './services'
 import { classes } from './util/classes'
+import { areMidiEventsEqual } from './util/midi-events-equal'
 
 const MidiOps = new Set(Object.values(MidiOp))
 
@@ -24,14 +25,20 @@ export const Midi = web(view('midi',
   class props {
     player?: Player
     pattern!: EditorBuffer
-    xPos?: number
+    turn?= 0
     showNotes = false
+    showVels?= true
   },
 
   class local {
     host = element
-    turn = 0
-    rects: MidiRect[] = []
+    rects?: MidiRect[]
+
+    numberOfBars?: number
+    midiRange?: [number, number]
+
+    events?: WebMidi.MIDIMessageEvent[]
+    updateEvents = 0
   },
 
   function actions({ $, fn, fns }) {
@@ -134,147 +141,123 @@ export const Midi = web(view('midi',
       host.toggleAttribute('padded', showNotes)
     })
 
-    fx(({ pattern }) =>
-      pattern.fx(({ midiRange, midiEvents, numberOfBars }) =>
-        fx(({ turn }) => {
-          const events: WebMidi.MIDIMessageEvent[] =
-            (midiEvents.get(turn) ?? midiEvents.get(0) ?? [])
-              ?.filter(x =>
-                MidiOps.has(x.data[0]) && x.receivedTime < numberOfBars * 1000
-              )
+    fx(({ pattern }) => pattern.fx(({ value: _v, turns: _t, midiRange: _m }) => {
+      $.updateEvents++
+    }))
 
-          const [minNote, maxNote] = midiRange
+    fx(async ({ pattern, turn, updateEvents: _ }) => {
+      const midiEvents = await pattern.$.compilePattern(turn)
 
-          const heightScale = (maxNote - minNote)
+      if (midiEvents) {
+        // wait for midi range to update possibly
+        await Promise.resolve()
+        await Promise.resolve()
+        await Promise.resolve()
 
-          const fullTime = numberOfBars * 1000
+        $.numberOfBars = pattern.$.numberOfBars!
+        $.midiRange = pattern.$.midiRange!
 
-          const width = 1 / numberOfBars
-          const height = 1 / heightScale
+        const next = midiEvents.filter(x =>
+          MidiOps.has(x.data[0]) && x.receivedTime < $.numberOfBars! * 1000
+        )
 
-          const noteOns = events.filter(x => x.data[0] === MidiOp.NoteOn)
-          const noteOffs = events.filter(x => x.data[0] === MidiOp.NoteOff)
+        if (!areMidiEventsEqual($.events, next)) {
+          $.events = next
+        }
+      }
+    })
 
-          const rects = noteOns
-            .map((noteOn): MidiRect => {
-              const noteOff = noteOffs.find(y => noteOn.data[1] === y.data[1] && (y.receivedTime >= noteOn.receivedTime))
+    fx(({ events, midiRange }) => {
+      const [minNote, maxNote] = midiRange
 
-              if (noteOff) noteOffs.splice(noteOffs.indexOf(noteOff), 1)
+      const heightScale = (maxNote - minNote)
 
-              return [
-                new Rect(
-                  (noteOn.receivedTime / 1000) * width,
-                  (heightScale - (noteOn.data[1] - minNote) - 1) * height,
-                  (((noteOff?.receivedTime ?? fullTime) - noteOn.receivedTime) / 1000) * width,
-                  height
-                ),
-                [noteOn, noteOff],
-              ]
-            })
+      const fullTime = $.numberOfBars! * 1000
 
-          $.rects = rects
+      const width = 1 / $.numberOfBars!
+      const height = 1 / heightScale
+
+      const noteOns = events.filter(x => x.data[0] === MidiOp.NoteOn)
+      const noteOffs = events.filter(x => x.data[0] === MidiOp.NoteOff)
+
+      const rects = noteOns
+        .map((noteOn): MidiRect => {
+          const noteOff = noteOffs.find(y => noteOn.data[1] === y.data[1] && (y.receivedTime >= noteOn.receivedTime))
+
+          if (noteOff) noteOffs.splice(noteOffs.indexOf(noteOff), 1)
+
+          return [
+            new Rect(
+              (noteOn.receivedTime / 1000) * width,
+              (heightScale - (noteOn.data[1] - minNote) - 1) * height,
+              (((noteOff?.receivedTime ?? fullTime) - noteOn.receivedTime) / 1000) * width,
+              height
+            ),
+            [noteOn, noteOff],
+          ]
         })
-      )
-    )
 
-    const notesMap = new Map<SVGRectElement, MidiRect>()
+      $.rects = rects
+    })
 
-    fx(({ player, pattern, xPos }) =>
+    // const notesMap = new Map<SVGRectElement, MidiRect>()
+
+    fx(({ player, pattern }) =>
       player.fx(({ patternBuffers, turn }) => {
         if (!patternBuffers.includes(pattern)) return
-
         $.turn = turn
-
-        // const offset = patternOffsets[xPos]
-        // const time = currentTime - offset * 1000
-
-        // for (const [el, [, [noteOn, noteOff]]] of notesMap) {
-        //   if (!noteOn || !noteOff) continue
-
-        //   if (time >= noteOn.receivedTime
-        //     && time < noteOff.receivedTime) {
-        //     el.classList.add('lit')
-        //   } else {
-        //     el.classList.remove('lit')
-        //   }
-        // }
       })
     )
 
-    // fx(({ player, pattern, xPos }) =>
-    //   player.fx(({ patternOffsets, patternBuffers, currentTime, turn }) => {
-    //     if (!patternBuffers.includes(pattern)) return
-
-    //     $.turn = turn
-
-    //     const offset = patternOffsets[xPos]
-    //     const time = currentTime - offset * 1000
-
-    //     for (const [el, [, [noteOn, noteOff]]] of notesMap) {
-    //       if (!noteOn || !noteOff) continue
-
-    //       if (time >= noteOn.receivedTime
-    //         && time < noteOff.receivedTime) {
-    //         el.classList.add('lit')
-    //       } else {
-    //         el.classList.remove('lit')
-    //       }
-    //     }
-    //   })
-    // )
-
     const blacks = new Set([1, 3, 6, 8, 10])
 
-    fx(({ pattern, rects, showNotes }) =>
-      pattern.fx(({ midiRange }) => {
-        // const midiRange = pattern.$.midiRange!
+    fx(({ rects, showNotes, showVels }) => {
+      $.view = <div class="notes">
+        {showNotes && <div class="rows">
+          {Array.from({ length: $.midiRange![1] - $.midiRange![0] }, (_, i) => {
+            const note = modWrap($.midiRange![0] + i, 12)
+            return <div class={classes({
+              row: true,
+              black: blacks.has(note),
+              octave: note === 0
+            })} />
+          }).reverse()}
+        </div>}
 
-        $.view = <div class="notes">
-          {showNotes && <div class="rows">
-            {Array.from({ length: midiRange[1] - midiRange[0] }, (_, i) => {
-              const note = modWrap(midiRange[0] + i, 12)
-              return <div class={classes({
-                row: true,
-                black: blacks.has(note),
-                octave: note === 0
-              })} />
-            }).reverse()}
-          </div>}
+        {rects.map((item, i) => {
+          const [rect, [{ data: [, note, vel] }]] = item
+          const volHeight = vel / 127
+          const volRect = new Rect(rect.x, 1 - volHeight, rect.width + 0.0001, volHeight)
 
-          {rects.map((item, i) => {
-            const [rect, [{ data: [, note, vel] }]] = item
-            const volHeight = vel / 127
-            const volRect = new Rect(rect.x, 1 - volHeight, rect.width + 0.0001, volHeight)
+          return <>
+            <div
+              // onref={el => {
+              //   notesMap.set(el, item)
+              // }}
+              // onunref={el => {
+              //   notesMap.delete(el)
+              // }}
+              class="note"
+              style={{
+                ...rect.toStylePct(),
+                opacity: `${((vel / 127) ** 0.3) * 0.9 + 0.1}`,
+                zIndex: `${999 - i}`
+              }}
+            >
+              {showNotes && <span>{
+                midiToPitchClass(note).toUpperCase()
+              }</span>}
+            </div>
 
-            return <>
-              <div
-                onref={el => {
-                  notesMap.set(el, item)
-                }}
-                onunref={el => {
-                  notesMap.delete(el)
-                }}
-                class="note"
-                style={{
-                  ...rect.toStylePct(),
-                  opacity: `${((vel / 127) ** 0.3) * 0.9 + 0.1}`,
-                  zIndex: `${999 - i}`
-                }}
-              >
-                {showNotes && <span>{
-                  midiToPitchClass(note).toUpperCase()
-                }</span>}
-              </div>
-
-              <div
-                class="vol"
-                style={{
-                  ...volRect.toStylePct(),
-                }}
-              />
-            </>
-          })}
-        </div>
-      }))
+            {showVels && <div
+              class="vol"
+              style={{
+                ...volRect.toStylePct(),
+              }}
+            />}
+          </>
+        })}
+      </div>
+    })
   })
 )

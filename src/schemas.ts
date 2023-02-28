@@ -19,11 +19,21 @@ const sendTuples = z.array(
   ])
 )
 
+const seqLaneTuples = z.array(
+  z.tuple([
+    z.number(), // page
+    z.number(), // start
+    z.number(), // end
+    z.number(), // offset
+  ])
+)
+
 const postMixer = z.array(z.object({
   vol: z.number(),
   pan: z.number(),
   pages: z.array(z.number()),
   sends: sendTuples,
+  lane: seqLaneTuples
 }))
 
 const mixerResponse = z.array(z.object({
@@ -38,6 +48,7 @@ const mixerResponse = z.array(z.object({
       z.number(),
     ])
   )),
+  lane: z.optional(seqLaneTuples)
 }))
 
 export const schemas = {

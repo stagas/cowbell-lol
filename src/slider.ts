@@ -29,6 +29,7 @@ export const Slider = reactive('slider',
     value!: number
     min!: number
     max!: number
+    slope!: number
     hue!: number
 
     sourceIndex?: number
@@ -36,6 +37,7 @@ export const Slider = reactive('slider',
       arg: string
       id: string
       range: string
+      slope: string
       default: string
     }
   },
@@ -78,6 +80,7 @@ export const Slider = reactive('slider',
           'value',
           'min',
           'max',
+          'slope',
           'hue',
         ])
       }
@@ -101,12 +104,12 @@ export const Slider = reactive('slider',
       $.value = fixed(clamp(min, max, fixed(value)))
     })
 
-    fx(({ value, scale, min }) => {
-      $.normal = (value - min) / scale
+    fx(({ value, scale, min, slope }) => {
+      $.normal = ((value - min) / scale) ** (1 / slope)
     })
 
-    fx(({ normal, scale, min }) => {
-      $.value = fixed(normal * scale + min)
+    fx(({ normal, scale, min, slope }) => {
+      $.value = fixed((normal ** slope) * scale + min)
     })
   }
 )
